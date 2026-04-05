@@ -84,8 +84,10 @@ export function useSpeechRecognition() {
         // 静默超时，正常停止，不报错
       } else if (event.error === 'not-allowed') {
         onError?.('请允许麦克风权限后重试')
+      } else if (event.error === 'network') {
+        onError?.('网络错误：语音识别需要连接 Google 服务器，在国内可能受限。建议开启 VPN 后重试，或直接使用文字输入。')
       } else if (event.error !== 'aborted') {
-        onError?.('语音识别出错，请重试')
+        onError?.(`语音识别出错：${event.error}，请重试`)
       }
     }
 
@@ -95,7 +97,14 @@ export function useSpeechRecognition() {
     }
 
     recognitionRef.current = recognition
-    recognition.start()
+    // 捕获 start() 可能抛出的同步错误
+    try {
+      recognition.start()
+    } catch (err) {
+      setIsRecording(false)
+      clearSilenceTimer()
+      onError?.(`启动录音失败：${err.message}`)
+    }
   }, [isSupported])
 
   const stopRecording = useCallback(() => {
