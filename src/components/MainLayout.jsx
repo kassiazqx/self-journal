@@ -20,7 +20,10 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen min-h-dvh max-w-lg mx-auto w-full">
+    <div
+      className="flex flex-col max-w-lg mx-auto w-full"
+      style={{ height: '100dvh' }}
+    >
       {/* 顶部状态栏区域（仅在 records 显示用户信息） */}
       {activeTab === 'records' && (
         <div className="flex items-center justify-end px-5 pt-3">
@@ -34,9 +37,9 @@ export default function MainLayout() {
         </div>
       )}
 
-      {/* 页面内容区域 */}
-      <div className="flex-1 relative" style={{ minHeight: 0 }}>
-        {/* 首页（始终 mount，通过 display 切换） */}
+      {/* 页面内容区域：flex-1 + overflow-hidden 确保内容在这里滚动，不撑开外层 */}
+      <div className="flex-1 overflow-hidden min-h-0">
+        {/* 首页 */}
         <div className={`h-full overflow-y-auto ${activeTab === 'home' ? 'block' : 'hidden'}`}>
           <HomePage onSaved={handleSaved} />
         </div>
