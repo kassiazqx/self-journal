@@ -105,7 +105,7 @@ function EntryCard({ entry, onDelete }) {
       </div>
 
       {/* 内容 */}
-      <p className={`text-gray-700 text-sm leading-relaxed ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
+      <p className={`text-gray-700 text-sm leading-relaxed whitespace-pre-wrap ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
         {entry.content}
       </p>
 

@@ -27,14 +27,8 @@ const TEMPLATES = [
   {
     id: 'action',
     emoji: '🏃',
-    label: '今日行动',
-    hint: '今天做了什么？运动了吗？有什么想记录下来的行动或习惯？',
-  },
-  {
-    id: 'free',
-    emoji: '✨',
-    label: '随手记',
-    hint: '',
+    label: '运动',
+    hint: '今天运动了吗？做了什么运动？时长、强度怎么样？身体感受如何？',
   },
 ]
 
@@ -163,12 +157,12 @@ export default function HomePage({ onSaved }) {
 
       {/* 模板快捷按钮 */}
       <div className="px-4 mb-4">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex flex-wrap gap-2">
           {TEMPLATES.map(t => (
             <button
               key={t.id}
               onClick={() => handleTemplateClick(t.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                 selectedTemplate === t.id
                   ? 'bg-amber-500 text-white shadow-sm'
                   : 'bg-white text-gray-600 border border-gray-200'
