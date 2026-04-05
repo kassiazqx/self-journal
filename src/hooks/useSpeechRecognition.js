@@ -21,6 +21,8 @@ export function useSpeechRecognition() {
   )
   const recognitionRef = useRef(null)
   const silenceTimerRef = useRef(null)
+  const gotResultRef = useRef(false)   // 是否收到过识别结果
+  const userStoppedRef = useRef(false) // 是否用户主动停止
 
   const clearSilenceTimer = () => {
     if (silenceTimerRef.current) {
@@ -43,9 +45,11 @@ export function useSpeechRecognition() {
     recognition.interimResults = true  // 实时中间结果
     recognition.maxAlternatives = 1
 
+    gotResultRef.current = false
+    userStoppedRef.current = false
+
     recognition.onstart = () => {
       setIsRecording(true)
-      // 启动静默检测：5 秒无声音就停止
       clearSilenceTimer()
       silenceTimerRef.current = setTimeout(() => {
         recognition.stop()
@@ -54,6 +58,7 @@ export function useSpeechRecognition() {
     }
 
     recognition.onresult = (event) => {
+      gotResultRef.current = true
       // 有说话 → 重置静默计时器
       clearSilenceTimer()
       silenceTimerRef.current = setTimeout(() => {
@@ -94,6 +99,10 @@ export function useSpeechRecognition() {
     recognition.onend = () => {
       clearSilenceTimer()
       setIsRecording(false)
+      // 如果不是用户主动停止，且没有收到任何结果 → 说明连接失败
+      if (!userStoppedRef.current && !gotResultRef.current) {
+        onError?.('语音识别连接失败。Chrome/夸克浏览器在国内需要 VPN 才能使用语音功能，建议改用文字输入。')
+      }
     }
 
     recognitionRef.current = recognition
@@ -108,6 +117,7 @@ export function useSpeechRecognition() {
   }, [isSupported])
 
   const stopRecording = useCallback(() => {
+    userStoppedRef.current = true
     clearSilenceTimer()
     if (recognitionRef.current) {
       recognitionRef.current.stop()
