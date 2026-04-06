@@ -7,11 +7,11 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
 const TEMPLATE_MAP = {
-  gratitude: { emoji: '💛', label: '感恩日记' },
-  learning:  { emoji: '🧠', label: '学习输出' },
-  emotion:   { emoji: '😤', label: '情绪觉察' },
-  action:    { emoji: '🏃', label: '运动记录' },
-  free:      { emoji: '✨', label: '随手记' },
+  gratitude: { emoji: '🩷', label: '感恩' },
+  learning:  { emoji: '📝', label: '学习' },
+  emotion:   { emoji: '🌷', label: '觉察' },
+  action:    { emoji: '💪🏻', label: '行动' },
+  free:      { emoji: '✨', label: '灵感' },
 }
 
 // 单条气泡

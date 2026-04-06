@@ -5,11 +5,11 @@ import { Loader2, BookOpen, ChevronDown, Trash2 } from 'lucide-react'
 import RecordDetail from '../components/RecordDetail'
 
 const TEMPLATE_MAP = {
-  gratitude: { emoji: '💛', label: '感恩日记', color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-  learning:  { emoji: '🧠', label: '学习输出', color: 'bg-blue-50 text-blue-600 border-blue-100' },
-  emotion:   { emoji: '😤', label: '情绪觉察', color: 'bg-purple-50 text-purple-600 border-purple-100' },
-  action:    { emoji: '🏃', label: '今日行动', color: 'bg-green-50 text-green-600 border-green-100' },
-  free:      { emoji: '✨', label: '随手记',   color: 'bg-gray-50 text-gray-500 border-gray-100' },
+  gratitude: { emoji: '🩷', label: '感恩',  color: 'bg-pink-50 text-pink-600 border-pink-100' },
+  learning:  { emoji: '📝', label: '学习',  color: 'bg-blue-50 text-blue-600 border-blue-100' },
+  emotion:   { emoji: '🌷', label: '觉察',  color: 'bg-purple-50 text-purple-600 border-purple-100' },
+  action:    { emoji: '💪🏻', label: '行动', color: 'bg-green-50 text-green-600 border-green-100' },
+  free:      { emoji: '✨', label: '灵感',  color: 'bg-gray-50 text-gray-500 border-gray-100' },
 }
 
 function formatDate(dateStr) {
@@ -92,20 +92,12 @@ function EntryCard({ entry, onDelete, onOpen }) {
       className="card mb-3 fade-in group cursor-pointer active:scale-[0.99] transition-transform"
       onClick={() => onOpen(entry)}
     >
-      {/* 顶部：模板标签 + 时间 + 删除 */}
+      {/* 顶部：模板标签 + 时间 */}
       <div className="flex items-center justify-between mb-2.5">
         <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
           {template.emoji} {template.label}
         </span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-300">{formatDate(entry.created_at)}</span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
-            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
+        <span className="text-xs text-gray-300">{formatDate(entry.created_at)}</span>
       </div>
 
       {/* 内容预览（固定 3 行） */}

@@ -8,27 +8,33 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 const TEMPLATES = [
   {
     id: 'gratitude',
-    emoji: '💛',
-    label: '感恩日记',
+    emoji: '🩷',
+    label: '感恩',
     hint: '今天有什么值得感谢的？是谁、是什么事让你感到温暖或幸运？',
   },
   {
-    id: 'learning',
-    emoji: '🧠',
-    label: '学习输出',
-    hint: '今天学了什么？用自己的话说一遍，有什么让你印象深刻或有疑惑的地方？',
-  },
-  {
     id: 'emotion',
-    emoji: '😤',
-    label: '情绪觉察',
+    emoji: '🌷',
+    label: '觉察',
     hint: '现在是什么感受？发生了什么？你注意到自己身体上有什么感觉吗？',
   },
   {
+    id: 'free',
+    emoji: '✨',
+    label: '灵感',
+    hint: '一闪而过的念头、想法、观察——不用整理，直接写下来就好。',
+  },
+  {
+    id: 'learning',
+    emoji: '📝',
+    label: '学习',
+    hint: '今天学了什么？用自己的话说一遍，有什么让你印象深刻或有疑惑的地方？',
+  },
+  {
     id: 'action',
-    emoji: '🏃',
-    label: '运动',
-    hint: '今天运动了吗？做了什么运动？时长、强度怎么样？身体感受如何？',
+    emoji: '💪🏻',
+    label: '行动',
+    hint: '今天做了什么？运动、完成了一件事——时长、状态、身体感受如何？',
   },
 ]
 
