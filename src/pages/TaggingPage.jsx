@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Check } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
 
 // ─── 情绪标签分组 ──────────────────────────────────────────────
 const EMOTION_GROUPS = [
@@ -54,7 +53,6 @@ function getRequirements(templateType) {
 //   onComplete   — 完成后回调，传 { shouldSuggestChat: boolean }
 //   onBack       — 返回上一页
 export default function TaggingPage({ entry, isEdit = false, onComplete, onBack }) {
-  const { user } = useAuth()
   const { requireEmotion, requireState } = getRequirements(entry.template_type)
 
   // 预填已有情绪（编辑模式）
@@ -75,7 +73,6 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
   )
   const [handlingOpen, setHandlingOpen] = useState(false)
   const [handlingRating, setHandlingRating] = useState(entry.handling_rating ?? null)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const emotionGroups = entry.template_type === 'gratitude' ? GRATITUDE_GROUPS : EMOTION_GROUPS
@@ -99,29 +96,20 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
       return
     }
 
-    setSaving(true)
-    setError('')
+    // 立即回调（跳转），后台静默 UPDATE
+    onComplete?.()
 
-    try {
-      const { error: dbError } = await supabase
-        .from('journal_entries')
-        .update({
-          primary_emotion:     selectedEmotions[0] ?? null,
-          mixed_emotions:      selectedEmotions.length > 0 ? selectedEmotions : [],
-          overall_state_score: stateScore,
-          handling_rating:     handlingRating,
-        })
-        .eq('id', entry.id)
-        .eq('user_id', user.id)
-
-      if (dbError) throw dbError
-
-      onComplete?.({ shouldSuggestChat: false }) // 复杂度由 MainLayout 在 onNextStep 时已算好
-    } catch (err) {
-      console.error('标注保存失败:', err)
-      setError('保存失败，请重试')
-      setSaving(false)
-    }
+    supabase
+      .from('journal_entries')
+      .update({
+        primary_emotion:     selectedEmotions[0] ?? null,
+        mixed_emotions:      selectedEmotions.length > 0 ? selectedEmotions : [],
+        overall_state_score: stateScore,
+        handling_rating:     handlingRating,
+      })
+      .eq('id', entry.id)
+      .eq('user_id', entry.user_id)
+      .then(({ error: e }) => { if (e) console.error('[tagging] 后台保存失败:', e) })
   }
 
   return (
@@ -134,13 +122,10 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
         <h2 className="text-base font-semibold text-gray-800">情绪标注</h2>
         <button
           onClick={handleComplete}
-          disabled={saving}
-          className="flex items-center gap-1 text-sm px-4 py-1.5 bg-amber-500 text-white rounded-full disabled:opacity-40 active:scale-95 transition-transform"
+          className="flex items-center gap-1 text-sm px-4 py-1.5 bg-amber-500 text-white rounded-full active:scale-95 transition-transform"
         >
-          {saving
-            ? <Loader2 size={14} className="animate-spin" />
-            : <Check size={14} />}
-          {saving ? '保存中…' : (isEdit ? '保存' : '完成')}
+          <Check size={14} />
+          {isEdit ? '保存' : '完成'}
         </button>
       </div>
 

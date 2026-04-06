@@ -45,9 +45,31 @@ function toDatetimeLocal(date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// 从文本中推断时间，返回 datetime-local 字符串
+// 只在用户没有手动改过时间时调用
+function inferDatetime(text) {
+  const now = new Date()
+  const d = new Date(now)
+
+  // 日期偏移
+  if (text.includes('前天')) d.setDate(d.getDate() - 2)
+  else if (text.includes('昨天')) d.setDate(d.getDate() - 1)
+  // "今天" → 不改日期
+
+  // 时段 → 设定代表小时
+  if (text.includes('凌晨'))                          d.setHours(1, 0, 0, 0)
+  else if (text.includes('早上') || text.includes('上午')) d.setHours(9, 0, 0, 0)
+  else if (text.includes('中午'))                     d.setHours(12, 0, 0, 0)
+  else if (text.includes('下午'))                     d.setHours(16, 0, 0, 0)
+  else if (text.includes('傍晚'))                     d.setHours(18, 0, 0, 0)
+  else if (text.includes('晚上') || text.includes('夜里')) d.setHours(21, 0, 0, 0)
+
+  return toDatetimeLocal(d)
+}
+
 // Props:
-//   onNextStep(entry)  — 内容保存后，把完整记录传给父组件进入 TaggingPage
-//   editEntry          — 编辑模式：传入已有记录，预填内容（第六段使用）
+//   onNextStep(entry)  — 立即跳转，后台保存
+//   editEntry          — 编辑模式：传入已有记录，预填内容
 export default function HomePage({ onNextStep, editEntry }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
@@ -58,10 +80,12 @@ export default function HomePage({ onNextStep, editEntry }) {
     editEntry ? toDatetimeLocal(editEntry.created_at) : toDatetimeLocal(new Date())
   )
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [voiceError, setVoiceError] = useState('')
   const textareaRef = useRef(null)
+
+  // 用户是否手动改过时间（手动改过后不再自动覆盖）
+  const userEditedDate = useRef(isEditMode)
 
   const { isRecording, isSupported, startRecording, stopRecording } = useSpeechRecognition()
   const voiceBaseRef = useRef('')
@@ -76,10 +100,23 @@ export default function HomePage({ onNextStep, editEntry }) {
     }
   }, [content])
 
+  // 随输入自动推断时间（仅新建模式、用户未手动改过时间）
+  useEffect(() => {
+    if (isEditMode || userEditedDate.current) return
+    if (!content) return
+    setEntryDatetime(inferDatetime(content))
+  }, [content, isEditMode])
+
   const activeTemplate = TEMPLATES.find(t => t.id === selectedTemplate)
 
   const handleTemplateClick = (templateId) => {
     setSelectedTemplate(prev => prev === templateId ? null : templateId)
+  }
+
+  // 用户手动改时间
+  const handleDateChange = (val) => {
+    userEditedDate.current = true
+    setEntryDatetime(val)
   }
 
   // 语音
@@ -106,62 +143,47 @@ export default function HomePage({ onNextStep, editEntry }) {
     else handleVoiceStart()
   }
 
-  // 点"下一步"：保存（INSERT 或 UPDATE）→ 传给父组件
-  const handleNext = async () => {
+  // 点"下一步"：立即跳转，后台静默保存
+  const handleNext = () => {
     if (!content.trim()) {
       setError('请先写点什么～')
       setTimeout(() => setError(''), 2000)
       return
     }
 
-    setSaving(true)
-    setError('')
+    const templateType = selectedTemplate || (isEditMode ? editEntry.template_type : 'free')
+    const createdAt = new Date(entryDatetime).toISOString()
 
-    try {
-      let saved
-
-      if (isEditMode) {
-        // 编辑模式：UPDATE 原文和模板
-        const { data, error: dbError } = await supabase
-          .from('journal_entries')
-          .update({
-            content: content.trim(),
-            template_type: selectedTemplate || editEntry.template_type || 'free',
-            created_at: new Date(entryDatetime).toISOString(),
-          })
-          .eq('id', editEntry.id)
-          .eq('user_id', user.id)
-          .select()
-          .single()
-        if (dbError) throw dbError
-        saved = data
-      } else {
-        // 新建模式：INSERT
-        const { data, error: dbError } = await supabase
-          .from('journal_entries')
-          .insert({
-            user_id: user.id,
-            content: content.trim(),
-            template_type: selectedTemplate || 'free',
-            created_at: new Date(entryDatetime).toISOString(),
-          })
-          .select()
-          .single()
-        if (dbError) throw dbError
-        saved = data
+    if (isEditMode) {
+      // 编辑：立即回调（entry.id 已知），后台 UPDATE 原文
+      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt }
+      onNextStep?.(updatedEntry)
+      supabase.from('journal_entries')
+        .update({ content: content.trim(), template_type: templateType, created_at: createdAt })
+        .eq('id', editEntry.id)
+        .eq('user_id', user.id)
+        .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
+    } else {
+      // 新建：用 crypto.randomUUID() 生成 ID，立即跳转，后台 INSERT
+      const newId = crypto.randomUUID()
+      const newEntry = {
+        id: newId,
+        user_id: user.id,
+        content: content.trim(),
+        template_type: templateType,
+        created_at: createdAt,
       }
-
-      // 重置表单，把记录传给父组件
-      setContent('')
-      setSelectedTemplate(null)
-      setEntryDatetime(toDatetimeLocal(new Date()))
-      onNextStep?.(saved)
-    } catch (err) {
-      console.error('保存失败:', err)
-      setError('保存失败，请检查网络后重试')
-    } finally {
-      setSaving(false)
+      onNextStep?.(newEntry)
+      supabase.from('journal_entries')
+        .insert(newEntry)
+        .then(({ error: e }) => { if (e) console.error('[insert] 后台保存失败:', e) })
     }
+
+    // 重置表单
+    setContent('')
+    setSelectedTemplate(null)
+    setEntryDatetime(toDatetimeLocal(new Date()))
+    userEditedDate.current = false
   }
 
   // 日期时间显示文字
@@ -257,7 +279,7 @@ export default function HomePage({ onNextStep, editEntry }) {
             <input
               type="datetime-local"
               value={entryDatetime}
-              onChange={e => setEntryDatetime(e.target.value)}
+              onChange={e => handleDateChange(e.target.value)}
               className="mt-2 w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
             />
           )}
@@ -281,18 +303,15 @@ export default function HomePage({ onNextStep, editEntry }) {
 
           <button
             onClick={handleNext}
-            disabled={saving || !content.trim()}
+            disabled={!content.trim()}
             className={`flex-1 h-14 rounded-2xl font-medium text-base flex items-center justify-center gap-2 transition-all duration-200 active:scale-95 ${
               content.trim()
                 ? 'bg-amber-500 text-white shadow-sm hover:bg-amber-600'
                 : 'bg-gray-100 text-gray-300 cursor-not-allowed'
             }`}
           >
-            {saving ? (
-              <><ArrowRight size={20} /><span>下一步</span></>
-            ) : (
-              <><span>下一步</span><ArrowRight size={20} /></>
-            )}
+            <span>下一步</span>
+            <ArrowRight size={20} />
           </button>
         </div>
 
