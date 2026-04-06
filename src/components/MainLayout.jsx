@@ -59,8 +59,6 @@ export default function MainLayout() {
 
   const handleDeclineSuggest = () => {
     setSuggestEntry(null)
-    setActiveTab('records')
-    setRecordsRefreshKey(k => k + 1)
   }
 
   // ── AI 对话结束 ──────────────────────────────────────────────
@@ -83,11 +81,7 @@ export default function MainLayout() {
   // ── "聊聊吗？"横幅 3 秒后自动消失 ────────────────────────────
   useEffect(() => {
     if (!suggestEntry) return
-    const timer = setTimeout(() => {
-      setSuggestEntry(null)
-      setActiveTab('records')
-      setRecordsRefreshKey(k => k + 1)
-    }, 3000)
+    const timer = setTimeout(() => setSuggestEntry(null), 3000)
     return () => clearTimeout(timer)
   }, [suggestEntry])
 

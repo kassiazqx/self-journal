@@ -86,11 +86,11 @@ export default function HomePage({ onNextStep, editEntry }) {
   const [entryDatetime, setEntryDatetime] = useState(
     editEntry ? toDatetimeLocal(editEntry.created_at) : toDatetimeLocal(new Date())
   )
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [showTimePicker, setShowTimePicker] = useState(false)
   const [error, setError] = useState('')
   const [voiceError, setVoiceError] = useState('')
   const textareaRef = useRef(null)
+  const dateInputRef = useRef(null)
+  const timeInputRef = useRef(null)
 
   // 用户是否手动改过时间（手动改过后不再自动覆盖）
   const userEditedDate = useRef(isEditMode)
@@ -126,7 +126,6 @@ export default function HomePage({ onNextStep, editEntry }) {
     userEditedDate.current = true
     const timePart = entryDatetime.slice(11, 16) || '00:00'
     setEntryDatetime(`${dateVal}T${timePart}`)
-    setShowDatePicker(false)
   }
 
   // 用户手动改时间
@@ -286,46 +285,42 @@ export default function HomePage({ onNextStep, editEntry }) {
           )}
         </div>
 
-        {/* 日期 + 时间选择器（分开两个按钮） */}
+        {/* 日期 + 时间选择器（点击直接弹出原生面板） */}
         <div className="flex gap-2 flex-wrap">
           {/* 日期按钮 */}
-          <div>
+          <div className="relative">
             <button
-              onClick={() => { setShowDatePicker(p => !p); setShowTimePicker(false) }}
+              onClick={() => dateInputRef.current?.showPicker()}
               className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
             >
               <span>📅</span>
               <span>{formatDateLabel()}</span>
-              <span>{showDatePicker ? '▲' : '▼'}</span>
             </button>
-            {showDatePicker && (
-              <input
-                type="date"
-                value={entryDatetime.slice(0, 10)}
-                onChange={e => handleDatePartChange(e.target.value)}
-                className="mt-2 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
-              />
-            )}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={entryDatetime.slice(0, 10)}
+              onChange={e => handleDatePartChange(e.target.value)}
+              className="absolute inset-0 opacity-0 pointer-events-none"
+            />
           </div>
 
           {/* 时间按钮 */}
-          <div>
+          <div className="relative">
             <button
-              onClick={() => { setShowTimePicker(p => !p); setShowDatePicker(false) }}
+              onClick={() => timeInputRef.current?.showPicker()}
               className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
             >
               <span>🕐</span>
               <span>{formatTimeLabel()}</span>
-              <span>{showTimePicker ? '▲' : '▼'}</span>
             </button>
-            {showTimePicker && (
-              <input
-                type="time"
-                value={entryDatetime.slice(11, 16)}
-                onChange={e => handleTimePartChange(e.target.value)}
-                className="mt-2 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
-              />
-            )}
+            <input
+              ref={timeInputRef}
+              type="time"
+              value={entryDatetime.slice(11, 16)}
+              onChange={e => handleTimePartChange(e.target.value)}
+              className="absolute inset-0 opacity-0 pointer-events-none"
+            />
           </div>
         </div>
 
