@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, MicOff, Loader2, ArrowRight } from 'lucide-react'
+import { Mic, MicOff, ArrowRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
@@ -289,9 +289,9 @@ export default function HomePage({ onNextStep, editEntry }) {
             }`}
           >
             {saving ? (
-              <><Loader2 size={20} className="animate-spin" /><span>保存中…</span></>
+              <><ArrowRight size={20} /><span>下一步</span></>
             ) : (
-              <><span>{isEditMode ? '下一步' : '下一步'}</span><ArrowRight size={20} /></>
+              <><span>下一步</span><ArrowRight size={20} /></>
             )}
           </button>
         </div>
