@@ -1,0 +1,196 @@
+import { useState, useEffect } from 'react'
+import { Key, Check, Loader2, LogOut } from 'lucide-react'
+import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
+import { useAuth } from '../contexts/AuthContext'
+
+const PROVIDERS = [
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    hint: 'AIza… 开头',
+    free: true,
+    howTo: '访问 aistudio.google.com → 左侧「API 密钥」→ 创建密钥（需要 VPN）',
+  },
+  {
+    id: 'deepseek',
+    name: 'Deepseek',
+    hint: 'sk-… 开头',
+    free: false,
+    howTo: '访问 platform.deepseek.com → 注册 → API Keys → 创建密钥（国内可直接访问）',
+  },
+]
+
+export default function SettingsPage() {
+  const { user, signOut } = useAuth()
+  const [settings, setSettings] = useState({ provider: 'gemini', apiKey: '' })
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null) // null | 'ok' | 'error'
+  const [testMsg, setTestMsg] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setSettings(getAISettings())
+  }, [])
+
+  const currentProvider = PROVIDERS.find(p => p.id === settings.provider)
+
+  const handleSave = () => {
+    saveAISettings(settings)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleTest = async () => {
+    if (!settings.apiKey.trim()) return
+    setTesting(true)
+    setTestResult(null)
+    setTestMsg('')
+    // 先把当前填写的设置临时保存，供 callAI 读取
+    saveAISettings(settings)
+    try {
+      const reply = await callAI(
+        [{ role: 'user', content: '你好，请只回复"连接成功"四个字' }],
+        '你是一个助手，严格按照用户要求回复，不要多余内容。'
+      )
+      setTestResult('ok')
+      setTestMsg(`连接成功！AI 回复：「${reply.trim()}」`)
+      // 测试成功时顺便正式保存
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setTestResult('error')
+      setTestMsg(err.message)
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* 顶部 */}
+      <div className="px-5 pt-5 pb-3">
+        <h1 className="text-xl font-bold text-gray-800">设置</h1>
+        <p className="text-sm text-gray-400 mt-0.5">AI 对话配置</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-4">
+
+        {/* AI 提供商选择 */}
+        <div className="card">
+          <p className="text-sm font-medium text-gray-600 mb-3">AI 提供商</p>
+          <div className="space-y-2">
+            {PROVIDERS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setSettings(s => ({ ...s, provider: p.id, apiKey: '' }))}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
+                  settings.provider === p.id
+                    ? 'border-amber-400 bg-amber-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    settings.provider === p.id ? 'border-amber-500' : 'border-gray-300'
+                  }`}>
+                    {settings.provider === p.id && (
+                      <div className="w-2 h-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <span className="text-sm font-medium text-gray-700">{p.name}</span>
+                    {p.free && (
+                      <span className="ml-2 text-xs px-1.5 py-0.5 bg-green-100 text-green-600 rounded-full">
+                        免费
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs text-gray-400">{p.hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* API Key 输入 */}
+        <div className="card">
+          <p className="text-sm font-medium text-gray-600 mb-1">
+            {currentProvider?.name} API Key
+          </p>
+          <p className="text-xs text-gray-400 mb-3">
+            仅保存在你的设备本地，不会上传到任何服务器
+          </p>
+          <div className="relative">
+            <Key size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+            <input
+              type="password"
+              value={settings.apiKey}
+              onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
+              placeholder={currentProvider?.hint || '请输入 API Key'}
+              className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-amber-400 transition-colors"
+            />
+          </div>
+
+          {/* 如何获取 */}
+          {currentProvider && (
+            <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+              📌 {currentProvider.howTo}
+            </p>
+          )}
+        </div>
+
+        {/* 测试结果提示 */}
+        {testResult && (
+          <div className={`px-4 py-3 rounded-2xl text-sm fade-in ${
+            testResult === 'ok'
+              ? 'bg-green-50 text-green-700 border border-green-100'
+              : 'bg-red-50 text-red-600 border border-red-100'
+          }`}>
+            {testMsg}
+          </div>
+        )}
+
+        {/* 操作按钮 */}
+        <div className="flex gap-3">
+          <button
+            onClick={handleTest}
+            disabled={!settings.apiKey.trim() || testing}
+            className="flex-1 py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-600 flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all"
+          >
+            {testing
+              ? <><Loader2 size={15} className="animate-spin" /> 测试中…</>
+              : '测试连接'
+            }
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!settings.apiKey.trim()}
+            className={`flex-1 py-3.5 rounded-2xl text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 ${
+              saved ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'
+            }`}
+          >
+            {saved ? <><Check size={15} /> 已保存</> : '保存'}
+          </button>
+        </div>
+
+        {/* 分割线 */}
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">账号</p>
+              <p className="text-xs text-gray-400 mt-0.5">{user?.email}</p>
+            </div>
+            <button
+              onClick={signOut}
+              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <LogOut size={15} />
+              退出登录
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}

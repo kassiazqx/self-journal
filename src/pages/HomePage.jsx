@@ -115,13 +115,15 @@ export default function HomePage({ onSaved }) {
     setError('')
 
     try {
-      const { error: dbError } = await supabase
+      const { data: saved, error: dbError } = await supabase
         .from('journal_entries')
         .insert({
           user_id: user.id,
           content: content.trim(),
           template_type: selectedTemplate || 'free',
         })
+        .select()
+        .single()
 
       if (dbError) throw dbError
 
@@ -131,7 +133,7 @@ export default function HomePage({ onSaved }) {
         setSaveSuccess(false)
         setContent('')
         setSelectedTemplate(null)
-        onSaved?.() // 通知父组件刷新列表
+        onSaved?.(saved) // 把完整条目传给父组件，触发 AI 对话
       }, 1200)
     } catch (err) {
       console.error('保存失败:', err)

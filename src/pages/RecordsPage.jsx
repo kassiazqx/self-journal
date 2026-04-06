@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Loader2, BookOpen, ChevronDown, Trash2, X } from 'lucide-react'
+import { Loader2, BookOpen, ChevronDown, Trash2 } from 'lucide-react'
+import RecordDetail from '../components/RecordDetail'
 
 const TEMPLATE_MAP = {
   gratitude: { emoji: '💛', label: '感恩日记', color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
@@ -81,13 +82,16 @@ function DeleteDialog({ entry, onConfirm, onCancel }) {
 }
 
 // 单条记录卡片
-function EntryCard({ entry, onDelete }) {
-  const [expanded, setExpanded] = useState(false)
+function EntryCard({ entry, onDelete, onOpen }) {
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
   const isLong = entry.content.length > 120
+  const hasAI = entry.primary_emotion || entry.reflection_insight
 
   return (
-    <div className="card mb-3 fade-in group">
+    <div
+      className="card mb-3 fade-in group cursor-pointer active:scale-[0.99] transition-transform"
+      onClick={() => onOpen(entry)}
+    >
       {/* 顶部：模板标签 + 时间 + 删除 */}
       <div className="flex items-center justify-between mb-2.5">
         <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
@@ -96,7 +100,7 @@ function EntryCard({ entry, onDelete }) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-300">{formatDate(entry.created_at)}</span>
           <button
-            onClick={() => onDelete(entry)}
+            onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
             className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all"
           >
             <Trash2 size={14} />
@@ -104,34 +108,33 @@ function EntryCard({ entry, onDelete }) {
         </div>
       </div>
 
-      {/* 内容 */}
-      <p className={`text-gray-700 text-sm leading-relaxed whitespace-pre-wrap ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
+      {/* 内容预览（固定 3 行） */}
+      <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">
         {entry.content}
       </p>
 
-      {/* 展开/收起 */}
-      {isLong && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1 text-xs text-amber-500 mt-2"
-        >
-          <span>{expanded ? '收起' : '展开全部'}</span>
-          <ChevronDown
-            size={14}
-            className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-          />
-        </button>
+      {/* AI 分析标记 */}
+      {hasAI && (
+        <div className="flex items-center gap-1 mt-2">
+          <span className="text-xs text-amber-400">✦ 已分析</span>
+          {entry.primary_emotion && (
+            <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
+              {entry.primary_emotion}
+            </span>
+          )}
+        </div>
       )}
     </div>
   )
 }
 
-export default function RecordsPage({ refreshKey }) {
+export default function RecordsPage({ refreshKey, onStartAI }) {
   const { user } = useAuth()
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+  const [detailEntry, setDetailEntry] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const PAGE_SIZE = 20
 
@@ -187,6 +190,11 @@ export default function RecordsPage({ refreshKey }) {
 
   const grouped = groupByDate(entries)
 
+  // 详情页覆盖，同时把 onStartAI 透传给 RecordDetail
+  if (detailEntry) {
+    return <RecordDetail entry={detailEntry} onBack={() => setDetailEntry(null)} onStartAI={onStartAI} />
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* 顶部标题 */}
@@ -224,6 +232,7 @@ export default function RecordsPage({ refreshKey }) {
                     key={entry.id}
                     entry={entry}
                     onDelete={setDeleteTarget}
+                    onOpen={setDetailEntry}
                   />
                 ))}
               </div>

@@ -6,62 +6,103 @@
 - **用户**：技术小白，需要详细引导，不懂代码
 - **GitHub**：https://github.com/kassiazqx/self-journal
 - **线上网址**：https://self-journal-kassia.vercel.app
+- ⚠️ 当前线上为阶段一，阶段二代码已提交本地 git，需 push 才上线
 
 ## 技术栈
 - 前端：React + Vite + Tailwind CSS v3
-- 数据库/Auth：Supabase
-- 部署：Vercel（已上线）
-- 语音：Web Speech API（桌面 Chrome 可用，安卓待解决）
+- 数据库/Auth：Supabase（Tokyo 地区）
+- AI：Google Gemini（gemini-flash-latest）/ Deepseek（可切换）
+- 部署：Vercel（推送 main 分支自动部署）
+- 语音：Web Speech API（桌面 Chrome 可用，安卓暂不可用）
+- 未来：Capacitor 打包 Android APK（功能稳定后）
 
 ## Supabase 信息
 - Project URL：https://bmvojccasvrjzvqdrnse.supabase.co
 - 地区：Tokyo
-- 数据库表：journal_entries（已建）
-- RLS：已启用
-- ⚠️ 免费版项目超过 1 周无活动会暂停，登录 Supabase 控制台点 Restore 恢复
+- 数据库表：
+  - `journal_entries`：日记条目 + ~35个AI提取字段 + full_conversation JSONB
+  - `user_options`：用户自定义下拉选项
+  - `user_memory`：AI跨对话记忆（每用户一行，rolling_summary + user_profile）
+- RLS：全部已启用
+- ⚠️ 免费版超过 1 周无活动会暂停，登录控制台点 Restore 恢复
 
-## 阶段一完成情况 ✅
+## 阶段一完成 ✅
 1. 邮箱注册/登录（Supabase Auth）
-2. 5种模板快捷按钮（感恩/学习/情绪/行动/随手记）+ 引导提示文字
+2. 5种模板快捷按钮（感恩/学习/情绪/行动/随手记）+ 引导文字
 3. 文字输入框（自适应高度）
-4. 语音输入（桌面 Chrome 正常；安卓因 Google 服务问题暂不可用，待后续接入讯飞）
-5. 保存到 Supabase 数据库
-6. 记录列表页（按日期分组，展开/删除）
-7. PWA + Vercel 部署完成
+4. 语音输入（桌面 Chrome 正常；安卓暂不可用）
+5. 保存到 Supabase
+6. 记录列表页（按日期分组，可删除）
+7. PWA + Vercel 部署
 
-## 待解决问题
-- 安卓手机语音识别不可用（Web Speech API 需访问 Google 服务器，国内受限）
-- 解决方案：后续接入讯飞语音 API（每用户自己填 API Key，500次/天免费）
+## 阶段二完成 ✅
+1. 设置页（SettingsPage.jsx）—— AI 提供商切换 + API Key 管理 + 测试连接
+2. AI 对话界面（AIConversation.jsx）
+   - 新写日记后自动进入对话
+   - 旧日记可从详情页点按钮进入对话
+   - 对话存 localStorage（key: chat_session_{entry.id}），刷新可恢复
+   - 点"完成"→ 静默提取14个字段 + 保存到 Supabase + 更新记忆
+3. AI 问题库（prompts.js）
+   - 按字段分组的预设问题（背景/情绪/身体/念头/需求/认知/洞见等）
+   - AI 从库中选最合适的问题，不自行生成
+   - 含提问时机原则（4条：情绪优先/跟着用户走/结尾才总结/危机优先）
+4. AI 跨对话记忆（memory.js → Supabase user_memory）
+   - rolling_summary：历史对话压缩摘要（每次对话后更新）
+   - user_profile：用户画像（跨对话积累）
+   - 多端同步，不受清缓存影响
+5. 记录详情页（RecordDetail.jsx）—— 展示所有提取字段 + 对话记录
 
-## 项目文件结构
+## 当前文件结构
 ```
 src/
-  App.jsx              # 主入口，登录状态路由
-  main.jsx
-  index.css            # 全局样式（Tailwind）
-  App.css              # 已清空
+  App.jsx / main.jsx / index.css
   contexts/
-    AuthContext.jsx    # 用户登录状态管理
+    AuthContext.jsx          # 登录状态管理
   components/
-    MainLayout.jsx     # 底部导航 + 页面切换
+    MainLayout.jsx           # 底部导航 + AI对话全屏覆盖
+    AIConversation.jsx       # AI对话主界面
+    RecordDetail.jsx         # 记录详情页
   pages/
-    AuthPage.jsx       # 登录/注册页
-    HomePage.jsx       # 首页（输入记录）
-    RecordsPage.jsx    # 记录列表页
+    AuthPage.jsx             # 登录/注册
+    HomePage.jsx             # 首页（写日记）
+    RecordsPage.jsx          # 记录列表
+    SettingsPage.jsx         # 设置页
   hooks/
-    useSpeechRecognition.js  # 语音输入 Hook（含5秒静默自停、自动加标点）
+    useSpeechRecognition.js  # 语音输入
   lib/
-    supabase.js        # Supabase 客户端
+    supabase.js              # Supabase 客户端
+    aiClient.js              # AI调用层（Gemini/Deepseek，支持 maxTokens 参数）
+    prompts.js               # 系统提示词 + 问题库（硬编码，不存DB）
+    memory.js                # AI记忆读写（Supabase user_memory）
+    localDB.js               # ⚠️ 孤儿文件，已被 memory.js 替代，待删除
 ```
 
-## 阶段二待做
-1. Claude API 接入（设置页让用户填自己的 API Key，存本地）
-2. 记录保存后显示 AI 对话入口
-3. AI 引导觉察对话（气泡式聊天）
-4. 对话结束后自动提取结构化字段（情绪评分、事件、反应等）
-5. 记录详情页展示结构化字段
+## 关键架构决策（已确定，不要轻易改动）
+- AI记忆存 Supabase（多端同步）→ memory.js
+- 对话缓存用 localStorage（防刷新丢失）→ AIConversation.jsx
+- 问题库硬编码在 prompts.js（不存DB，更新靠 git push）
+- APK 用 Capacitor 套壳（功能完成后再做，现有代码零修改）
+- 暂不做离线写日记（复杂度高，需求不确定）
+- AI 提取字段：对话结束后静默提取，不展示审阅步骤
+
+## 待处理清单
+- [ ] 删除 localDB.js（孤儿文件）
+- [ ] 静默提取失败时给用户简短反馈
+- [ ] Cloudflare Pages 部署（国内访问无需 VPN）
+- [ ] 安卓语音输入（接入讯飞 API）
+- [ ] 设置页加"清空记忆"按钮
+- [ ] UI 整体重设计（用户有意向重新设计交互布局）
+- [ ] Capacitor APK 打包
+
+## ⚠️ 工作规范（重要）
+- **改代码前必须先讨论方案，不直接动手**
+- 流程：superpowers:brainstorming 讨论 → 用户确认 → 执行
+- 大改动用 Agent 后台跑，小修改直接用 Edit 工具
+- 写大文件用 Write 工具直接写，不要交给 Agent（会 504 超时）
 
 ## 注意事项
-- .env 文件不能提交 GitHub（已在 .gitignore 排除）
+- .env 文件不能提交 GitHub（已在 .gitignore）
 - Vercel 环境变量已配置完毕
-- 每次改完代码：git add . && git commit -m "说明" && git push，Vercel 自动部署
+- 每次改完：git add → git commit → git push → Vercel 自动部署
+- Gemini 免费版：1500次/天，模型 gemini-flash-latest
+- Supabase maxOutputTokens：对话用450，提取用1200，记忆更新用600
