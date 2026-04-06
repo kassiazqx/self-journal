@@ -97,7 +97,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
     }
 
     // 立即回调（跳转），后台静默 UPDATE
-    onComplete?.()
+    onComplete?.({ stateScore })
 
     supabase
       .from('journal_entries')

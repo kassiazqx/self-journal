@@ -51,18 +51,25 @@ function inferDatetime(text) {
   const now = new Date()
   const d = new Date(now)
 
-  // 日期偏移
-  if (text.includes('前天')) d.setDate(d.getDate() - 2)
-  else if (text.includes('昨天')) d.setDate(d.getDate() - 1)
-  // "今天" → 不改日期
+  // 展开口语缩写，方便后续统一判断
+  const t = text
+    .replace(/昨晚|昨夜/g, '昨天晚上')
+    .replace(/今晚/g, '今天晚上')
+    .replace(/今早|今晨/g, '今天早上')
+
+  // 日期偏移（今天优先级最高，大前天必须在前天之前检查）
+  if (t.includes('今天'))        { /* 不改日期 */ }
+  else if (t.includes('大前天')) d.setDate(d.getDate() - 3)
+  else if (t.includes('前天'))   d.setDate(d.getDate() - 2)
+  else if (t.includes('昨天'))   d.setDate(d.getDate() - 1)
 
   // 时段 → 设定代表小时
-  if (text.includes('凌晨'))                          d.setHours(1, 0, 0, 0)
-  else if (text.includes('早上') || text.includes('上午')) d.setHours(9, 0, 0, 0)
-  else if (text.includes('中午'))                     d.setHours(12, 0, 0, 0)
-  else if (text.includes('下午'))                     d.setHours(16, 0, 0, 0)
-  else if (text.includes('傍晚'))                     d.setHours(18, 0, 0, 0)
-  else if (text.includes('晚上') || text.includes('夜里')) d.setHours(21, 0, 0, 0)
+  if (t.includes('凌晨'))                            d.setHours(1, 0, 0, 0)
+  else if (t.includes('早上') || t.includes('上午')) d.setHours(9, 0, 0, 0)
+  else if (t.includes('中午'))                       d.setHours(12, 0, 0, 0)
+  else if (t.includes('下午'))                       d.setHours(16, 0, 0, 0)
+  else if (t.includes('傍晚'))                       d.setHours(18, 0, 0, 0)
+  else if (t.includes('晚上') || t.includes('夜里')) d.setHours(21, 0, 0, 0)
 
   return toDatetimeLocal(d)
 }
@@ -80,6 +87,7 @@ export default function HomePage({ onNextStep, editEntry }) {
     editEntry ? toDatetimeLocal(editEntry.created_at) : toDatetimeLocal(new Date())
   )
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showTimePicker, setShowTimePicker] = useState(false)
   const [error, setError] = useState('')
   const [voiceError, setVoiceError] = useState('')
   const textareaRef = useRef(null)
@@ -113,10 +121,31 @@ export default function HomePage({ onNextStep, editEntry }) {
     setSelectedTemplate(prev => prev === templateId ? null : templateId)
   }
 
-  // 用户手动改时间
-  const handleDateChange = (val) => {
+  // 用户手动改日期
+  const handleDatePartChange = (dateVal) => {
     userEditedDate.current = true
-    setEntryDatetime(val)
+    const timePart = entryDatetime.slice(11, 16) || '00:00'
+    setEntryDatetime(`${dateVal}T${timePart}`)
+    setShowDatePicker(false)
+  }
+
+  // 用户手动改时间
+  const handleTimePartChange = (timeVal) => {
+    userEditedDate.current = true
+    const datePart = entryDatetime.slice(0, 10)
+    setEntryDatetime(`${datePart}T${timeVal}`)
+  }
+
+  // 日期显示文字
+  const formatDateLabel = () => {
+    const d = new Date(entryDatetime)
+    return d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
+  }
+
+  // 时间显示文字
+  const formatTimeLabel = () => {
+    const d = new Date(entryDatetime)
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   }
 
   // 语音
@@ -186,14 +215,6 @@ export default function HomePage({ onNextStep, editEntry }) {
     userEditedDate.current = false
   }
 
-  // 日期时间显示文字
-  const formatPickerLabel = () => {
-    const d = new Date(entryDatetime)
-    return d.toLocaleString('zh-CN', {
-      month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -265,24 +286,47 @@ export default function HomePage({ onNextStep, editEntry }) {
           )}
         </div>
 
-        {/* 日期时间选择器 */}
-        <div>
-          <button
-            onClick={() => setShowDatePicker(p => !p)}
-            className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
-          >
-            <span>📅</span>
-            <span>{formatPickerLabel()}</span>
-            <span>{showDatePicker ? '▲' : '▼'}</span>
-          </button>
-          {showDatePicker && (
-            <input
-              type="datetime-local"
-              value={entryDatetime}
-              onChange={e => handleDateChange(e.target.value)}
-              className="mt-2 w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
-            />
-          )}
+        {/* 日期 + 时间选择器（分开两个按钮） */}
+        <div className="flex gap-2 flex-wrap">
+          {/* 日期按钮 */}
+          <div>
+            <button
+              onClick={() => { setShowDatePicker(p => !p); setShowTimePicker(false) }}
+              className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
+            >
+              <span>📅</span>
+              <span>{formatDateLabel()}</span>
+              <span>{showDatePicker ? '▲' : '▼'}</span>
+            </button>
+            {showDatePicker && (
+              <input
+                type="date"
+                value={entryDatetime.slice(0, 10)}
+                onChange={e => handleDatePartChange(e.target.value)}
+                className="mt-2 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+              />
+            )}
+          </div>
+
+          {/* 时间按钮 */}
+          <div>
+            <button
+              onClick={() => { setShowTimePicker(p => !p); setShowDatePicker(false) }}
+              className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
+            >
+              <span>🕐</span>
+              <span>{formatTimeLabel()}</span>
+              <span>{showTimePicker ? '▲' : '▼'}</span>
+            </button>
+            {showTimePicker && (
+              <input
+                type="time"
+                value={entryDatetime.slice(11, 16)}
+                onChange={e => handleTimePartChange(e.target.value)}
+                className="mt-2 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+              />
+            )}
+          </div>
         </div>
 
         {/* 操作栏：语音 + 下一步 */}
@@ -304,14 +348,13 @@ export default function HomePage({ onNextStep, editEntry }) {
           <button
             onClick={handleNext}
             disabled={!content.trim()}
-            className={`flex-1 h-14 rounded-2xl font-medium text-base flex items-center justify-center gap-2 transition-all duration-200 active:scale-95 ${
+            className={`flex-1 h-14 rounded-2xl font-medium text-base flex items-center justify-center transition-all duration-200 active:scale-95 ${
               content.trim()
                 ? 'bg-amber-500 text-white shadow-sm hover:bg-amber-600'
                 : 'bg-gray-100 text-gray-300 cursor-not-allowed'
             }`}
           >
-            <span>下一步</span>
-            <ArrowRight size={20} />
+            <ArrowRight size={22} />
           </button>
         </div>
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Home, BookOpen, Settings, MessageCircle, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import HomePage from '../pages/HomePage'
@@ -39,8 +39,8 @@ export default function MainLayout() {
   }
 
   // ── TaggingPage "完成/保存" 后 ───────────────────────────────
-  const handleTaggingComplete = () => {
-    const shouldSuggest = taggingEntry?._shouldSuggestChat
+  const handleTaggingComplete = ({ stateScore } = {}) => {
+    const shouldSuggest = taggingEntry?._shouldSuggestChat || (stateScore !== null && stateScore !== undefined && stateScore < 0)
     setTaggingEntry(null)
     if (shouldSuggest) {
       setSuggestEntry(taggingEntry)   // 显示"聊聊吗？"
@@ -79,6 +79,17 @@ export default function MainLayout() {
     setEditEntry(entry)
     setActiveTab('home')  // 确保 home 标签在 DOM 里
   }
+
+  // ── "聊聊吗？"横幅 3 秒后自动消失 ────────────────────────────
+  useEffect(() => {
+    if (!suggestEntry) return
+    const timer = setTimeout(() => {
+      setSuggestEntry(null)
+      setActiveTab('records')
+      setRecordsRefreshKey(k => k + 1)
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [suggestEntry])
 
   // ── 全屏覆盖：AI 对话 ────────────────────────────────────────
   if (aiEntry) {
