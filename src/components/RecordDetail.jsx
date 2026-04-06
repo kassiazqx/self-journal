@@ -1,11 +1,12 @@
-import { ArrowLeft, MessageCircle, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 
 const TEMPLATE_MAP = {
-  gratitude: { emoji: '💛', label: '感恩日记', color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-  learning:  { emoji: '🧠', label: '学习输出', color: 'bg-blue-50 text-blue-600 border-blue-100' },
-  emotion:   { emoji: '😤', label: '情绪觉察', color: 'bg-purple-50 text-purple-600 border-purple-100' },
-  action:    { emoji: '🏃', label: '运动记录', color: 'bg-green-50 text-green-600 border-green-100' },
-  free:      { emoji: '✨', label: '随手记',   color: 'bg-gray-50 text-gray-500 border-gray-100' },
+  gratitude: { emoji: '🩷', label: '感恩',  color: 'bg-pink-50 text-pink-600 border-pink-100' },
+  learning:  { emoji: '📝', label: '学习',  color: 'bg-blue-50 text-blue-600 border-blue-100' },
+  emotion:   { emoji: '🌷', label: '觉察',  color: 'bg-purple-50 text-purple-600 border-purple-100' },
+  action:    { emoji: '💪🏻', label: '行动', color: 'bg-green-50 text-green-600 border-green-100' },
+  free:      { emoji: '✨', label: '灵感',  color: 'bg-gray-50 text-gray-500 border-gray-100' },
 }
 
 function formatDate(str) {
@@ -48,7 +49,8 @@ function ScoreBar({ score }) {
   )
 }
 
-export default function RecordDetail({ entry, onBack, onStartAI }) {
+export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
   const hasExtraction = entry.primary_emotion || entry.reflection_insight ||
     entry.overall_state_score !== null || entry.core_needs?.length > 0
@@ -68,7 +70,47 @@ export default function RecordDetail({ entry, onBack, onStartAI }) {
             {template.emoji} {template.label}
           </span>
         </div>
+        {/* "…" 菜单按钮 */}
+        {(onEdit || onDelete) && (
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="text-gray-400 active:scale-95 transition-transform p-1"
+          >
+            <MoreHorizontal size={20} />
+          </button>
+        )}
       </div>
+
+      {/* "…" 底部菜单 */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-sm bg-white rounded-t-3xl pb-8 fade-in safe-bottom"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-4 mb-4" />
+            {onEdit && (
+              <button
+                onClick={() => { setMenuOpen(false); onEdit(entry) }}
+                className="w-full flex items-center gap-3 px-6 py-4 text-gray-700 active:bg-gray-50"
+              >
+                <Pencil size={18} className="text-gray-400" />
+                <span className="text-base">编辑</span>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => { setMenuOpen(false); onDelete(entry) }}
+                className="w-full flex items-center gap-3 px-6 py-4 text-red-500 active:bg-red-50"
+              >
+                <Trash2 size={18} />
+                <span className="text-base">删除</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-4">
         {/* 时间 */}

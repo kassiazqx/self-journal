@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Loader2, BookOpen, ChevronDown, Trash2 } from 'lucide-react'
+import { Loader2, BookOpen, Pencil, Trash2 } from 'lucide-react'
 import RecordDetail from '../components/RecordDetail'
 
 const TEMPLATE_MAP = {
@@ -81,16 +81,40 @@ function DeleteDialog({ entry, onConfirm, onCancel }) {
   )
 }
 
-// 单条记录卡片
-function EntryCard({ entry, onDelete, onOpen }) {
+// 单条记录卡片（支持长按触发操作菜单）
+function EntryCard({ entry, onOpen, onAction }) {
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
-  const isLong = entry.content.length > 120
-  const hasAI = entry.primary_emotion || entry.reflection_insight
+  const hasAI = entry.primary_emotion || entry.reflection_insight || entry.mixed_emotions?.length > 0
+  const longPressTimer = useRef(null)
+  const didLongPress = useRef(false)
+
+  const startLongPress = () => {
+    didLongPress.current = false
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true
+      onAction(entry)
+    }, 500)
+  }
+
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimer.current)
+  }
+
+  const handleClick = () => {
+    if (didLongPress.current) return  // 长按触发了，忽略 click
+    onOpen(entry)
+  }
 
   return (
     <div
-      className="card mb-3 fade-in group cursor-pointer active:scale-[0.99] transition-transform"
-      onClick={() => onOpen(entry)}
+      className="card mb-3 fade-in cursor-pointer active:scale-[0.99] transition-transform select-none"
+      onClick={handleClick}
+      onTouchStart={startLongPress}
+      onTouchEnd={cancelLongPress}
+      onTouchMove={cancelLongPress}
+      onMouseDown={startLongPress}
+      onMouseUp={cancelLongPress}
+      onMouseLeave={cancelLongPress}
     >
       {/* 顶部：模板标签 + 时间 */}
       <div className="flex items-center justify-between mb-2.5">
@@ -105,22 +129,26 @@ function EntryCard({ entry, onDelete, onOpen }) {
         {entry.content}
       </p>
 
-      {/* AI 分析标记 */}
+      {/* 情绪/AI 标记 */}
       {hasAI && (
-        <div className="flex items-center gap-1 mt-2">
-          <span className="text-xs text-amber-400">✦ 已分析</span>
+        <div className="flex items-center gap-1 mt-2 flex-wrap">
           {entry.primary_emotion && (
             <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
               {entry.primary_emotion}
             </span>
           )}
+          {entry.mixed_emotions?.slice(0, 2).map(e => (
+            <span key={e} className="text-xs px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full border border-gray-100">
+              {e}
+            </span>
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-export default function RecordsPage({ refreshKey, onStartAI }) {
+export default function RecordsPage({ refreshKey, onStartAI, onEdit }) {
   const { user } = useAuth()
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -128,6 +156,7 @@ export default function RecordsPage({ refreshKey, onStartAI }) {
   const [hasMore, setHasMore] = useState(true)
   const [detailEntry, setDetailEntry] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [actionTarget, setActionTarget] = useState(null)  // 长按操作菜单目标
   const PAGE_SIZE = 20
 
   const fetchEntries = useCallback(async (reset = false) => {
@@ -182,9 +211,17 @@ export default function RecordsPage({ refreshKey, onStartAI }) {
 
   const grouped = groupByDate(entries)
 
-  // 详情页覆盖，同时把 onStartAI 透传给 RecordDetail
+  // 详情页覆盖
   if (detailEntry) {
-    return <RecordDetail entry={detailEntry} onBack={() => setDetailEntry(null)} onStartAI={onStartAI} />
+    return (
+      <RecordDetail
+        entry={detailEntry}
+        onBack={() => setDetailEntry(null)}
+        onStartAI={onStartAI}
+        onEdit={onEdit ? (e) => { setDetailEntry(null); onEdit(e) } : undefined}
+        onDelete={(e) => { setDetailEntry(null); setDeleteTarget(e) }}
+      />
+    )
   }
 
   return (
@@ -223,8 +260,8 @@ export default function RecordsPage({ refreshKey, onStartAI }) {
                   <EntryCard
                     key={entry.id}
                     entry={entry}
-                    onDelete={setDeleteTarget}
                     onOpen={setDetailEntry}
+                    onAction={setActionTarget}
                   />
                 ))}
               </div>
@@ -258,6 +295,36 @@ export default function RecordsPage({ refreshKey, onStartAI }) {
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
         />
+      )}
+
+      {/* 长按操作菜单 */}
+      {actionTarget && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setActionTarget(null)}>
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-sm bg-white rounded-t-3xl pb-8 fade-in safe-bottom"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-4 mb-2" />
+            <p className="text-xs text-gray-300 text-center mb-2 px-6 line-clamp-1">{actionTarget.content}</p>
+            {onEdit && (
+              <button
+                onClick={() => { setActionTarget(null); onEdit(actionTarget) }}
+                className="w-full flex items-center gap-3 px-6 py-4 text-gray-700 active:bg-gray-50"
+              >
+                <Pencil size={18} className="text-gray-400" />
+                <span className="text-base">编辑</span>
+              </button>
+            )}
+            <button
+              onClick={() => { setActionTarget(null); setDeleteTarget(actionTarget) }}
+              className="w-full flex items-center gap-3 px-6 py-4 text-red-500 active:bg-red-50"
+            >
+              <Trash2 size={18} />
+              <span className="text-base">删除</span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
