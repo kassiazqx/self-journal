@@ -53,7 +53,7 @@ export default function MainLayout() {
     <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
       <div className="flex-1 overflow-hidden min-h-0">
         <div className={`h-full overflow-y-auto ${activeTab === 'home' ? 'block' : 'hidden'}`}>
-          <HomePage onSaved={handleSaved} />
+          <HomePage onNextStep={handleSaved} />
         </div>
         <div className={`h-full overflow-y-auto ${activeTab === 'records' ? 'block' : 'hidden'}`}>
           <RecordsPage refreshKey={recordsRefreshKey} onStartAI={handleStartAI} />
