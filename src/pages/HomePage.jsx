@@ -206,6 +206,9 @@ export default function HomePage({ onNextStep, editEntry }) {
   const [categoryInput, setCategoryInput] = useState('')
   const userEditedCategories = useRef(isEditMode)
 
+  // 关联事件
+  const [eventName, setEventName] = useState(editEntry?.event_name ?? '')
+
   // 用户是否手动改过时间（手动改过后不再自动覆盖）
   const userEditedDate = useRef(isEditMode)
 
@@ -321,10 +324,10 @@ export default function HomePage({ onNextStep, editEntry }) {
 
     if (isEditMode) {
       // 编辑：立即回调（entry.id 已知），后台 UPDATE 原文
-      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories }
+      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null }
       onNextStep?.(updatedEntry)
       supabase.from('journal_entries')
-        .update({ content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories })
+        .update({ content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null })
         .eq('id', editEntry.id)
         .eq('user_id', user.id)
         .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
@@ -338,6 +341,7 @@ export default function HomePage({ onNextStep, editEntry }) {
         template_type: templateType,
         created_at: createdAt,
         category_tags: selectedCategories,
+        event_name: eventName.trim() || null,
       }
       onNextStep?.(newEntry)
       supabase.from('journal_entries')
@@ -351,6 +355,7 @@ export default function HomePage({ onNextStep, editEntry }) {
     setEntryDatetime(toDatetimeLocal(new Date()))
     setSelectedCategories([])
     setExtraCategories([])
+    setEventName('')
     userEditedDate.current = false
     userEditedCategories.current = false
   }
@@ -447,6 +452,16 @@ export default function HomePage({ onNextStep, editEntry }) {
             </button>
           </div>
         )}
+
+        <div className="mt-3">
+          <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">关联事件（选填）</p>
+          <input
+            value={eventName}
+            onChange={e => setEventName(e.target.value)}
+            placeholder="例如：觉察日记app、reader网站搭建"
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+          />
+        </div>
       </div>
 
       {/* 语音错误提示 */}
