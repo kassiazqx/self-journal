@@ -103,15 +103,15 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
 
   const template = TEMPLATE_MAP[localEntry.template_type] || TEMPLATE_MAP.free
 
+  const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
+
   const hasExtraction = localEntry.reflection_insight || localEntry.cognitive_distortion_type ||
     localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
     localEntry.body_sensations?.length > 0 || localEntry.current_thought ||
     localEntry.current_behavior || localEntry.handling_rating ||
     localEntry.primary_emotion || localEntry.mixed_emotions?.length > 0 ||
-    localEntry.overall_state_score !== null && localEntry.overall_state_score !== undefined ||
+    (localEntry.overall_state_score !== null && localEntry.overall_state_score !== undefined) ||
     hasConversation
-
-  const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
   const hasAI = hasExtraction || hasConversation
 
   const emotionList = [
