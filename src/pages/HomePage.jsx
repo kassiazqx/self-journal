@@ -3,7 +3,7 @@ import { Mic, MicOff, ArrowRight, Plus, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
-import { detectCategories, PREDEFINED_CATEGORIES } from '../lib/keywordDetection'
+import { detectCategories, PREDEFINED_CATEGORIES, detectPeople } from '../lib/keywordDetection'
 
 // 模板配置
 const TEMPLATES = [
@@ -209,6 +209,12 @@ export default function HomePage({ onNextStep, editEntry }) {
   // 关联事件
   const [eventName, setEventName] = useState(editEntry?.event_name ?? '')
 
+  // 涉及人员
+  const [selectedPeople, setSelectedPeople] = useState(
+    editEntry?.people_involved ?? []
+  )
+  const userEditedPeople = useRef(isEditMode)
+
   // 用户是否手动改过时间（手动改过后不再自动覆盖）
   const userEditedDate = useRef(isEditMode)
 
@@ -236,6 +242,12 @@ export default function HomePage({ onNextStep, editEntry }) {
   useEffect(() => {
     if (userEditedCategories.current) return
     setSelectedCategories(detectCategories(content))
+  }, [content])
+
+  // 随输入自动识别涉及人员（仅用户未手动调整过时）
+  useEffect(() => {
+    if (userEditedPeople.current) return
+    setSelectedPeople(detectPeople(content))
   }, [content])
 
   const activeTemplate = TEMPLATES.find(t => t.id === selectedTemplate)
@@ -324,10 +336,10 @@ export default function HomePage({ onNextStep, editEntry }) {
 
     if (isEditMode) {
       // 编辑：立即回调（entry.id 已知），后台 UPDATE 原文
-      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null }
+      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople }
       onNextStep?.(updatedEntry)
       supabase.from('journal_entries')
-        .update({ content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null })
+        .update({ content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople })
         .eq('id', editEntry.id)
         .eq('user_id', user.id)
         .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
@@ -342,6 +354,7 @@ export default function HomePage({ onNextStep, editEntry }) {
         created_at: createdAt,
         category_tags: selectedCategories,
         event_name: eventName.trim() || null,
+        people_involved: selectedPeople,
       }
       onNextStep?.(newEntry)
       supabase.from('journal_entries')
@@ -356,8 +369,10 @@ export default function HomePage({ onNextStep, editEntry }) {
     setSelectedCategories([])
     setExtraCategories([])
     setEventName('')
+    setSelectedPeople([])
     userEditedDate.current = false
     userEditedCategories.current = false
+    userEditedPeople.current = false
   }
 
 
@@ -462,6 +477,28 @@ export default function HomePage({ onNextStep, editEntry }) {
             className="w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
           />
         </div>
+
+        {/* 涉及人员 */}
+        {selectedPeople.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">涉及人员</p>
+            <div className="flex flex-wrap gap-2">
+              {selectedPeople.map(person => (
+                <button
+                  key={person}
+                  onClick={() => {
+                    userEditedPeople.current = true
+                    setSelectedPeople(prev => prev.filter(p => p !== person))
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-gray-100 text-gray-600 border border-gray-200 active:scale-95"
+                >
+                  <span>👤 {person}</span>
+                  <X size={12} className="text-gray-400" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 语音错误提示 */}

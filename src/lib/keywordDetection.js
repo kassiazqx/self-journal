@@ -92,3 +92,45 @@ export function detectCategories(text) {
   }
   return matched
 }
+
+// ─── 涉及人员关键词映射（keyword → 规范名称）────────────────────
+const PEOPLE_KEYWORD_MAP = {
+  '妈妈': ['妈妈', '母亲', '老妈', '阿妈'],
+  '爸爸': ['爸爸', '父亲', '老爸', '阿爸'],
+  '奶奶': ['奶奶', '祖母'],
+  '爷爷': ['爷爷', '祖父'],
+  '外婆': ['外婆', '姥姥', '外祖母'],
+  '外公': ['外公', '姥爷', '外祖父'],
+  '哥哥': ['哥哥', '大哥', '兄长'],
+  '弟弟': ['弟弟', '小弟'],
+  '姐姐': ['姐姐', '大姐'],
+  '妹妹': ['妹妹', '小妹'],
+  '男友': ['男友', '男朋友', '男盆友'],
+  '女友': ['女友', '女朋友', '女盆友'],
+  '老公': ['老公', '丈夫', '先生'],
+  '老婆': ['老婆', '妻子', '太太'],
+  '婆婆': ['婆婆'],
+  '老板': ['老板', '上司', '领导'],
+  '同事': ['同事'],
+  '客户': ['客户', '甲方'],
+  '朋友': ['朋友', '好友', '好朋友'],
+  '闺蜜': ['闺蜜', '死党'],
+  '同学': ['同学'],
+  '室友': ['室友'],
+}
+
+/**
+ * 根据文本内容检测涉及人员
+ * @param {string} text
+ * @returns {string[]} 匹配到的人员规范名称数组
+ */
+export function detectPeople(text) {
+  if (!text) return []
+  const matched = []
+  for (const [canonical, keywords] of Object.entries(PEOPLE_KEYWORD_MAP)) {
+    if (keywords.some(kw => text.includes(kw))) {
+      matched.push(canonical)
+    }
+  }
+  return matched
+}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 const TEMPLATE_MAP = {
   gratitude: { emoji: '🩷', label: '感恩',  color: 'bg-pink-50 text-pink-600 border-pink-100' },
@@ -16,32 +17,19 @@ function formatDate(str) {
   })
 }
 
-// 单个字段展示
-function FieldRow({ label, value }) {
-  if (value === null || value === undefined || value === '') return null
-  if (Array.isArray(value) && value.length === 0) return null
-  const display = Array.isArray(value) ? value.join('、') : String(value)
-  return (
-    <div className="flex gap-3 py-2.5 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-400 w-20 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-sm text-gray-700 flex-1 leading-relaxed">{display}</span>
-    </div>
-  )
-}
-
 // 状态分数可视化
 function ScoreBar({ score }) {
   if (score === null || score === undefined) return null
   const pct = ((score + 5) / 10) * 100
   const color = score >= 2 ? 'bg-green-400' : score <= -2 ? 'bg-red-400' : 'bg-amber-400'
   return (
-    <div className="flex gap-3 py-2.5 border-b border-gray-50 items-center">
-      <span className="text-xs text-gray-400 w-20 flex-shrink-0">整体状态</span>
+    <div className="flex gap-3 py-2 items-center">
+      <span className="text-xs text-gray-400 w-16 flex-shrink-0">状态</span>
       <div className="flex-1 flex items-center gap-2">
-        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-sm font-medium text-gray-700 w-8 text-right">
+        <span className="text-xs font-medium text-gray-600 w-6 text-right">
           {score > 0 ? `+${score}` : score}
         </span>
       </div>
@@ -49,14 +37,94 @@ function ScoreBar({ score }) {
   )
 }
 
+// 可折叠区域
+function Collapsible({ title, icon, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="card">
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-1.5">
+          {icon}
+          <p className="text-xs font-medium text-gray-500">{title}</p>
+        </div>
+        {open ? <ChevronUp size={14} className="text-gray-300" /> : <ChevronDown size={14} className="text-gray-300" />}
+      </button>
+      {open && <div className="mt-3 space-y-1">{children}</div>}
+    </div>
+  )
+}
+
+// 可编辑字段行
+function EditableFieldRow({ label, value, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const display = Array.isArray(value) ? value.join('、') : (value ?? '')
+  const [draft, setDraft] = useState(display)
+
+  if (!display && !editing) return null
+
+  const handleSave = () => {
+    setEditing(false)
+    onSave(draft)
+  }
+
+  return (
+    <div className="flex gap-3 py-2 border-b border-gray-50 last:border-0 group items-start">
+      <span className="text-xs text-gray-400 w-16 flex-shrink-0 pt-0.5">{label}</span>
+      {editing ? (
+        <textarea
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={handleSave}
+          autoFocus
+          rows={2}
+          className="flex-1 text-sm text-gray-700 border border-amber-300 rounded-lg px-2 py-1 focus:outline-none resize-none"
+        />
+      ) : (
+        <>
+          <span className="text-sm text-gray-700 flex-1 leading-relaxed">{display}</span>
+          <button
+            onClick={() => { setDraft(display); setEditing(true) }}
+            className="text-gray-300 opacity-0 group-hover:opacity-100 active:opacity-100 flex-shrink-0 mt-0.5"
+          >
+            <Pencil size={13} />
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
-  const hasExtraction = entry.primary_emotion || entry.reflection_insight ||
-    entry.overall_state_score !== null || entry.core_needs?.length > 0
-  const hasConversation = Array.isArray(entry.full_conversation) && entry.full_conversation.length > 0
-  // 有提取字段或对话记录，视为已做过 AI 分析
+  const [localEntry, setLocalEntry] = useState(entry)
+
+  const template = TEMPLATE_MAP[localEntry.template_type] || TEMPLATE_MAP.free
+
+  const hasExtraction = localEntry.reflection_insight || localEntry.cognitive_distortion_type ||
+    localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
+    localEntry.body_sensations?.length > 0 || localEntry.current_thought ||
+    localEntry.current_behavior
+
+  const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
   const hasAI = hasExtraction || hasConversation
+
+  const emotionList = [
+    localEntry.primary_emotion,
+    ...(Array.isArray(localEntry.mixed_emotions) ? localEntry.mixed_emotions : [])
+  ].filter(Boolean)
+
+  // 火-and-forget 单字段保存
+  const handleFieldSave = (field, value) => {
+    setLocalEntry(prev => ({ ...prev, [field]: value }))
+    supabase.from('journal_entries')
+      .update({ [field]: value })
+      .eq('id', localEntry.id)
+      .eq('user_id', localEntry.user_id)
+      .then(({ error: e }) => { if (e) console.error(`[field:${field}] 保存失败:`, e) })
+  }
 
   return (
     <div className="flex flex-col h-full bg-[#fdfaf7]">
@@ -65,12 +133,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
         <button onClick={onBack} className="text-gray-400 active:scale-95 transition-transform">
           <ArrowLeft size={22} />
         </button>
-        <div className="flex-1">
-          <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
-            {template.emoji} {template.label}
-          </span>
-        </div>
-        {/* "…" 菜单按钮 */}
+        <div className="flex-1" />
         {(onEdit || onDelete) && (
           <button
             onClick={() => setMenuOpen(true)}
@@ -112,49 +175,86 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-4">
-        {/* 时间 */}
-        <p className="text-xs text-gray-400">{formatDate(entry.created_at)}</p>
+      <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-3">
 
-        {/* 原始内容 */}
+        {/* ── 基本信息卡 ── */}
         <div className="card">
-          <p className="text-xs text-gray-400 mb-2">原始记录</p>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+          <p className="text-xs text-gray-400 mb-2">{formatDate(localEntry.created_at)}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {/* 模板 */}
+            <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
+              {template.emoji} {template.label}
+            </span>
+            {/* 大类标签 */}
+            {localEntry.category_tags?.map(tag => (
+              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">{tag}</span>
+            ))}
+            {/* 关联事件 */}
+            {localEntry.event_name && (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100">📌 {localEntry.event_name}</span>
+            )}
+            {/* 涉及人员 */}
+            {localEntry.people_involved?.map(p => (
+              <span key={p} className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">👤 {p}</span>
+            ))}
+          </div>
+
+          {/* 情绪 + 状态分 */}
+          {(emotionList.length > 0 || localEntry.overall_state_score !== null) && (
+            <div className="mt-3 pt-3 border-t border-gray-50">
+              <ScoreBar score={localEntry.overall_state_score} />
+              {emotionList.length > 0 && (
+                <div className="flex gap-3 py-2 items-center">
+                  <span className="text-xs text-gray-400 w-16 flex-shrink-0">情绪</span>
+                  <div className="flex flex-wrap gap-1">
+                    {emotionList.map((e, i) => (
+                      <span key={i} className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full border border-purple-100">{e}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {localEntry.handling_rating && (
+                <div className="flex gap-3 py-2 items-center">
+                  <span className="text-xs text-gray-400 w-16 flex-shrink-0">处理方式</span>
+                  <span className="text-sm text-gray-600">{localEntry.handling_rating}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* AI 提取字段 */}
+        {/* ── 原始记录 ── */}
+        <div className="card">
+          <p className="text-xs text-gray-400 mb-2">原始记录</p>
+          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{localEntry.content}</p>
+        </div>
+
+        {/* ── 对话洞见（折叠）── */}
         {hasExtraction && (
-          <div className="card">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Sparkles size={13} className="text-amber-500" />
-              <p className="text-xs font-medium text-gray-500">AI 分析</p>
-            </div>
-            <ScoreBar score={entry.overall_state_score} />
-            <FieldRow label="主情绪"    value={entry.primary_emotion} />
-            <FieldRow label="夹杂情绪"  value={entry.mixed_emotions} />
-            <FieldRow label="身体感受"  value={entry.body_sensations} />
-            <FieldRow label="当下念头"  value={entry.current_thought} />
-            <FieldRow label="核心需求"  value={entry.core_needs} />
-            <FieldRow label="当下行为"  value={entry.current_behavior} />
-            <FieldRow label="处理方式"  value={entry.handling_rating} />
-            <FieldRow label="认知扭曲"  value={entry.cognitive_distortion_type} />
-            <FieldRow label="认知分析"  value={entry.cognitive_analysis} />
-            <FieldRow label="复盘洞见"  value={entry.reflection_insight} />
-            <FieldRow label="大类标签"  value={entry.category_tags} />
-            <FieldRow label="关联事件"  value={entry.event_name} />
-            <FieldRow label="涉及人员"  value={entry.people_involved} />
-          </div>
+          <Collapsible
+            title="对话洞见"
+            icon={<Sparkles size={13} className="text-amber-500" />}
+            defaultOpen={false}
+          >
+            <EditableFieldRow label="反思洞见" value={localEntry.reflection_insight} onSave={v => handleFieldSave('reflection_insight', v)} />
+            <EditableFieldRow label="核心需求" value={localEntry.core_needs} onSave={v => handleFieldSave('core_needs', v.split('、').map(s => s.trim()).filter(Boolean))} />
+            <EditableFieldRow label="认知扭曲" value={localEntry.cognitive_distortion_type} onSave={v => handleFieldSave('cognitive_distortion_type', v)} />
+            <EditableFieldRow label="认知分析" value={localEntry.cognitive_analysis} onSave={v => handleFieldSave('cognitive_analysis', v)} />
+            <EditableFieldRow label="身体感受" value={localEntry.body_sensations} onSave={v => handleFieldSave('body_sensations', v.split('、').map(s => s.trim()).filter(Boolean))} />
+            <EditableFieldRow label="当下念头" value={localEntry.current_thought} onSave={v => handleFieldSave('current_thought', v)} />
+            <EditableFieldRow label="当下行为" value={localEntry.current_behavior} onSave={v => handleFieldSave('current_behavior', v)} />
+          </Collapsible>
         )}
 
-        {/* 完整对话记录 */}
+        {/* ── 完整对话记录（折叠）── */}
         {hasConversation && (
-          <div className="card">
-            <div className="flex items-center gap-1.5 mb-4">
-              <MessageCircle size={13} className="text-gray-400" />
-              <p className="text-xs font-medium text-gray-500">完整对话记录</p>
-            </div>
-            <div className="space-y-3">
-              {entry.full_conversation.map((msg, i) => (
+          <Collapsible
+            title="完整对话记录"
+            icon={<MessageCircle size={13} className="text-gray-400" />}
+            defaultOpen={false}
+          >
+            <div className="space-y-3 pt-1">
+              {localEntry.full_conversation.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                     msg.role === 'user'
@@ -166,10 +266,10 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
                 </div>
               ))}
             </div>
-          </div>
+          </Collapsible>
         )}
 
-        {/* 没有 AI 内容时：显示占位图标 + 按钮（onStartAI 存在时才显示按钮） */}
+        {/* 没有 AI 内容时 */}
         {!hasAI && (
           <div className="text-center py-8">
             <Sparkles size={32} className="text-gray-200 mx-auto mb-3" strokeWidth={1} />
