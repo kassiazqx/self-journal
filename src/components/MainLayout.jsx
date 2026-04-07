@@ -81,7 +81,7 @@ export default function MainLayout() {
   // ── "聊聊吗？"横幅 3 秒后自动消失 ────────────────────────────
   useEffect(() => {
     if (!suggestEntry) return
-    const timer = setTimeout(() => setSuggestEntry(null), 3000)
+    const timer = setTimeout(() => setSuggestEntry(null), 4000)
     return () => clearTimeout(timer)
   }, [suggestEntry])
 
@@ -140,6 +140,7 @@ export default function MainLayout() {
 
         <div className={`h-full overflow-y-auto ${activeTab === 'records' ? 'block' : 'hidden'}`}>
           <RecordsPage
+            isActive={activeTab === 'records'}
             refreshKey={recordsRefreshKey}
             onStartAI={handleStartAI}
             onEdit={handleStartEdit}
