@@ -15,7 +15,11 @@ const NAV_ITEMS = [
 ]
 
 export default function MainLayout() {
-  const [activeTab, setActiveTab] = useState('home')
+  const [activeTab, setActiveTab] = useState(() => {
+    // 刷新后恢复上次所在的 tab（只恢复 home/records/settings 三个主 tab）
+    const saved = localStorage.getItem('activeTab')
+    return NAV_ITEMS.some(n => n.id === saved) ? saved : 'home'
+  })
   const [recordsRefreshKey, setRecordsRefreshKey] = useState(0)
 
   // 流程状态：null → home | taggingEntry → TaggingPage | aiEntry → AI对话
@@ -43,9 +47,9 @@ export default function MainLayout() {
     const shouldSuggest = taggingEntry?._shouldSuggestChat || (stateScore !== null && stateScore !== undefined && stateScore < 0)
     setTaggingEntry(null)
     if (shouldSuggest) {
-      setSuggestEntry(taggingEntry)   // 显示"聊聊吗？"
+      setSuggestEntry(taggingEntry)
     } else {
-      setActiveTab('records')
+      handleSetActiveTab('records')
       setRecordsRefreshKey(k => k + 1)
     }
   }
@@ -65,7 +69,7 @@ export default function MainLayout() {
   const handleAIClose  = () => setAiEntry(null)
   const handleAISaved  = () => {
     setAiEntry(null)
-    setActiveTab('records')
+    handleSetActiveTab('records')
     setRecordsRefreshKey(k => k + 1)
   }
 
@@ -75,10 +79,14 @@ export default function MainLayout() {
   // ── 从记录列表/详情发起编辑 ─────────────────────────────────
   const handleStartEdit = (entry) => {
     setEditEntry(entry)
-    setActiveTab('home')  // 确保 home 标签在 DOM 里
+    handleSetActiveTab('home')
   }
 
-  // ── "聊聊吗？"横幅 3 秒后自动消失 ────────────────────────────
+  // tab 切换时写入 localStorage
+  const handleSetActiveTab = (id) => {
+    setActiveTab(id)
+    localStorage.setItem('activeTab', id)
+  }
   useEffect(() => {
     if (!suggestEntry) return
     const timer = setTimeout(() => setSuggestEntry(null), 4000)
@@ -185,7 +193,7 @@ export default function MainLayout() {
             <button
               key={id}
               className={`nav-item ${activeTab === id ? 'active' : ''}`}
-              onClick={() => setActiveTab(id)}
+              onClick={() => handleSetActiveTab(id)}
             >
               <Icon size={22} strokeWidth={activeTab === id ? 2.2 : 1.8} />
               <span className={`text-xs font-medium ${activeTab === id ? 'text-amber-500' : 'text-gray-400'}`}>
