@@ -68,7 +68,7 @@ async function callGemini(messages, systemPrompt, apiKey, options = {}) {
     contents,
     generationConfig: {
       temperature: 0.85,
-      maxOutputTokens: options.maxTokens ?? 450,  // 对话用 450，提取/记忆更新调用时传 1200
+      maxOutputTokens: options.maxTokens ?? 600,  // 对话用 600，提取/记忆更新调用时传 1200
     },
   }
 

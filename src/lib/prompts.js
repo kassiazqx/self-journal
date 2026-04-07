@@ -153,7 +153,26 @@ export function getSystemPrompt(_templateType, memory = {}) {
 
 // ─── 对话开场：把日记内容格式化为第一条用户消息 ───────────────
 export function getInitialUserMessage(entry) {
-  return `我刚写了一段日记：\n\n「${entry.content}」`
+  let msg = `我刚写了一段日记：\n\n「${entry.content}」`
+
+  // 把 Page 2 已标注的信息附上，让 AI 不再重复询问
+  const known = []
+  const emotions = [entry.primary_emotion, ...(Array.isArray(entry.mixed_emotions) ? entry.mixed_emotions : [])].filter(Boolean)
+  if (emotions.length > 0) known.push(`情绪：${emotions.join('、')}`)
+  if (entry.overall_state_score !== null && entry.overall_state_score !== undefined) {
+    const score = entry.overall_state_score
+    const desc = score >= 3 ? '很好' : score >= 1 ? '还不错' : score === 0 ? '平静' : score >= -2 ? '有些低落' : '比较低落'
+    known.push(`整体状态：${score > 0 ? '+' : ''}${score}（${desc}）`)
+  }
+  if (entry.handling_rating) known.push(`处理方式自评：${entry.handling_rating}`)
+  if (entry.category_tags?.length > 0) known.push(`大类：${entry.category_tags.join('、')}`)
+  if (entry.people_involved?.length > 0) known.push(`涉及人员：${entry.people_involved.join('、')}`)
+
+  if (known.length > 0) {
+    msg += `\n\n【我已标注的信息】\n${known.join('\n')}\n（这些信息你已知晓，无需再重复确认）`
+  }
+
+  return msg
 }
 
 // ─── 记忆更新提示词（对话结束后静默调用，压缩记忆）─────────────

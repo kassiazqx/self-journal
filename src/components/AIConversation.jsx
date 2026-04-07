@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Send, Loader2, Sparkles, Check } from 'lucide-react'
+import { ArrowLeft, Send, Loader2, Sparkles, Check, RotateCcw } from 'lucide-react'
 import { callAI } from '../lib/aiClient'
 import { getSystemPrompt, getInitialUserMessage, getExtractionPrompt, getMemoryUpdatePrompt } from '../lib/prompts'
 import { getMemory, updateMemory } from '../lib/memory'
@@ -37,27 +37,24 @@ function Bubble({ msg }) {
 
 export default function AIConversation({ entry, onClose, onSaved }) {
   const { user } = useAuth()
-  // localStorage key：以 entry.id 区分，刷新后可恢复
   const STORAGE_KEY = `chat_session_${entry.id}`
 
   const [msgs, setMsgs] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)   // 完成保存中
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const systemPromptRef = useRef('')
+  const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
 
-  // 可见消息（过滤掉 hidden 的第一条）
   const visibleMsgs = msgs.filter(m => !m.hidden)
 
-  // 自动滚到底部
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [msgs, loading])
 
-  // 每次 msgs 变化就同步到 localStorage，防止刷新丢失
   useEffect(() => {
     if (msgs.length > 0) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -67,7 +64,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
   }, [msgs])
 
-  // 进入页面：优先从 localStorage 恢复对话，否则重新发第一条
+  // 进入页面：localStorage → DB full_conversation → 新对话
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
@@ -76,31 +73,38 @@ export default function AIConversation({ entry, onClose, onSaved }) {
         if (savedMsgs?.length > 0) {
           setMsgs(savedMsgs)
           systemPromptRef.current = savedPrompt || ''
-          return // 恢复成功，不调用 startChat
+          return
         }
-      } catch {
-        // 解析失败，走正常启动
-      }
+      } catch { /* fall through */ }
     }
+
+    // 尝试从 DB 恢复历史对话（"继续聊"入口）
+    const dbConvo = entry.full_conversation
+    if (Array.isArray(dbConvo) && dbConvo.length > 0) {
+      // 重建 system prompt（不需要等 memory，用空记忆即可）
+      const sysPrompt = getSystemPrompt(entry.template_type, {})
+      systemPromptRef.current = sysPrompt
+      // 第一条 user 消息标记 hidden（原始日记内容）
+      const restored = dbConvo.map((m, i) => ({ ...m, hidden: i === 0 && m.role === 'user' }))
+      setMsgs(restored)
+      return
+    }
+
     startChat()
   }, [])
 
-  // 第一次进入：读记忆 → 生成 system prompt → 发第一条
   async function startChat() {
     setLoading(true)
     setError('')
     try {
       let currentMemory = { rolling_summary: null, user_profile: null }
-      try {
-        currentMemory = await getMemory()
-      } catch (e) {
-        console.error('[memory] 读取记忆失败:', e)
-      }
+      try { currentMemory = await getMemory() } catch (e) { console.error('[memory]', e) }
 
       const sysPrompt = getSystemPrompt(entry.template_type, currentMemory)
       systemPromptRef.current = sysPrompt
 
       const initMsg = getInitialUserMessage(entry)
+      lastUserMsgRef.current = initMsg
       const firstReply = await callAI(
         [{ role: 'user', content: initMsg }],
         sysPrompt
@@ -116,10 +120,10 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
   }
 
-  // 发送消息
   async function sendMsg() {
     if (!input.trim() || loading) return
     const userMsg = { role: 'user', content: input.trim() }
+    lastUserMsgRef.current = userMsg.content
     const next = [...msgs, userMsg]
     setMsgs(next)
     setInput('')
@@ -136,84 +140,121 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
   }
 
-  // 点「完成」：静默提取字段 → 保存到 Supabase → 更新记忆 → 退出
-  // 全程用户只看到顶部「保存中…」，没有中间审阅步骤
+  // 重试：重发最后一条用户消息
+  async function retryLastMsg() {
+    if (loading || !lastUserMsgRef.current) return
+    // 如果最后一条是 user（发送失败），保留；否则是初始化失败，重新 startChat
+    const lastMsg = msgs[msgs.length - 1]
+    if (msgs.length === 0 || (lastMsg?.role === 'user' && !lastMsg.hidden)) {
+      // 重发最后一条 user 消息
+      setLoading(true)
+      setError('')
+      try {
+        const apiMsgs = msgs.map(m => ({ role: m.role, content: m.content }))
+        const reply = await callAI(apiMsgs, systemPromptRef.current)
+        setMsgs(prev => [...prev, { role: 'assistant', content: reply }])
+      } catch (e) {
+        setError(e.message)
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      // 初始化失败，重新开始
+      setMsgs([])
+      startChat()
+    }
+  }
+
+  // 点「完成」：立即保存 full_conversation → 立即调 onSaved → 后台提取+记忆
   async function finishAndSave() {
     if (saving || loading) return
     setSaving(true)
     setError('')
+
+    const convoRecord = visibleMsgs.map(m => ({ role: m.role, content: m.content }))
+
     try {
-      const convoText = visibleMsgs
-        .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
-        .join('\n\n')
-
-      // 1. 静默提取字段（失败不阻断保存）
-      let extraction = {}
-      try {
-        const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt()}`
-        const raw = await callAI(
-          [{ role: 'user', content: extractPrompt }],
-          '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
-          { maxTokens: 1200 }
-        )
-        const match = raw.match(/\{[\s\S]*\}/)
-        if (match) extraction = JSON.parse(match[0])
-      } catch (e) {
-        console.error('[extract] 提取失败（静默处理）:', e)
-      }
-
-      // 2. 保存对话记录 + 提取结果到 Supabase
-      const convoRecord = visibleMsgs.map(m => ({ role: m.role, content: m.content }))
+      // 1. 立即保存对话记录
       const { error: dbErr } = await supabase
         .from('journal_entries')
-        .update({
-          primary_emotion:           extraction.primary_emotion          ?? null,
-          mixed_emotions:            extraction.mixed_emotions           ?? [],
-          overall_state_score:       extraction.overall_state_score      ?? null,
-          body_sensations:           extraction.body_sensations          ?? null,
-          current_thought:           extraction.current_thought          ?? null,
-          core_needs:                extraction.core_needs               ?? [],
-          current_behavior:          extraction.current_behavior         ?? null,
-          handling_rating:           extraction.handling_rating          ?? null,
-          cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
-          cognitive_analysis:        extraction.cognitive_analysis       ?? null,
-          reflection_insight:        extraction.reflection_insight       ?? null,
-          category_tags:             extraction.category_tags            ?? [],
-          people_involved:           extraction.people_involved          ?? [],
-          full_conversation:         convoRecord,
-        })
+        .update({ full_conversation: convoRecord })
         .eq('id', entry.id)
         .eq('user_id', user.id)
       if (dbErr) throw dbErr
 
-      // 3. 清除本条对话的 localStorage 缓存
-      localStorage.removeItem(STORAGE_KEY)
-
-      // 4. 静默更新 AI 跨对话记忆
-      try {
-        const memPrompt = getMemoryUpdatePrompt(convoText)
-        const raw = await callAI(
-          [{ role: 'user', content: memPrompt }],
-          '你是用户记忆整理助手，只返回纯 JSON，不加任何说明或 markdown。',
-          { maxTokens: 600 }
-        )
-        const match = raw.match(/\{[\s\S]*\}/)
-        if (match) {
-          const { rolling_summary, user_profile } = JSON.parse(match[0])
-          await updateMemory({ rolling_summary, user_profile })
-        }
-      } catch (e) {
-        console.error('[memory] 记忆更新失败:', e)
-      }
-
+      // 2. 立即跳回列表
       onSaved?.()
+
+      // 3. 后台提取字段 + 更新记忆（fire-and-forget）
+      ;(async () => {
+        const convoText = visibleMsgs
+          .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
+          .join('\n\n')
+
+        // 提取字段
+        let extraction = {}
+        try {
+          const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt()}`
+          const raw = await callAI(
+            [{ role: 'user', content: extractPrompt }],
+            '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
+            { maxTokens: 1200 }
+          )
+          const match = raw.match(/\{[\s\S]*\}/)
+          if (match) extraction = JSON.parse(match[0])
+        } catch (e) {
+          console.error('[extract] 提取失败:', e)
+        }
+
+        // 写回提取结果
+        if (Object.keys(extraction).length > 0) {
+          await supabase
+            .from('journal_entries')
+            .update({
+              primary_emotion:           extraction.primary_emotion          ?? null,
+              mixed_emotions:            extraction.mixed_emotions           ?? [],
+              overall_state_score:       extraction.overall_state_score      ?? null,
+              body_sensations:           extraction.body_sensations          ?? null,
+              current_thought:           extraction.current_thought          ?? null,
+              core_needs:                extraction.core_needs               ?? [],
+              current_behavior:          extraction.current_behavior         ?? null,
+              handling_rating:           extraction.handling_rating          ?? null,
+              cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
+              cognitive_analysis:        extraction.cognitive_analysis       ?? null,
+              reflection_insight:        extraction.reflection_insight       ?? null,
+              category_tags:             extraction.category_tags            ?? [],
+              people_involved:           extraction.people_involved          ?? [],
+            })
+            .eq('id', entry.id)
+            .eq('user_id', user.id)
+            .then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
+        }
+
+        // 500ms 间隔后更新记忆
+        await new Promise(r => setTimeout(r, 500))
+        try {
+          const memPrompt = getMemoryUpdatePrompt(convoText)
+          const raw = await callAI(
+            [{ role: 'user', content: memPrompt }],
+            '你是用户记忆整理助手，只返回纯 JSON，不加任何说明或 markdown。',
+            { maxTokens: 600 }
+          )
+          const match = raw.match(/\{[\s\S]*\}/)
+          if (match) {
+            const { rolling_summary, user_profile } = JSON.parse(match[0])
+            await updateMemory({ rolling_summary, user_profile })
+          }
+        } catch (e) {
+          console.error('[memory] 记忆更新失败:', e)
+        }
+      })()
+
     } catch (e) {
       setError('保存失败：' + e.message)
       setSaving(false)
     }
   }
 
-  // 返回键：直接退出，对话已存 localStorage，下次进来可继续
   function handleClose() {
     if (saving) return
     onClose?.()
@@ -236,7 +277,6 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           </div>
         </div>
 
-        {/* 完成按钮：有至少一轮真实对话后出现 */}
         {visibleMsgs.length >= 2 && (
           <button
             onClick={finishAndSave}
@@ -261,7 +301,6 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       <div className="flex-1 overflow-y-auto px-4 pb-2">
         {visibleMsgs.map((m, i) => <Bubble key={i} msg={m} />)}
 
-        {/* 加载动画 */}
         {loading && (
           <div className="flex justify-start mb-4 fade-in">
             <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center mr-2 flex-shrink-0">
@@ -276,7 +315,18 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           </div>
         )}
 
-        {error && <p className="text-center text-sm text-red-400 mb-3">{error}</p>}
+        {error && (
+          <div className="flex flex-col items-center gap-2 mb-3">
+            <p className="text-center text-sm text-red-400">{error}</p>
+            <button
+              onClick={retryLastMsg}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 border border-red-200 text-red-500 rounded-full active:scale-95 transition-transform"
+            >
+              <RotateCcw size={12} />
+              重试
+            </button>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
