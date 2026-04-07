@@ -156,15 +156,16 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   const [hasMore, setHasMore] = useState(true)
   const [detailEntry, setDetailEntry] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [actionTarget, setActionTarget] = useState(null)  // 长按操作菜单目标
+  const [actionTarget, setActionTarget] = useState(null)
+  const isFirstFetch = useRef(true)
   const PAGE_SIZE = 20
 
-  const fetchEntries = useCallback(async (reset = false) => {
+  const fetchEntries = useCallback(async (reset = false, silent = false) => {
     if (!user) return
 
     const isReset = reset
-    if (isReset) setLoading(true)
-    else setLoadingMore(true)
+    if (isReset && !silent) setLoading(true)
+    else if (!isReset) setLoadingMore(true)
 
     try {
       const from = isReset ? 0 : entries.length
@@ -192,9 +193,11 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
     if (!isActive) setDetailEntry(null)
   }, [isActive])
 
-  // 初始加载 & refreshKey 变化时重新加载
+  // 初始加载 & refreshKey 变化时重新加载（首次显示 spinner，后续静默刷新）
   useEffect(() => {
-    fetchEntries(true)
+    const silent = !isFirstFetch.current
+    isFirstFetch.current = false
+    fetchEntries(true, silent)
   }, [user, refreshKey]) // eslint-disable-line
 
   const handleDelete = async () => {
