@@ -145,7 +145,7 @@ export function getSystemPrompt(_templateType, memory = {}) {
 }
 
 // ─── 对话开场：把日记内容格式化为第一条用户消息 ───────────────
-export function getInitialUserMessage(entry) {
+export function getInitialUserMessage(entry, reflectionAnswers) {
   let msg = `我刚写了一段日记：\n\n「${entry.content}」`
 
   // 把 Page 2 已标注的信息附上，让 AI 不再重复询问
@@ -163,6 +163,11 @@ export function getInitialUserMessage(entry) {
 
   if (known.length > 0) {
     msg += `\n\n【我已标注的信息】\n${known.join('\n')}\n（这些信息你已知晓，无需再重复确认）`
+  }
+
+  // 深度复盘时，把已填卡片答案附上
+  if (reflectionAnswers) {
+    msg += `\n\n【我在深度复盘时写下的】\n${reflectionAnswers}\n（这些是我刚才自己整理的想法，你可以以此为起点）`
   }
 
   return msg
