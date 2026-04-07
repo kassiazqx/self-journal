@@ -148,7 +148,7 @@ function EntryCard({ entry, onOpen, onAction }) {
   )
 }
 
-export default function RecordsPage({ refreshKey, onStartAI, onEdit }) {
+export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit }) {
   const { user } = useAuth()
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -186,6 +186,11 @@ export default function RecordsPage({ refreshKey, onStartAI, onEdit }) {
       setLoadingMore(false)
     }
   }, [user, entries.length])
+
+  // 离开列表页时立刻清掉详情，回来时直接是列表
+  useEffect(() => {
+    if (!isActive) setDetailEntry(null)
+  }, [isActive])
 
   // 初始加载 & refreshKey 变化时重新加载
   useEffect(() => {
