@@ -9,12 +9,14 @@ import { getCardsForEntry } from '../lib/reflectionQuestions'
  *   onClose    — 关闭页面回调（返回记录列表）
  *   onStartAI  — 唤起 AI 对话回调，传入带 _reflectionAnswers 的 entry
  */
-export default function ReflectionPage({ entry, onClose, onStartAI }) {
+export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex = 0, onIndexChange, initialAnswers = {}, onAnswersChange }) {
   const cards = getCardsForEntry(entry)
   const total = cards.length
 
-  // 当前卡片索引
-  const [currentIndex, setCurrentIndex] = useState(0)
+  // 当前卡片索引（从外部传入初始值，切换时通知父组件）
+  const [currentIndex, setCurrentIndex] = useState(
+    () => Math.min(initialIndex, cards.length - 1)
+  )
 
   // 每张卡片当前使用的问题索引（默认 0）
   const [questionIndexes, setQuestionIndexes] = useState(
@@ -22,9 +24,17 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
   )
 
   // 每张卡片的输入内容
-  const [answers, setAnswers] = useState(
-    () => Object.fromEntries(cards.map(c => [c.id, '']))
-  )
+  // 优先使用父组件保管的 initialAnswers（AI 来回不丢失），再 fallback 到 entry 字段
+  const [answers, setAnswers] = useState(() => {
+    return Object.fromEntries(cards.map(c => {
+      if (initialAnswers[c.id] !== undefined && initialAnswers[c.id] !== '') {
+        return [c.id, initialAnswers[c.id]]
+      }
+      const raw = entry[c.field]
+      const value = Array.isArray(raw) ? raw.join('、') : (raw ?? '')
+      return [c.id, value]
+    }))
+  })
 
   // 触摸滑动检测
   const touchStartX = useRef(null)
@@ -46,9 +56,11 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
   // ── 输入框 onBlur：fire-and-forget 保存到对应字段 ────────────
   const handleBlur = (cardId, field, value) => {
     if (!value.trim()) return
+    // core_needs 在 DB 是 text[] 类型，需要存数组格式
+    const saveValue = field === 'core_needs' ? [value.trim()] : value
     supabase
       .from('journal_entries')
-      .update({ [field]: value })
+      .update({ [field]: saveValue })
       .eq('id', entry.id)
       .eq('user_id', entry.user_id)
       .then(({ error: e }) => {
@@ -56,9 +68,19 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
       })
   }
 
-  // ── 切换卡片 ─────────────────────────────────────────────────
+  // ── 更新答案（同时同步给父组件，防卸载丢失）──────────────────
+  const updateAnswer = (cardId, value) => {
+    const next = { ...answers, [cardId]: value }
+    setAnswers(next)
+    onAnswersChange?.(next)
+  }
+
+  // ── 切换卡片（同时通知父组件保存 index）────────────────────
   const goTo = (index) => {
-    if (index >= 0 && index < total) setCurrentIndex(index)
+    if (index >= 0 && index < total) {
+      setCurrentIndex(index)
+      onIndexChange?.(index)
+    }
   }
 
   // ── 触摸滑动 ─────────────────────────────────────────────────
@@ -74,12 +96,26 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
     touchStartX.current = null
   }
 
-  // ── 唤起 AI（把已填答案拼入 entry）─────────────────────────
+  // ── 唤起 AI：先保存当前卡片内容，再跳转 ──────────────────────
   const handleStartAI = () => {
+    // 主动保存当前卡片（防止 onBlur 未触发）
+    const currentAnswer = answers[card.id]
+    if (currentAnswer?.trim()) {
+      supabase
+        .from('journal_entries')
+        .update({ [card.field]: currentAnswer })
+        .eq('id', entry.id)
+        .eq('user_id', entry.user_id)
+        .then(({ error: e }) => { if (e) console.error('[reflection] AI前保存失败:', e) })
+    }
+
     const filledAnswers = cards
       .filter(c => answers[c.id]?.trim())
       .map(c => `${c.label}：${answers[c.id].trim()}`)
       .join('\n')
+
+    // 通知父组件保存当前 index，回来后恢复
+    onIndexChange?.(currentIndex)
 
     onStartAI({
       ...entry,
@@ -110,7 +146,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
           onClick={onClose}
           className="text-sm text-gray-400 w-14 text-right active:scale-95 transition-transform"
         >
-          关闭
+          保存
         </button>
       </div>
 
@@ -128,9 +164,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI }) {
           {/* 输入框 */}
           <textarea
             value={answers[card.id]}
-            onChange={e =>
-              setAnswers(prev => ({ ...prev, [card.id]: e.target.value }))
-            }
+            onChange={e => updateAnswer(card.id, e.target.value)}
             onBlur={e => handleBlur(card.id, card.field, e.target.value)}
             placeholder="写下来…"
             className="flex-1 w-full min-h-[120px] bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-amber-300 resize-none leading-relaxed"
