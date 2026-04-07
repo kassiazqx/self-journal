@@ -6,6 +6,7 @@ import RecordsPage from '../pages/RecordsPage'
 import SettingsPage from '../pages/SettingsPage'
 import TaggingPage from '../pages/TaggingPage'
 import AIConversation from './AIConversation'
+import ReflectionPage from '../pages/ReflectionPage'
 import { analyzeContent } from '../lib/contentAnalysis'
 
 const NAV_ITEMS = [
@@ -26,6 +27,7 @@ export default function MainLayout() {
   const [taggingEntry, setTaggingEntry] = useState(null)   // 进入情绪标注页
   const [aiEntry, setAiEntry]           = useState(null)   // 进入 AI 对话
   const [suggestEntry, setSuggestEntry] = useState(null)   // 显示"聊聊吗？"横幅
+  const [reflectionEntry, setReflectionEntry] = useState(null) // 进入深度复盘页
 
   // 编辑模式：从列表/详情触发
   const [editEntry, setEditEntry] = useState(null)         // 进入编辑流程（HomePage预填）
@@ -43,7 +45,13 @@ export default function MainLayout() {
   }
 
   // ── TaggingPage "完成/保存" 后 ───────────────────────────────
-  const handleTaggingComplete = ({ stateScore } = {}) => {
+  const handleTaggingComplete = ({ stateScore, goToReflection } = {}) => {
+    if (goToReflection) {
+      const entryForReflection = { ...taggingEntry }
+      setTaggingEntry(null)
+      setReflectionEntry(entryForReflection)
+      return
+    }
     const shouldSuggest = taggingEntry?._shouldSuggestChat || (stateScore !== null && stateScore !== undefined && stateScore < 0)
     setTaggingEntry(null)
     if (shouldSuggest) {
@@ -73,6 +81,13 @@ export default function MainLayout() {
     setRecordsRefreshKey(k => k + 1)
   }
 
+  // ── 深度复盘页关闭 ───────────────────────────────────────────
+  const handleReflectionClose = () => {
+    setReflectionEntry(null)
+    handleSetActiveTab('records')
+    setRecordsRefreshKey(k => k + 1)
+  }
+
   // ── 从记录列表手动发起 AI 对话 ───────────────────────────────
   const handleStartAI = (entry) => setAiEntry(entry)
 
@@ -92,6 +107,19 @@ export default function MainLayout() {
     const timer = setTimeout(() => setSuggestEntry(null), 4000)
     return () => clearTimeout(timer)
   }, [suggestEntry])
+
+  // ── 全屏覆盖：深度复盘 ───────────────────────────────────────
+  if (reflectionEntry) {
+    return (
+      <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
+        <ReflectionPage
+          entry={reflectionEntry}
+          onClose={handleReflectionClose}
+          onStartAI={handleStartAI}
+        />
+      </div>
+    )
+  }
 
   // ── 全屏覆盖：AI 对话 ────────────────────────────────────────
   if (aiEntry) {
