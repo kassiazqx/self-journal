@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Check, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { detectEmotions } from '../lib/keywordDetection'
 
 // ─── 情绪标签分组 ──────────────────────────────────────────────
 const EMOTION_GROUPS = [
@@ -55,17 +56,21 @@ function getRequirements(templateType) {
 export default function TaggingPage({ entry, isEdit = false, onComplete, onBack }) {
   const { requireEmotion, requireState } = getRequirements(entry.template_type)
 
-  // 预填已有情绪（编辑模式）
+  // 预填已有情绪（编辑模式）或从内容自动检测（新建模式）
   const initEmotions = () => {
     const all = []
     if (entry.primary_emotion) all.push(entry.primary_emotion)
     if (Array.isArray(entry.mixed_emotions)) {
       entry.mixed_emotions.forEach(e => { if (!all.includes(e)) all.push(e) })
     }
-    return all
+    if (all.length > 0) return all          // 编辑模式：用已存数据
+    return detectEmotions(entry.content || '') // 新建模式：关键词预选
   }
 
   const [selectedEmotions, setSelectedEmotions] = useState(initEmotions())
+  const [customEmotions, setCustomEmotions] = useState([])
+  const [showEmotionInput, setShowEmotionInput] = useState(false)
+  const [emotionInput, setEmotionInput] = useState('')
   const [stateScore, setStateScore] = useState(
     entry.overall_state_score !== null && entry.overall_state_score !== undefined
       ? entry.overall_state_score
@@ -81,6 +86,15 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
     setSelectedEmotions(prev =>
       prev.includes(tag) ? prev.filter(e => e !== tag) : [...prev, tag]
     )
+  }
+
+  const handleAddEmotion = () => {
+    const tag = emotionInput.trim()
+    if (!tag) return
+    if (!customEmotions.includes(tag)) setCustomEmotions(prev => [...prev, tag])
+    setSelectedEmotions(prev => prev.includes(tag) ? prev : [...prev, tag])
+    setEmotionInput('')
+    setShowEmotionInput(false)
   }
 
   const handleComplete = async () => {
@@ -157,6 +171,58 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
               </div>
             </div>
           ))}
+
+          {/* 自定义情绪标签 */}
+          {customEmotions.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-400 mb-1.5">自定义</p>
+              <div className="flex flex-wrap gap-2">
+                {customEmotions.map(tag => {
+                  const isSelected = selectedEmotions.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => toggleEmotion(tag)}
+                      className={`px-3 py-1.5 rounded-full text-sm border transition-all active:scale-95 ${
+                        isSelected
+                          ? 'bg-amber-500 text-white border-amber-500'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 新增按钮 + 输入框 */}
+          <div>
+            <button
+              onClick={() => setShowEmotionInput(p => !p)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border border-dashed border-gray-300 text-gray-400 bg-white active:scale-95"
+            >
+              <Plus size={14} />
+              <span>新增情绪</span>
+            </button>
+            {showEmotionInput && (
+              <div className="flex gap-2 mt-2 fade-in">
+                <input
+                  value={emotionInput}
+                  onChange={e => setEmotionInput(e.target.value)}
+                  placeholder="输入情绪词，如：羞耻、嫉妒"
+                  className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+                />
+                <button
+                  onClick={handleAddEmotion}
+                  className="px-4 py-2 bg-amber-500 text-white text-sm rounded-2xl active:scale-95"
+                >
+                  添加
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── 状态评分 ── */}
