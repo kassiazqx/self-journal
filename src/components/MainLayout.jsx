@@ -8,6 +8,7 @@ import TaggingPage from '../pages/TaggingPage'
 import AIConversation from './AIConversation'
 import ReflectionPage from '../pages/ReflectionPage'
 import { analyzeContent } from '../lib/contentAnalysis'
+import { getCardsForEntry } from '../lib/reflectionQuestions'
 
 const NAV_ITEMS = [
   { id: 'home',     label: '记录', Icon: Home },
@@ -28,6 +29,8 @@ export default function MainLayout() {
   const [aiEntry, setAiEntry]           = useState(null)   // 进入 AI 对话
   const [suggestEntry, setSuggestEntry] = useState(null)   // 显示"聊聊吗？"横幅
   const [reflectionEntry, setReflectionEntry] = useState(null) // 进入深度复盘页
+  const [reflectionIndex, setReflectionIndex] = useState(0)    // 复盘页当前卡片索引（AI来回后恢复）
+  const [reflectionAnswers, setReflectionAnswers] = useState({}) // 卡片答案快照（防止卸载丢失）
 
   // 编辑模式：从列表/详情触发
   const [editEntry, setEditEntry] = useState(null)         // 进入编辑流程（HomePage预填）
@@ -49,6 +52,14 @@ export default function MainLayout() {
     if (goToReflection) {
       const entryForReflection = { ...taggingEntry }
       setTaggingEntry(null)
+      setReflectionIndex(0)
+      // 从 entry 已有字段初始化 answers，让编辑模式能预填
+      const initAnswers = {}
+      getCardsForEntry(entryForReflection).forEach(c => {
+        const raw = entryForReflection[c.field]
+        initAnswers[c.id] = Array.isArray(raw) ? raw.join('、') : (raw ?? '')
+      })
+      setReflectionAnswers(initAnswers)
       setReflectionEntry(entryForReflection)
       return
     }
@@ -74,9 +85,12 @@ export default function MainLayout() {
   }
 
   // ── AI 对话结束 ──────────────────────────────────────────────
+  // 从复盘页唤起的 AI：关闭后回到复盘页（reflectionEntry 还在）
+  // 从其他地方唤起的 AI：关闭后 reflectionEntry 为 null，正常回主界面
   const handleAIClose  = () => setAiEntry(null)
   const handleAISaved  = () => {
     setAiEntry(null)
+    setReflectionEntry(null)   // 无论从哪里来，保存完成后清掉复盘状态
     handleSetActiveTab('records')
     setRecordsRefreshKey(k => k + 1)
   }
@@ -108,14 +122,18 @@ export default function MainLayout() {
     return () => clearTimeout(timer)
   }, [suggestEntry])
 
-  // ── 全屏覆盖：深度复盘 ───────────────────────────────────────
-  if (reflectionEntry) {
+  // ── 全屏覆盖：深度复盘（AI 唤起时让位给 AI）────────────────
+  if (reflectionEntry && !aiEntry) {
     return (
       <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
         <ReflectionPage
           entry={reflectionEntry}
           onClose={handleReflectionClose}
           onStartAI={handleStartAI}
+          initialIndex={reflectionIndex}
+          onIndexChange={setReflectionIndex}
+          initialAnswers={reflectionAnswers}
+          onAnswersChange={setReflectionAnswers}
         />
       </div>
     )

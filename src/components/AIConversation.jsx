@@ -44,9 +44,11 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [isRateLimit, setIsRateLimit] = useState(false)
   const systemPromptRef = useRef('')
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
+  const initDoneRef = useRef(false)   // StrictMode double-run guard
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
 
   const visibleMsgs = msgs.filter(m => !m.hidden)
@@ -66,6 +68,9 @@ export default function AIConversation({ entry, onClose, onSaved }) {
 
   // 进入页面：localStorage → DB full_conversation → 新对话
   useEffect(() => {
+    if (initDoneRef.current) return   // React StrictMode 会跑两次，只跑一次
+    initDoneRef.current = true
+
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       try {
@@ -114,7 +119,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
         { role: 'assistant', content: firstReply },
       ])
     } catch (e) {
-      setError(e.message)
+      handleError(e)
     } finally {
       setLoading(false)
     }
@@ -134,7 +139,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       const reply = await callAI(apiMsgs, systemPromptRef.current)
       setMsgs(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
-      setError(e.message)
+      handleError(e)
     } finally {
       setLoading(false)
     }
@@ -154,7 +159,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
         const reply = await callAI(apiMsgs, systemPromptRef.current)
         setMsgs(prev => [...prev, { role: 'assistant', content: reply }])
       } catch (e) {
-        setError(e.message)
+        handleError(e)
       } finally {
         setLoading(false)
       }
@@ -165,7 +170,14 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
   }
 
-  // 点「完成」：立即保存 full_conversation → 立即调 onSaved → 后台提取+记忆
+  // rate limit 检测：识别 429 类错误，给友好提示
+  function handleError(e) {
+    const msg = e.message || ''
+    const limited = msg.includes('429') || msg.includes('quota') ||
+      msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate')
+    setIsRateLimit(limited)
+    setError(limited ? '已达到免费版每分钟请求限制，请等待约 1 分钟后点「重试」' : msg)
+  }
   async function finishAndSave() {
     if (saving || loading) return
     setSaving(true)
@@ -318,11 +330,11 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           <div className="flex flex-col items-center gap-2 mb-3">
             <p className="text-center text-sm text-red-400">{error}</p>
             <button
-              onClick={retryLastMsg}
+              onClick={() => { setError(''); setIsRateLimit(false); retryLastMsg() }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 border border-red-200 text-red-500 rounded-full active:scale-95 transition-transform"
             >
               <RotateCcw size={12} />
-              重试
+              {isRateLimit ? '等待后重试' : '重试'}
             </button>
           </div>
         )}
