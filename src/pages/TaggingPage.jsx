@@ -108,7 +108,35 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
     }
 
     // 立即回调（跳转），后台静默 UPDATE
-    onComplete?.({ stateScore })
+    onComplete?.({ stateScore, goToReflection: false })
+
+    supabase
+      .from('journal_entries')
+      .update({
+        emotions:            selectedEmotions.length > 0 ? selectedEmotions : [],
+        overall_state_score: stateScore,
+        handling_rating:     handlingRating,
+      })
+      .eq('id', entry.id)
+      .eq('user_id', entry.user_id)
+      .then(({ error: e }) => { if (e) console.error('[tagging] 后台保存失败:', e) })
+  }
+
+  const handleReflection = async () => {
+    // 同样做验证
+    if (requireEmotion && selectedEmotions.length === 0) {
+      setError('请至少选择一个情绪标签')
+      setTimeout(() => setError(''), 2000)
+      return
+    }
+    if (requireState && stateScore === null) {
+      setError('请选择整体状态评分')
+      setTimeout(() => setError(''), 2000)
+      return
+    }
+
+    // 立即跳转，后台保存
+    onComplete?.({ stateScore, goToReflection: true })
 
     supabase
       .from('journal_entries')
@@ -130,16 +158,10 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
           <ArrowLeft size={22} />
         </button>
         <h2 className="text-base font-semibold text-gray-800">情绪标注</h2>
-        <button
-          onClick={handleComplete}
-          className="flex items-center gap-1 text-sm px-4 py-1.5 bg-amber-500 text-white rounded-full active:scale-95 transition-transform"
-        >
-          <Check size={14} />
-          {isEdit ? '保存' : '完成'}
-        </button>
+        <div className="w-8" />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-6 flex flex-col gap-5">
+      <div className="flex-1 overflow-y-auto px-4 pb-2 flex flex-col gap-5">
 
         {/* ── 情绪标签 ── */}
         <div>
@@ -279,6 +301,25 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
         {error && (
           <p className="text-center text-sm text-red-400 fade-in">{error}</p>
         )}
+      </div>
+
+      {/* 底部操作栏 */}
+      <div className="px-4 pb-6 pt-2 flex gap-3 flex-shrink-0">
+        {!isEdit && (
+          <button
+            onClick={handleReflection}
+            className="px-4 py-3 bg-white border border-gray-200 text-gray-400 text-sm rounded-2xl active:scale-95 transition-transform whitespace-nowrap"
+          >
+            深度复盘
+          </button>
+        )}
+        <button
+          onClick={handleComplete}
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-amber-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
+        >
+          <Check size={16} />
+          {isEdit ? '保存' : '完成'}
+        </button>
       </div>
     </div>
   )
