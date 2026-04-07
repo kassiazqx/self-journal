@@ -58,12 +58,9 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
 
   // 预填已有情绪（编辑模式）或从内容自动检测（新建模式）
   const initEmotions = () => {
-    const all = []
-    if (entry.primary_emotion) all.push(entry.primary_emotion)
-    if (Array.isArray(entry.mixed_emotions)) {
-      entry.mixed_emotions.forEach(e => { if (!all.includes(e)) all.push(e) })
+    if (Array.isArray(entry.emotions) && entry.emotions.length > 0) {
+      return entry.emotions                  // 编辑模式：用已存数据
     }
-    if (all.length > 0) return all          // 编辑模式：用已存数据
     return detectEmotions(entry.content || '') // 新建模式：关键词预选
   }
 
@@ -116,8 +113,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
     supabase
       .from('journal_entries')
       .update({
-        primary_emotion:     selectedEmotions[0] ?? null,
-        mixed_emotions:      selectedEmotions.length > 0 ? selectedEmotions : [],
+        emotions:            selectedEmotions.length > 0 ? selectedEmotions : [],
         overall_state_score: stateScore,
         handling_rating:     handlingRating,
       })

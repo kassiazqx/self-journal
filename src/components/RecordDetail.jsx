@@ -109,15 +109,12 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
     localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
     localEntry.body_sensations?.length > 0 || localEntry.current_thought ||
     localEntry.current_behavior || localEntry.handling_rating ||
-    localEntry.primary_emotion || localEntry.mixed_emotions?.length > 0 ||
+    localEntry.emotions?.length > 0 ||
     (localEntry.overall_state_score !== null && localEntry.overall_state_score !== undefined) ||
     hasConversation
   const hasAI = hasExtraction || hasConversation
 
-  const emotionList = [
-    localEntry.primary_emotion,
-    ...(Array.isArray(localEntry.mixed_emotions) ? localEntry.mixed_emotions : [])
-  ].filter(Boolean)
+  const emotionList = Array.isArray(localEntry.emotions) ? localEntry.emotions : []
 
   // 火-and-forget 单字段保存
   const handleFieldSave = (field, value) => {

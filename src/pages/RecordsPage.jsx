@@ -84,7 +84,7 @@ function DeleteDialog({ entry, onConfirm, onCancel }) {
 // 单条记录卡片（支持长按触发操作菜单）
 function EntryCard({ entry, onOpen, onAction }) {
   const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
-  const hasAI = entry.primary_emotion || entry.reflection_insight || entry.mixed_emotions?.length > 0
+  const hasAI = entry.emotions?.length > 0 || entry.reflection_insight
   const longPressTimer = useRef(null)
   const didLongPress = useRef(false)
 
@@ -132,13 +132,8 @@ function EntryCard({ entry, onOpen, onAction }) {
       {/* 情绪/AI 标记 */}
       {hasAI && (
         <div className="flex items-center gap-1 mt-2 flex-wrap">
-          {entry.primary_emotion && (
-            <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
-              {entry.primary_emotion}
-            </span>
-          )}
-          {entry.mixed_emotions?.slice(0, 2).map(e => (
-            <span key={e} className="text-xs px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full border border-gray-100">
+          {entry.emotions?.slice(0, 3).map(e => (
+            <span key={e} className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
               {e}
             </span>
           ))}

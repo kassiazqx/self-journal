@@ -211,8 +211,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           await supabase
             .from('journal_entries')
             .update({
-              primary_emotion:           extraction.primary_emotion          ?? null,
-              mixed_emotions:            extraction.mixed_emotions           ?? [],
+              emotions:                  extraction.emotions                ?? [],
               overall_state_score:       extraction.overall_state_score      ?? null,
               body_sensations:           extraction.body_sensations          ?? null,
               current_thought:           extraction.current_thought          ?? null,
