@@ -103,7 +103,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       const sysPrompt = getSystemPrompt(entry.template_type, currentMemory)
       systemPromptRef.current = sysPrompt
 
-      const initMsg = getInitialUserMessage(entry)
+      const initMsg = getInitialUserMessage(entry, entry._reflectionAnswers)
       lastUserMsgRef.current = initMsg
       const firstReply = await callAI(
         [{ role: 'user', content: initMsg }],
