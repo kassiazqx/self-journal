@@ -46,9 +46,6 @@ const QUESTION_BANK_1 = `
 - 此刻你注意到什么感觉？（情绪 / 身体 / 想法）
 - 你在事情发生的当下，是什么样的感受？
 - 你现在心里是什么样的感觉？
-- 如果给这个感觉起个名字，你会叫它什么？
-- 这种感受，你熟悉吗？
-- 说出来的时候，那个词感觉准吗？
 
 ▌夹杂情绪 mixed_emotions
 - 除了这个，还藏有别的什么感受吗？
@@ -59,6 +56,7 @@ const QUESTION_BANK_1 = `
 const QUESTION_BANK_2 = `
 
 ▌身体感受 body_sensations
+⚠️ 只在用户表达了明显负面情绪（如焦虑、崩溃、难受、委屈、绝望、压抑）时才使用这组问题。
 - 这个感觉在身体的哪个部位？胸口、肚子、喉咙、头还是其他地方？
 - 是什么质地？——紧绷、沉重、发热、发凉、颤抖，还是别的？
 - 现在坐着，身体哪里是紧的？
@@ -114,19 +112,14 @@ const QUESTION_BANK_4 = `
 - 这件事上，什么行动是值得肯定的？
 - 下次遇到类似情况，你可以提前做什么？`
 
-// ─── 问题库 第五段：复盘洞见 + 整体状态 ─────────────────────
+// ─── 问题库 第五段：复盘洞见 ──────────────────────────────────
 const QUESTION_BANK_5 = `
 
 ▌复盘洞见 reflection_insight
 - 聊到现在，有什么是你刚才才意识到的吗？
 - 有没有哪句话，是你说出来之后觉得"对，就是这个"的？
 - 这件事，现在看，和刚开始说的时候感觉一样吗？
-- 如果给今天的自己说一句话，会是什么？
-
-▌整体状态 overall_state_score
-- 整体说，今天的状态你会怎么描述？
-- 和昨天比，感觉有什么不一样吗？
-- 今天的你，在哪里？`
+- 如果给今天的自己说一句话，会是什么？`
 
 // ─── 系统提示词入口 ───────────────────────────────────────────
 // templateType 暂时不影响问题库，保留供未来按模板差异化扩展
@@ -157,7 +150,7 @@ export function getInitialUserMessage(entry) {
 
   // 把 Page 2 已标注的信息附上，让 AI 不再重复询问
   const known = []
-  const emotions = [entry.primary_emotion, ...(Array.isArray(entry.mixed_emotions) ? entry.mixed_emotions : [])].filter(Boolean)
+  const emotions = Array.isArray(entry.emotions) ? entry.emotions : []
   if (emotions.length > 0) known.push(`情绪：${emotions.join('、')}`)
   if (entry.overall_state_score !== null && entry.overall_state_score !== undefined) {
     const score = entry.overall_state_score
@@ -197,8 +190,7 @@ export function getExtractionPrompt() {
 
 {
   "event_summary": "事件一句话总结（如适用，否则 null）",
-  "primary_emotion": "最主要的情绪（一个词，如：焦虑、委屈、开心）",
-  "mixed_emotions": ["其他夹杂的情绪词，没有则空数组"],
+  "emotions": ["情绪词数组，如：焦虑、委屈、开心，没有则空数组"],
   "overall_state_score": 整体状态评分整数（-5到5，-5极度低落，5极度喜悦，0平静）,
   "body_sensations": "身体感受描述，没有则 null",
   "current_thought": "当时最主要的想法或念头（一句话），没有则 null",
