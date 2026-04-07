@@ -106,7 +106,10 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
   const hasExtraction = localEntry.reflection_insight || localEntry.cognitive_distortion_type ||
     localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
     localEntry.body_sensations?.length > 0 || localEntry.current_thought ||
-    localEntry.current_behavior
+    localEntry.current_behavior || localEntry.handling_rating ||
+    localEntry.primary_emotion || localEntry.mixed_emotions?.length > 0 ||
+    localEntry.overall_state_score !== null && localEntry.overall_state_score !== undefined ||
+    hasConversation
 
   const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
   const hasAI = hasExtraction || hasConversation
@@ -275,14 +278,18 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
             <Sparkles size={32} className="text-gray-200 mx-auto mb-3" strokeWidth={1} />
             <p className="text-sm text-gray-400 mb-1">还没有 AI 分析记录</p>
             <p className="text-xs text-gray-300 mb-5">保存后可以随时和 AI 深入聊聊</p>
-            {onStartAI && (
-              <button
-                onClick={() => onStartAI(entry)}
-                className="px-5 py-2.5 bg-amber-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
-              >
-                ✦ 和 AI 聊聊这篇
-              </button>
-            )}
+          </div>
+        )}
+
+        {/* AI 入口按钮：始终显示 */}
+        {onStartAI && (
+          <div className="text-center pb-2">
+            <button
+              onClick={() => onStartAI(entry)}
+              className="px-5 py-2.5 bg-amber-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
+            >
+              {hasConversation ? '✦ 继续聊' : '✦ 和 AI 聊聊这篇'}
+            </button>
           </div>
         )}
       </div>
