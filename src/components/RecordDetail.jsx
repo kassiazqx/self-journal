@@ -141,6 +141,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
             <FieldRow label="认知分析"  value={entry.cognitive_analysis} />
             <FieldRow label="复盘洞见"  value={entry.reflection_insight} />
             <FieldRow label="大类标签"  value={entry.category_tags} />
+            <FieldRow label="关联事件"  value={entry.event_name} />
             <FieldRow label="涉及人员"  value={entry.people_involved} />
           </div>
         )}
