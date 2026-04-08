@@ -157,7 +157,7 @@ function inferDatetime(text) {
 // Props:
 //   onNextStep(entry)  — 立即跳转，后台保存
 //   editEntry          — 编辑模式：传入已有记录，预填内容
-export default function HomePage({ onNextStep, editEntry }) {
+export default function HomePage({ onNextStep, editEntry, onCancel }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
 
@@ -352,14 +352,49 @@ export default function HomePage({ onNextStep, editEntry }) {
     userEditedPeople.current = false
   }
 
+  const handleSaveAndExit = () => {
+    if (!isEditMode) return
+    if (!content.trim()) {
+      setError('请先写点什么～')
+      setTimeout(() => setError(''), 2000)
+      return
+    }
+
+    const templateType = selectedTemplate || editEntry.template_type
+    const createdAt = new Date(entryDatetime).toISOString()
+    const fields = {
+      content: content.trim(),
+      template_type: templateType,
+      created_at: createdAt,
+      category_tags: selectedCategories,
+      event_name: eventName.trim() || null,
+      people_involved: selectedPeople,
+    }
+
+    updateEntry({ id: editEntry.id, userId: user.id, fields })
+      .then(({ error: e }) => {
+        if (e) { setError('保存失败，请重试'); return }
+        onCancel?.()
+      })
+  }
 
   return (
     <div className="flex flex-col h-full">
       {/* 顶部标题 */}
       <div className="px-5 pt-5 pb-3">
-        <h1 className="text-xl font-bold text-gray-800">
-          {isEditMode ? '编辑记录' : '今天，想记点什么？'}
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-gray-800">
+            {isEditMode ? '编辑记录' : '今天，想记点什么？'}
+          </h1>
+          {isEditMode && onCancel && (
+            <button
+              onClick={handleSaveAndExit}
+              className="text-sm text-primary-500 font-medium active:scale-95 transition-transform"
+            >
+              保存
+            </button>
+          )}
+        </div>
         <p className="text-sm text-gray-400 mt-0.5">
           {new Date().toLocaleDateString('zh-CN', {
             month: 'long', day: 'numeric', weekday: 'long',
