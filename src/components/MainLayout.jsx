@@ -9,6 +9,7 @@ import AIConversation from './AIConversation'
 import ReflectionPage from '../pages/ReflectionPage'
 import { analyzeContent } from '../lib/contentAnalysis'
 import { getCardsForEntry } from '../lib/reflectionQuestions'
+import { getActiveTab, saveActiveTab } from '../lib/storage'
 
 const NAV_ITEMS = [
   { id: 'home',     label: '记录', Icon: Home },
@@ -18,8 +19,7 @@ const NAV_ITEMS = [
 
 export default function MainLayout() {
   const [activeTab, setActiveTab] = useState(() => {
-    // 刷新后恢复上次所在的 tab（只恢复 home/records/settings 三个主 tab）
-    const saved = localStorage.getItem('activeTab')
+    const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'home'
   })
   const [recordsRefreshKey, setRecordsRefreshKey] = useState(0)
@@ -111,10 +111,10 @@ export default function MainLayout() {
     handleSetActiveTab('home')
   }
 
-  // tab 切换时写入 localStorage
+  // tab 切换时持久化
   const handleSetActiveTab = (id) => {
     setActiveTab(id)
-    localStorage.setItem('activeTab', id)
+    saveActiveTab(id)
   }
   useEffect(() => {
     if (!suggestEntry) return
