@@ -196,7 +196,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       {/* 顶栏 */}
       <div className="flex items-center justify-between px-4 pt-5 pb-3">
         <div className="flex items-center gap-3">
-          <button onClick={handleClose} className="text-gray-400">
+          <button onClick={handleClose} className="text-gray-400 p-2 -ml-2 active:scale-95 transition-transform">
             <ArrowLeft size={22} />
           </button>
           <div>

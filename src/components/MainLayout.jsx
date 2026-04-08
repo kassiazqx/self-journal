@@ -255,7 +255,7 @@ export default function MainLayout() {
             </button>
             <button
               onClick={() => setSuggestEntry(null)}
-              className="text-gray-300 active:scale-95 transition-transform"
+              className="text-gray-300 active:scale-95 transition-transform p-2 -mr-1"
             >
               <X size={18} />
             </button>
