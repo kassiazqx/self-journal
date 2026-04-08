@@ -4,40 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { detectCategories, PREDEFINED_CATEGORIES, detectPeople } from '../lib/keywordDetection'
-
-// 模板配置
-const TEMPLATES = [
-  {
-    id: 'gratitude',
-    emoji: '🩷',
-    label: '感恩',
-    hint: '今天有什么值得感谢的？是谁、是什么事让你感到温暖或幸运？',
-  },
-  {
-    id: 'emotion',
-    emoji: '🌷',
-    label: '觉察',
-    hint: '现在是什么感受？发生了什么？你注意到自己身体上有什么感觉吗？',
-  },
-  {
-    id: 'free',
-    emoji: '✨',
-    label: '灵感',
-    hint: '一闪而过的念头、想法、观察——不用整理，直接写下来就好。',
-  },
-  {
-    id: 'learning',
-    emoji: '📝',
-    label: '学习',
-    hint: '今天学了什么？用自己的话说一遍，有什么让你印象深刻或有疑惑的地方？',
-  },
-  {
-    id: 'action',
-    emoji: '💪🏻',
-    label: '行动',
-    hint: '今天做了什么？运动、完成了一件事——时长、状态、身体感受如何？',
-  },
-]
+import { TEMPLATES } from '../lib/templates'
 
 // 把 Date 转成 datetime-local input 需要的格式：YYYY-MM-DDTHH:mm
 function toDatetimeLocal(date) {

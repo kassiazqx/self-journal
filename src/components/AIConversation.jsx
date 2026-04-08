@@ -5,14 +5,7 @@ import { getSystemPrompt, getInitialUserMessage, getExtractionPrompt, getMemoryU
 import { getMemory, updateMemory } from '../lib/memory'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-
-const TEMPLATE_MAP = {
-  gratitude: { emoji: '🩷', label: '感恩' },
-  learning:  { emoji: '📝', label: '学习' },
-  emotion:   { emoji: '🌷', label: '觉察' },
-  action:    { emoji: '💪🏻', label: '行动' },
-  free:      { emoji: '✨', label: '灵感' },
-}
+import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 
 // 单条气泡
 function Bubble({ msg }) {
@@ -49,7 +42,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
   const initDoneRef = useRef(false)   // StrictMode double-run guard
-  const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
+  const template = TEMPLATE_BY_ID[entry.template_type] || DEFAULT_TEMPLATE
 
   const visibleMsgs = msgs.filter(m => !m.hidden)
 

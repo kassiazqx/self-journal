@@ -1,14 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-
-const TEMPLATE_MAP = {
-  gratitude: { emoji: '🩷', label: '感恩',  color: 'bg-pink-50 text-pink-600 border-pink-100' },
-  learning:  { emoji: '📝', label: '学习',  color: 'bg-blue-50 text-blue-600 border-blue-100' },
-  emotion:   { emoji: '🌷', label: '觉察',  color: 'bg-purple-50 text-purple-600 border-purple-100' },
-  action:    { emoji: '💪🏻', label: '行动', color: 'bg-green-50 text-green-600 border-green-100' },
-  free:      { emoji: '✨', label: '灵感',  color: 'bg-gray-50 text-gray-500 border-gray-100' },
-}
+import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 
 function formatDate(str) {
   return new Date(str).toLocaleString('zh-CN', {
@@ -101,7 +94,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
   const [menuOpen, setMenuOpen] = useState(false)
   const [localEntry, setLocalEntry] = useState(entry)
 
-  const template = TEMPLATE_MAP[localEntry.template_type] || TEMPLATE_MAP.free
+  const template = TEMPLATE_BY_ID[localEntry.template_type] || DEFAULT_TEMPLATE
 
   const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
 
