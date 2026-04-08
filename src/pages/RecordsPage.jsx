@@ -3,14 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Loader2, BookOpen, Pencil, Trash2 } from 'lucide-react'
 import RecordDetail from '../components/RecordDetail'
-
-const TEMPLATE_MAP = {
-  gratitude: { emoji: '🩷', label: '感恩',  color: 'bg-pink-50 text-pink-600 border-pink-100' },
-  learning:  { emoji: '📝', label: '学习',  color: 'bg-blue-50 text-blue-600 border-blue-100' },
-  emotion:   { emoji: '🌷', label: '觉察',  color: 'bg-purple-50 text-purple-600 border-purple-100' },
-  action:    { emoji: '💪🏻', label: '行动', color: 'bg-green-50 text-green-600 border-green-100' },
-  free:      { emoji: '✨', label: '灵感',  color: 'bg-gray-50 text-gray-500 border-gray-100' },
-}
+import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 
 function formatDate(dateStr) {
   const date = new Date(dateStr)
@@ -83,7 +76,7 @@ function DeleteDialog({ entry, onConfirm, onCancel }) {
 
 // 单条记录卡片（支持长按触发操作菜单）
 function EntryCard({ entry, onOpen, onAction }) {
-  const template = TEMPLATE_MAP[entry.template_type] || TEMPLATE_MAP.free
+  const template = TEMPLATE_BY_ID[entry.template_type] || DEFAULT_TEMPLATE
   const hasAI = entry.emotions?.length > 0 || entry.reflection_insight
   const longPressTimer = useRef(null)
   const didLongPress = useRef(false)
