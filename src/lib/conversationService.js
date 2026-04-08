@@ -3,7 +3,44 @@
 import { callAI } from './aiClient'
 import { getExtractionPrompt, getMemoryUpdatePrompt } from './prompts'
 import { updateEntry } from './journalService'
-import { updateMemory } from './memory'
+import { updateMemory, incrementConversationCount, resetConversationCount } from './memory'
+
+// 每完成多少次对话才更新一次 AI 记忆
+const MEMORY_UPDATE_INTERVAL = 20
+
+// ─── 手动触发记忆更新（设置页按钮调用）──────────────────────
+// 传入最近一次对话的 visibleMsgs，立即执行记忆更新并重置计数
+// 如果没有最近对话，也可以传空数组（只重置计数）
+export async function forceUpdateMemory({ visibleMsgs = [] } = {}) {
+
+  if (visibleMsgs.length === 0) {
+    await resetConversationCount()
+    return { error: null }
+  }
+
+  const convoText = visibleMsgs
+    .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
+    .join('\n\n')
+
+  try {
+    const memPrompt = getMemoryUpdatePrompt(convoText)
+    const raw = await callAI(
+      [{ role: 'user', content: memPrompt }],
+      '你是用户记忆整理助手，只返回纯 JSON，不加任何说明或 markdown。',
+      { maxTokens: 600 }
+    )
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (match) {
+      const { rolling_summary, user_profile } = JSON.parse(match[0])
+      await updateMemory({ rolling_summary, user_profile })
+    }
+    await resetConversationCount()
+    return { error: null }
+  } catch (e) {
+    console.error('[memory] 手动更新失败:', e)
+    return { error: e }
+  }
+}
 
 // ─── 主入口 ──────────────────────────────────────────────────
 // visibleMsgs: [{ role, content }]  已过滤 hidden 的消息列表
@@ -70,9 +107,14 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
     }).then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
   }
 
-  // 500ms 间隔后更新记忆
+  // 500ms 间隔后更新记忆（仅每 MEMORY_UPDATE_INTERVAL 次对话触发一次）
   await new Promise(r => setTimeout(r, 500))
   try {
+    const newCount = await incrementConversationCount()
+    if (newCount === null || newCount % MEMORY_UPDATE_INTERVAL !== 0) {
+      // 未到阈值，跳过记忆更新
+      return
+    }
     const memPrompt = getMemoryUpdatePrompt(convoText)
     const raw = await callAI(
       [{ role: 'user', content: memPrompt }],
