@@ -6,6 +6,19 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { detectCategories, PREDEFINED_CATEGORIES, detectPeople } from '../lib/keywordDetection'
 import { TEMPLATES } from '../lib/templates'
 
+// crypto.randomUUID() 只在 HTTPS / localhost 下可用。
+// 手机通过局域网 HTTP 访问时会抛错，用这个兜底。
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // RFC 4122 v4 fallback
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+  })
+}
+
 // 把 Date 转成 datetime-local input 需要的格式：YYYY-MM-DDTHH:mm
 function toDatetimeLocal(date) {
   const d = new Date(date)
@@ -312,7 +325,7 @@ export default function HomePage({ onNextStep, editEntry }) {
         .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
     } else {
       // 新建：用 crypto.randomUUID() 生成 ID，立即跳转，后台 INSERT
-      const newId = crypto.randomUUID()
+      const newId = generateUUID()
       const newEntry = {
         id: newId,
         user_id: user.id,
