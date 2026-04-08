@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { updateEntry } from '../lib/journalService'
 import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 
 function formatDate(str) {
@@ -112,10 +112,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
   // 火-and-forget 单字段保存
   const handleFieldSave = (field, value) => {
     setLocalEntry(prev => ({ ...prev, [field]: value }))
-    supabase.from('journal_entries')
-      .update({ [field]: value })
-      .eq('id', localEntry.id)
-      .eq('user_id', localEntry.user_id)
+    updateEntry({ id: localEntry.id, userId: localEntry.user_id, fields: { [field]: value } })
       .then(({ error: e }) => { if (e) console.error(`[field:${field}] 保存失败:`, e) })
   }
 
