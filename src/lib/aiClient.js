@@ -1,9 +1,10 @@
 // AI 调用抽象层，支持多个提供商，可随时切换
+import { getAISettingsFromStorage, saveAISettingsToStorage } from './storage'
 
 const PROVIDERS = {
   gemini: {
     name: 'Google Gemini',
-    model: 'gemini-flash-latest',
+    model: 'gemini-2.5-flash-lite',  // 最轻量免费版，2025-04 上线
   },
   deepseek: {
     name: 'Deepseek',
@@ -11,18 +12,13 @@ const PROVIDERS = {
   },
 }
 
-// ─── 设置读写（存 localStorage）───────────────────────────────
+// ─── 设置读写（经由 storage.js 抽象层）────────────────────────
 export function getAISettings() {
-  try {
-    const raw = localStorage.getItem('ai_settings')
-    return raw ? JSON.parse(raw) : { provider: 'gemini', apiKey: '' }
-  } catch {
-    return { provider: 'gemini', apiKey: '' }
-  }
+  return getAISettingsFromStorage()
 }
 
 export function saveAISettings(settings) {
-  localStorage.setItem('ai_settings', JSON.stringify(settings))
+  saveAISettingsToStorage(settings)
 }
 
 export function hasAIConfigured() {
@@ -84,7 +80,10 @@ async function callGemini(messages, systemPrompt, apiKey, options = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
+    // ⚠️ 调试日志：打印完整 Gemini 错误响应，排查后可删除
+    console.error('[Gemini] HTTP', res.status, JSON.stringify(err, null, 2))
     const msg = err.error?.message || res.statusText
+    const code = err.error?.code || err.error?.status || ''
     if (res.status === 400) {
       throw new Error(`参数错误：${msg}`)
     }
@@ -95,7 +94,7 @@ async function callGemini(messages, systemPrompt, apiKey, options = {}) {
       throw new Error('模型不存在，请检查模型名称是否正确')
     }
     if (res.status === 429) {
-      throw new Error('超过免费额度限制，请稍等 1 分钟后重试')
+      throw new Error(`[429/${code}] ${msg}`)
     }
     throw new Error(`Gemini 出错 (${res.status})：${msg}`)
   }

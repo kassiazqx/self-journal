@@ -6,6 +6,7 @@ import { getMemory, updateMemory } from '../lib/memory'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
+import { getChatSession, saveChatSession } from '../lib/storage'
 
 // 单条气泡
 function Bubble({ msg }) {
@@ -30,7 +31,6 @@ function Bubble({ msg }) {
 
 export default function AIConversation({ entry, onClose, onSaved }) {
   const { user } = useAuth()
-  const STORAGE_KEY = `chat_session_${entry.id}`
 
   const [msgs, setMsgs] = useState([])
   const [input, setInput] = useState('')
@@ -52,10 +52,10 @@ export default function AIConversation({ entry, onClose, onSaved }) {
 
   useEffect(() => {
     if (msgs.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      saveChatSession(entry.id, {
         msgs,
         systemPrompt: systemPromptRef.current,
-      }))
+      })
     }
   }, [msgs])
 
@@ -64,16 +64,14 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     if (initDoneRef.current) return   // React StrictMode 会跑两次，只跑一次
     initDoneRef.current = true
 
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = getChatSession(entry.id)
     if (saved) {
-      try {
-        const { msgs: savedMsgs, systemPrompt: savedPrompt } = JSON.parse(saved)
-        if (savedMsgs?.length > 0) {
-          setMsgs(savedMsgs)
-          systemPromptRef.current = savedPrompt || ''
-          return
-        }
-      } catch { /* fall through */ }
+      const { msgs: savedMsgs, systemPrompt: savedPrompt } = saved
+      if (savedMsgs?.length > 0) {
+        setMsgs(savedMsgs)
+        systemPromptRef.current = savedPrompt || ''
+        return
+      }
     }
 
     // 尝试从 DB 恢复历史对话（"继续聊"入口）
@@ -141,12 +139,13 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   // 重试：重发最后一条用户消息
   async function retryLastMsg() {
     if (loading || !lastUserMsgRef.current) return
-    // 如果最后一条是 user（发送失败），保留；否则是初始化失败，重新 startChat
     const lastMsg = msgs[msgs.length - 1]
-    if (msgs.length === 0 || (lastMsg?.role === 'user' && !lastMsg.hidden)) {
-      // 重发最后一条 user 消息
+    // Bug A 修复：msgs 为空时必须走 else（重新 startChat），不能发空数组给 Gemini
+    if (lastMsg && lastMsg.role === 'user' && !lastMsg.hidden) {
+      // 最后一条是用户消息（发送失败）→ 重发
       setLoading(true)
       setError('')
+      setIsRateLimit(false)
       try {
         const apiMsgs = msgs.map(m => ({ role: m.role, content: m.content }))
         const reply = await callAI(apiMsgs, systemPromptRef.current)
@@ -157,19 +156,20 @@ export default function AIConversation({ entry, onClose, onSaved }) {
         setLoading(false)
       }
     } else {
-      // 初始化失败，重新开始
+      // msgs 为空或最后一条是 AI 消息（初始化失败）→ 重新开始
       setMsgs([])
       startChat()
     }
   }
 
-  // rate limit 检测：识别 429 类错误，给友好提示
+  // Bug B 修复：不用 msg.includes('rate')，"GenerateContentRequest" 含 "rate" 会误判
   function handleError(e) {
     const msg = e.message || ''
-    const limited = msg.includes('429') || msg.includes('quota') ||
-      msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate')
+    const limited = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
     setIsRateLimit(limited)
-    setError(limited ? '已达到免费版每分钟请求限制，请等待约 1 分钟后点「重试」' : msg)
+    setError(limited
+      ? '已达到 Gemini 免费额度上限，请稍等后重试，或前往设置更换 API Key'
+      : msg)
   }
   async function finishAndSave() {
     if (saving || loading) return

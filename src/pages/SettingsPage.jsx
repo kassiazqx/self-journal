@@ -125,10 +125,10 @@ export default function SettingsPage() {
             <div className="relative flex-1">
               <Key size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
               <input
-                type="password"
-                value={settings.apiKey}
+                type="text"
+                value={keyUnlocked ? settings.apiKey : (settings.apiKey ? '••••••••••••••••' : '')}
                 onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
-                placeholder={keyUnlocked ? (currentProvider?.hint || '请输入 API Key') : '••••••••••••••••'}
+                placeholder={currentProvider?.hint || '请输入 API Key'}
                 readOnly={!keyUnlocked}
                 autoComplete="off"
                 data-lpignore="true"

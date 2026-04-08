@@ -125,7 +125,7 @@ function EntryCard({ entry, onOpen, onAction }) {
       {/* 情绪/AI 标记 */}
       {hasAI && (
         <div className="flex items-center gap-1 mt-2 flex-wrap">
-          {entry.emotions?.slice(0, 3).map(e => (
+          {[...new Set(entry.emotions ?? [])].slice(0, 3).map(e => (
             <span key={e} className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
               {e}
             </span>
