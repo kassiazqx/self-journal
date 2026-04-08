@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Key, Check, Loader2, LogOut, Lock, Pencil, Download } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { fetchAllEntries } from '../lib/journalService'
+import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
 
 const PROVIDERS = [
@@ -31,6 +32,8 @@ export default function SettingsPage() {
   const [keyUnlocked, setKeyUnlocked] = useState(false) // API Key 是否处于编辑模式
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
+  const [updatingMemory, setUpdatingMemory] = useState(false)
+  const [memoryUpdateMsg, setMemoryUpdateMsg] = useState('')
 
   // 触发浏览器下载
   function downloadFile(content, filename, mimeType) {
@@ -75,6 +78,29 @@ export default function SettingsPage() {
       setExportError('导出失败：' + err.message)
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handleForceUpdateMemory() {
+    if (!settings.apiKey.trim()) {
+      setMemoryUpdateMsg('请先配置 API Key')
+      setTimeout(() => setMemoryUpdateMsg(''), 3000)
+      return
+    }
+    setUpdatingMemory(true)
+    setMemoryUpdateMsg('')
+    try {
+      // 取最近一条有对话的记录，用它来更新记忆；没有就只重置计数
+      const { data } = await fetchAllEntries({ userId: user.id })
+      const lastWithConvo = (data ?? []).reverse().find(e => Array.isArray(e.full_conversation) && e.full_conversation.length > 0)
+      const visibleMsgs = lastWithConvo?.full_conversation?.filter(m => !m.hidden) ?? []
+      const { error } = await forceUpdateMemory({ visibleMsgs })
+      setMemoryUpdateMsg(error ? '更新失败，请重试' : '记忆已更新 ✓')
+    } catch (e) {
+      setMemoryUpdateMsg('更新失败：' + e.message)
+    } finally {
+      setUpdatingMemory(false)
+      setTimeout(() => setMemoryUpdateMsg(''), 4000)
     }
   }
 
@@ -242,6 +268,33 @@ export default function SettingsPage() {
             }`}
           >
             {saved ? <><Check size={15} /> 已保存</> : '保存'}
+          </button>
+        </div>
+
+        {/* AI 记忆 */}
+        <div className="card">
+          <p className="text-sm font-medium text-gray-600 mb-1">个性化 AI 记忆</p>
+          <p className="text-xs text-gray-400 mb-3">
+            AI 每完成 20 次对话后自动更新一次记忆。你也可以立即手动更新。
+          </p>
+          {memoryUpdateMsg && (
+            <div className={`mb-3 px-3 py-2 rounded-xl text-sm fade-in ${
+              memoryUpdateMsg.includes('失败') || memoryUpdateMsg.includes('请先')
+                ? 'bg-red-50 text-red-600 border border-red-100'
+                : 'bg-green-50 text-green-700 border border-green-100'
+            }`}>
+              {memoryUpdateMsg}
+            </div>
+          )}
+          <button
+            onClick={handleForceUpdateMemory}
+            disabled={updatingMemory}
+            className="w-full py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-600 flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all"
+          >
+            {updatingMemory
+              ? <><Loader2 size={15} className="animate-spin" /> 更新中…</>
+              : '立即更新记忆'
+            }
           </button>
         </div>
 
