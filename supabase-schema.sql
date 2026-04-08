@@ -17,8 +17,12 @@ create table if not exists public.journal_entries (
   template_type text default 'free' check (       -- 模板类型
     template_type in ('gratitude', 'learning', 'emotion', 'action', 'free')
   ),
-  created_at timestamptz default now() not null,
-  updated_at timestamptz default now() not null
+  created_at  timestamptz default now() not null,
+  updated_at  timestamptz default now() not null,
+  deleted_at  timestamptz default null,            -- 软删除标记（null = 未删除）
+  sync_status text default 'synced' check (        -- 多端同步状态（为 Capacitor 预留）
+    sync_status in ('synced', 'pending', 'conflict')
+  )
 );
 
 -- 索引优化
