@@ -32,7 +32,15 @@ export function updateEntry({ id, userId, fields }) {
     .eq('user_id', userId)
 }
 
-// ─── 删除 ──────────────────────────────────────────────────────
+// ─── 全量导出（用于数据导出功能）─────────────────────────────
+// 不分页，一次拉取全部，按时间正序（方便阅读）
+export async function fetchAllEntries({ userId }) {
+  return supabase
+    .from('journal_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+}
 export function deleteEntry({ id, userId }) {
   return supabase
     .from('journal_entries')

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
+import { Key, Check, Loader2, LogOut, Lock, Pencil, Download } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
+import { fetchAllEntries } from '../lib/journalService'
 import { useAuth } from '../contexts/AuthContext'
 
 const PROVIDERS = [
@@ -28,6 +29,54 @@ export default function SettingsPage() {
   const [testMsg, setTestMsg] = useState('')
   const [saved, setSaved] = useState(false)
   const [keyUnlocked, setKeyUnlocked] = useState(false) // API Key 是否处于编辑模式
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+
+  // 触发浏览器下载
+  function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleExport(format) {
+    setExporting(true)
+    setExportError('')
+    try {
+      const { data, error } = await fetchAllEntries({ userId: user.id })
+      if (error) throw error
+
+      const date = new Date().toISOString().slice(0, 10)
+
+      if (format === 'json') {
+        downloadFile(
+          JSON.stringify(data, null, 2),
+          `self-journal-${date}.json`,
+          'application/json'
+        )
+      } else {
+        const lines = data.map(e => {
+          const d = new Date(e.created_at).toLocaleString('zh-CN')
+          const emotions = e.emotions?.length ? `情绪：${e.emotions.join('、')}\n` : ''
+          const insight = e.reflection_insight ? `洞见：${e.reflection_insight}\n` : ''
+          return `【${d}】\n${e.content}\n${emotions}${insight}`
+        })
+        downloadFile(
+          lines.join('\n---\n\n'),
+          `self-journal-${date}.txt`,
+          'text/plain;charset=utf-8'
+        )
+      }
+    } catch (err) {
+      setExportError('导出失败：' + err.message)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     setSettings(getAISettings())
@@ -194,6 +243,43 @@ export default function SettingsPage() {
           >
             {saved ? <><Check size={15} /> 已保存</> : '保存'}
           </button>
+        </div>
+
+        {/* 数据导出 */}
+        <div className="card">
+          <p className="text-sm font-medium text-gray-600 mb-1">数据导出</p>
+          <p className="text-xs text-gray-400 mb-3">
+            导出你的全部日记记录，仅在本机浏览器下载，不会上传到任何服务器
+          </p>
+
+          {exportError && (
+            <div className="mb-3 px-3 py-2 rounded-xl text-sm bg-red-50 text-red-600 border border-red-100 fade-in">
+              {exportError}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleExport('json')}
+              disabled={exporting}
+              className="flex-1 py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-600 flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all"
+            >
+              {exporting
+                ? <><Loader2 size={15} className="animate-spin" /> 导出中…</>
+                : <><Download size={15} /> 导出 JSON</>
+              }
+            </button>
+            <button
+              onClick={() => handleExport('txt')}
+              disabled={exporting}
+              className="flex-1 py-3.5 rounded-2xl text-sm font-medium bg-primary-500 text-white flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40"
+            >
+              {exporting
+                ? <><Loader2 size={15} className="animate-spin" /> 导出中…</>
+                : <><Download size={15} /> 导出 TXT</>
+              }
+            </button>
+          </div>
         </div>
 
         {/* 分割线 */}
