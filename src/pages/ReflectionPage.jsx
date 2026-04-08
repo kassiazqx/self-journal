@@ -1,6 +1,6 @@
 // src/pages/ReflectionPage.jsx
 import { useState, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { updateEntry } from '../lib/journalService'
 import { getCardsForEntry } from '../lib/reflectionQuestions'
 
 /**
@@ -53,19 +53,16 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
     setQuestionIndexes(prev => ({ ...prev, [card.id]: next }))
   }
 
+  // text[] 类型字段需要包成数组再存；其余字段直接存字符串
+  const ARRAY_FIELDS = new Set(['core_needs', 'emotions', 'category_tags', 'people_involved'])
+  const toSaveValue = (field, value) =>
+    ARRAY_FIELDS.has(field) ? [value.trim()] : value.trim()
+
   // ── 输入框 onBlur：fire-and-forget 保存到对应字段 ────────────
   const handleBlur = (cardId, field, value) => {
-    if (!value.trim()) return
-    // core_needs 在 DB 是 text[] 类型，需要存数组格式
-    const saveValue = field === 'core_needs' ? [value.trim()] : value
-    supabase
-      .from('journal_entries')
-      .update({ [field]: saveValue })
-      .eq('id', entry.id)
-      .eq('user_id', entry.user_id)
-      .then(({ error: e }) => {
-        if (e) console.error('[reflection] 保存失败:', e, field)
-      })
+    if (!value?.toString().trim()) return
+    updateEntry({ id: entry.id, userId: entry.user_id, fields: { [field]: toSaveValue(field, value) } })
+      .then(({ error: e }) => { if (e) console.error('[reflection] 保存失败:', e, field) })
   }
 
   // ── 更新答案（同时同步给父组件，防卸载丢失）──────────────────
@@ -98,20 +95,19 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
 
   // ── 唤起 AI：先保存当前卡片内容，再跳转 ──────────────────────
   const handleStartAI = () => {
-    // 主动保存当前卡片（防止 onBlur 未触发）
+    // 主动保存当前卡片（防止 onBlur 未触发），同样走 toSaveValue 转换
     const currentAnswer = answers[card.id]
-    if (currentAnswer?.trim()) {
-      supabase
-        .from('journal_entries')
-        .update({ [card.field]: currentAnswer })
-        .eq('id', entry.id)
-        .eq('user_id', entry.user_id)
-        .then(({ error: e }) => { if (e) console.error('[reflection] AI前保存失败:', e) })
+    if (currentAnswer?.toString().trim()) {
+      updateEntry({
+        id: entry.id,
+        userId: entry.user_id,
+        fields: { [card.field]: toSaveValue(card.field, currentAnswer) },
+      }).then(({ error: e }) => { if (e) console.error('[reflection] AI前保存失败:', e) })
     }
 
     const filledAnswers = cards
-      .filter(c => answers[c.id]?.trim())
-      .map(c => `${c.label}：${answers[c.id].trim()}`)
+      .filter(c => answers[c.id]?.toString().trim())
+      .map(c => `${c.label}：${answers[c.id].toString().trim()}`)
       .join('\n')
 
     // 通知父组件保存当前 index，回来后恢复
