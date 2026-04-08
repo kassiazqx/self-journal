@@ -167,7 +167,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
             onChange={e => updateAnswer(card.id, e.target.value)}
             onBlur={e => handleBlur(card.id, card.field, e.target.value)}
             placeholder="写下来…"
-            className="flex-1 w-full min-h-[120px] bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-amber-300 resize-none leading-relaxed"
+            className="flex-1 w-full min-h-[120px] bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-primary-300 resize-none leading-relaxed"
           />
 
           {/* 换一个问题 */}
@@ -189,7 +189,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
         <div className="flex justify-end mb-4">
           <button
             onClick={handleStartAI}
-            className="w-10 h-10 bg-white border border-amber-200 rounded-full flex items-center justify-center text-amber-400 shadow-sm active:scale-95 transition-transform"
+            className="w-10 h-10 bg-white border border-primary-200 rounded-full flex items-center justify-center text-primary-400 shadow-sm active:scale-95 transition-transform"
             title="和 AI 聊聊这个"
           >
             <span style={{ fontSize: '15px' }}>✦</span>
@@ -204,7 +204,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
               onClick={() => goTo(i)}
               className={`transition-all duration-200 rounded-full ${
                 i === currentIndex
-                  ? 'w-4 h-1.5 bg-amber-500'
+                  ? 'w-4 h-1.5 bg-primary-500'
                   : 'w-1.5 h-1.5 bg-gray-200'
               }`}
             />

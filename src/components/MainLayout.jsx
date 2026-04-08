@@ -209,7 +209,7 @@ export default function MainLayout() {
       {/* "聊聊吗？"提示横幅（覆盖在底部导航上方）*/}
       {suggestEntry && (
         <div className="absolute bottom-16 left-0 right-0 max-w-lg mx-auto px-4 fade-in z-10">
-          <div className="bg-white border border-amber-200 rounded-2xl px-4 py-3 shadow-md flex items-center gap-3">
+          <div className="bg-white border border-primary-200 rounded-2xl px-4 py-3 shadow-md flex items-center gap-3">
             <span className="text-xl">✨</span>
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-700">好像有点复杂</p>
@@ -217,7 +217,7 @@ export default function MainLayout() {
             </div>
             <button
               onClick={handleAcceptSuggest}
-              className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white text-sm rounded-full active:scale-95 transition-transform"
+              className="flex items-center gap-1 px-3 py-1.5 bg-primary-500 text-white text-sm rounded-full active:scale-95 transition-transform"
             >
               <MessageCircle size={14} />
               聊聊
@@ -242,7 +242,7 @@ export default function MainLayout() {
               onClick={() => handleSetActiveTab(id)}
             >
               <Icon size={22} strokeWidth={activeTab === id ? 2.2 : 1.8} />
-              <span className={`text-xs font-medium ${activeTab === id ? 'text-amber-500' : 'text-gray-400'}`}>
+              <span className={`text-xs font-medium ${activeTab === id ? 'text-primary-500' : 'text-gray-400'}`}>
                 {label}
               </span>
             </button>

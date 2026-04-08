@@ -14,14 +14,14 @@ function Bubble({ msg }) {
   return (
     <div className={`flex ${isAI ? 'justify-start' : 'justify-end'} mb-4 fade-in`}>
       {isAI && (
-        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center mr-2 flex-shrink-0 mt-0.5">
-          <Sparkles size={13} className="text-amber-500" />
+        <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center mr-2 flex-shrink-0 mt-0.5">
+          <Sparkles size={13} className="text-primary-500" />
         </div>
       )}
       <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
         isAI
           ? 'bg-white border border-gray-100 text-gray-700 rounded-tl-sm'
-          : 'bg-amber-500 text-white rounded-tr-sm'
+          : 'bg-primary-500 text-white rounded-tr-sm'
       }`}>
         {msg.content}
       </div>
@@ -285,7 +285,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           <button
             onClick={finishAndSave}
             disabled={loading || saving}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-600 rounded-full disabled:opacity-40 active:scale-95 transition-transform"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary-50 border border-primary-200 text-primary-600 rounded-full disabled:opacity-40 active:scale-95 transition-transform"
           >
             {saving
               ? <Loader2 size={12} className="animate-spin" />
@@ -307,8 +307,8 @@ export default function AIConversation({ entry, onClose, onSaved }) {
 
         {loading && (
           <div className="flex justify-start mb-4 fade-in">
-            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center mr-2 flex-shrink-0">
-              <Sparkles size={13} className="text-amber-500" />
+            <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center mr-2 flex-shrink-0">
+              <Sparkles size={13} className="text-primary-500" />
             </div>
             <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1 items-center">
               {[0, 150, 300].map(d => (
@@ -342,13 +342,13 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg() } }}
           placeholder="说说你的想法…"
           rows={1}
-          className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-amber-400 resize-none"
+          className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-primary-400 resize-none"
           style={{ maxHeight: '120px' }}
         />
         <button
           onClick={sendMsg}
           disabled={!input.trim() || loading}
-          className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 active:scale-95 transition-all"
+          className="w-12 h-12 bg-primary-500 text-white rounded-2xl flex items-center justify-center flex-shrink-0 disabled:opacity-40 active:scale-95 transition-all"
         >
           <Send size={18} />
         </button>

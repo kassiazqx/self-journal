@@ -33,9 +33,9 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-amber-500 text-white rounded-2xl px-6 py-3 font-medium
+    @apply bg-primary-500 text-white rounded-2xl px-6 py-3 font-medium
            active:scale-95 transition-all duration-150 shadow-sm
-           hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed;
+           hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
@@ -53,7 +53,7 @@
   }
 
   .nav-item.active {
-    @apply text-amber-500;
+    @apply text-primary-500;
   }
 
   /* 语音录制脉冲动画 */

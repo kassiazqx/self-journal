@@ -14,7 +14,7 @@ function formatDate(str) {
 function ScoreBar({ score }) {
   if (score === null || score === undefined) return null
   const pct = ((score + 5) / 10) * 100
-  const color = score >= 2 ? 'bg-green-400' : score <= -2 ? 'bg-red-400' : 'bg-amber-400'
+  const color = score >= 2 ? 'bg-green-400' : score <= -2 ? 'bg-red-400' : 'bg-primary-400'
   return (
     <div className="flex gap-3 py-2 items-center">
       <span className="text-xs text-gray-400 w-16 flex-shrink-0">状态</span>
@@ -73,7 +73,7 @@ function EditableFieldRow({ label, value, onSave }) {
           onBlur={handleSave}
           autoFocus
           rows={2}
-          className="flex-1 text-sm text-gray-700 border border-amber-300 rounded-lg px-2 py-1 focus:outline-none resize-none"
+          className="flex-1 text-sm text-gray-700 border border-primary-300 rounded-lg px-2 py-1 focus:outline-none resize-none"
         />
       ) : (
         <>
@@ -180,7 +180,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
             </span>
             {/* 大类标签 */}
             {localEntry.category_tags?.map(tag => (
-              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">{tag}</span>
+              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-primary-50 text-primary-600 border border-primary-100">{tag}</span>
             ))}
             {/* 关联事件 */}
             {localEntry.event_name && (
@@ -226,7 +226,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
         {hasExtraction && (
           <Collapsible
             title="对话洞见"
-            icon={<Sparkles size={13} className="text-amber-500" />}
+            icon={<Sparkles size={13} className="text-primary-500" />}
             defaultOpen={false}
           >
             <EditableFieldRow label="反思洞见" value={localEntry.reflection_insight} onSave={v => handleFieldSave('reflection_insight', v)} />
@@ -251,7 +251,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                     msg.role === 'user'
-                      ? 'bg-amber-500 text-white rounded-tr-sm'
+                      ? 'bg-primary-500 text-white rounded-tr-sm'
                       : 'bg-gray-50 text-gray-700 rounded-tl-sm border border-gray-100'
                   }`}>
                     {msg.content}
@@ -276,7 +276,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
           <div className="text-center pb-2">
             <button
               onClick={() => onStartAI(entry)}
-              className="px-5 py-2.5 bg-amber-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
+              className="px-5 py-2.5 bg-primary-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
             >
               {hasConversation ? '✦ 继续聊' : '✦ 和 AI 聊聊这篇'}
             </button>
