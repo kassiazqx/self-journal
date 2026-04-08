@@ -11,7 +11,7 @@
 ## 技术栈
 - 前端：React + Vite + Tailwind CSS v3
 - 数据库/Auth：Supabase（Tokyo 地区）
-- AI：Google Gemini（gemini-flash-latest）/ Deepseek（可切换）
+- AI：Google Gemini（gemini-2.5-flash-lite）/ Deepseek（可切换）
 - 部署：Vercel（推送 main 分支自动部署）
 - 语音：Web Speech API（桌面 Chrome 可用，安卓暂不可用）
 - 未来：Capacitor 打包 Android APK（功能稳定后）
