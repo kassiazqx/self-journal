@@ -120,14 +120,14 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
     <div className="flex flex-col h-full bg-[#fdfaf7]">
       {/* 顶栏 */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-3 flex-shrink-0">
-        <button onClick={onBack} className="text-gray-400 active:scale-95 transition-transform">
+        <button onClick={onBack} className="text-gray-400 active:scale-95 transition-transform p-2 -ml-2">
           <ArrowLeft size={22} />
         </button>
         <div className="flex-1" />
         {(onEdit || onDelete) && (
           <button
             onClick={() => setMenuOpen(true)}
-            className="text-gray-400 active:scale-95 transition-transform p-1"
+            className="text-gray-400 active:scale-95 transition-transform p-2 -mr-1"
           >
             <MoreHorizontal size={20} />
           </button>

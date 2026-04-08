@@ -144,14 +144,14 @@ export default function ReflectionPage({ entry, onClose, onStartAI, onBack, init
       <div className="flex items-center justify-between px-4 pt-5 pb-3 flex-shrink-0">
         <button
           onClick={() => currentIndex === 0 ? handleBack() : goTo(currentIndex - 1)}
-          className="text-sm text-gray-400 w-14 text-left active:scale-95 transition-transform"
+          className="text-sm text-gray-400 w-14 min-h-[44px] text-left active:scale-95 transition-transform flex items-center"
         >
           ‹ {currentIndex}/{total}
         </button>
         <h2 className="text-base font-semibold text-gray-800">深度复盘</h2>
         <button
           onClick={onClose}
-          className="text-sm text-gray-400 w-14 text-right active:scale-95 transition-transform"
+          className="text-sm text-gray-400 w-14 min-h-[44px] text-right active:scale-95 transition-transform flex items-center justify-end"
         >
           保存
         </button>
@@ -196,7 +196,7 @@ export default function ReflectionPage({ entry, onClose, onStartAI, onBack, init
         <div className="flex justify-end mb-4">
           <button
             onClick={handleStartAI}
-            className="w-10 h-10 bg-white border border-primary-200 rounded-full flex items-center justify-center text-primary-400 shadow-sm active:scale-95 transition-transform"
+            className="w-11 h-11 bg-white border border-primary-200 rounded-full flex items-center justify-center text-primary-400 shadow-sm active:scale-95 transition-transform"
             title="和 AI 聊聊这个"
           >
             <span style={{ fontSize: '15px' }}>✦</span>
@@ -209,12 +209,15 @@ export default function ReflectionPage({ entry, onClose, onStartAI, onBack, init
             <button
               key={c.id}
               onClick={() => goTo(i)}
-              className={`transition-all duration-200 rounded-full ${
+              className="p-3 -m-3 flex items-center justify-center active:scale-95 transition-transform"
+              aria-label={`第 ${i + 1} 张卡片`}
+            >
+              <span className={`block transition-all duration-200 rounded-full ${
                 i === currentIndex
                   ? 'w-4 h-1.5 bg-primary-500'
                   : 'w-1.5 h-1.5 bg-gray-200'
-              }`}
-            />
+              }`} />
+            </button>
           ))}
         </div>
       </div>

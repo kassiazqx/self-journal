@@ -146,6 +146,8 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [actionTarget, setActionTarget] = useState(null)
   const isFirstFetch = useRef(true)
+  // 用 ref 记录当前条数，避免 loadEntries 依赖 entries.length（每次变化都重建函数）
+  const entriesCountRef = useRef(0)
   const PAGE_SIZE = 20
 
   const loadEntries = useCallback(async (reset = false, silent = false) => {
@@ -156,20 +158,24 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
     else if (!isReset) setLoadingMore(true)
 
     try {
-      const from = isReset ? 0 : entries.length
+      const from = isReset ? 0 : entriesCountRef.current
       const { data, error } = await fetchEntries({ userId: user.id, from, limit: PAGE_SIZE })
 
       if (error) throw error
 
       setHasMore(data.length === PAGE_SIZE)
-      setEntries(prev => isReset ? data : [...prev, ...data])
+      setEntries(prev => {
+        const next = isReset ? data : [...prev, ...data]
+        entriesCountRef.current = next.length   // 同步 ref
+        return next
+      })
     } catch (err) {
       console.error('加载记录失败:', err)
     } finally {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [user, entries.length])
+  }, [user])  // 不再依赖 entries.length，函数引用稳定
 
   // 离开列表页时立刻清掉详情，回来时直接是列表
   useEffect(() => {
