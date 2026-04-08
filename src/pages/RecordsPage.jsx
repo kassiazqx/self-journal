@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { fetchEntries, deleteEntry } from '../lib/journalService'
 import { Loader2, BookOpen, Pencil, Trash2 } from 'lucide-react'
 import RecordDetail from '../components/RecordDetail'
 import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
@@ -148,7 +148,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   const isFirstFetch = useRef(true)
   const PAGE_SIZE = 20
 
-  const fetchEntries = useCallback(async (reset = false, silent = false) => {
+  const loadEntries = useCallback(async (reset = false, silent = false) => {
     if (!user) return
 
     const isReset = reset
@@ -157,12 +157,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
 
     try {
       const from = isReset ? 0 : entries.length
-      const { data, error } = await supabase
-        .from('journal_entries')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE_SIZE - 1)
+      const { data, error } = await fetchEntries({ userId: user.id, from, limit: PAGE_SIZE })
 
       if (error) throw error
 
@@ -185,17 +180,14 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   useEffect(() => {
     const silent = !isFirstFetch.current
     isFirstFetch.current = false
-    fetchEntries(true, silent)
+    loadEntries(true, silent)
   }, [user, refreshKey]) // eslint-disable-line
 
   const handleDelete = async () => {
     if (!deleteTarget) return
     try {
-      await supabase
-        .from('journal_entries')
-        .delete()
-        .eq('id', deleteTarget.id)
-        .eq('user_id', user.id)
+      const { error } = await deleteEntry({ id: deleteTarget.id, userId: user.id })
+      if (error) throw error
 
       setEntries(prev => prev.filter(e => e.id !== deleteTarget.id))
     } catch (err) {
@@ -204,6 +196,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
       setDeleteTarget(null)
     }
   }
+
 
   const grouped = groupByDate(entries)
 
@@ -266,7 +259,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
             {/* 加载更多 */}
             {hasMore && (
               <button
-                onClick={() => fetchEntries(false)}
+                onClick={() => loadEntries(false)}
                 disabled={loadingMore}
                 className="w-full py-3 text-sm text-primary-500 flex items-center justify-center gap-2"
               >

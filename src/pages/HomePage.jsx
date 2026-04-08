@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { Mic, MicOff, ArrowRight, Plus, X } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { detectCategories, PREDEFINED_CATEGORIES, detectPeople } from '../lib/keywordDetection'
 import { TEMPLATES } from '../lib/templates'
+import { insertEntry, updateEntry } from '../lib/journalService'
 
 // crypto.randomUUID() 只在 HTTPS / localhost 下可用。
 // 手机通过局域网 HTTP 访问时会抛错，用这个兜底。
@@ -316,15 +316,13 @@ export default function HomePage({ onNextStep, editEntry }) {
 
     if (isEditMode) {
       // 编辑：立即回调（entry.id 已知），后台 UPDATE 原文
-      const updatedEntry = { ...editEntry, content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople }
+      const fields = { content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople }
+      const updatedEntry = { ...editEntry, ...fields }
       onNextStep?.(updatedEntry)
-      supabase.from('journal_entries')
-        .update({ content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople })
-        .eq('id', editEntry.id)
-        .eq('user_id', user.id)
+      updateEntry({ id: editEntry.id, userId: user.id, fields })
         .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
     } else {
-      // 新建：用 crypto.randomUUID() 生成 ID，立即跳转，后台 INSERT
+      // 新建：用 generateUUID() 生成 ID，立即跳转，后台 INSERT
       const newId = generateUUID()
       const newEntry = {
         id: newId,
@@ -337,8 +335,7 @@ export default function HomePage({ onNextStep, editEntry }) {
         people_involved: selectedPeople,
       }
       onNextStep?.(newEntry)
-      supabase.from('journal_entries')
-        .insert(newEntry)
+      insertEntry(newEntry)
         .then(({ error: e }) => { if (e) console.error('[insert] 后台保存失败:', e) })
     }
 

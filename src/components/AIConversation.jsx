@@ -3,7 +3,7 @@ import { ArrowLeft, Send, Loader2, Sparkles, Check, RotateCcw } from 'lucide-rea
 import { callAI } from '../lib/aiClient'
 import { getSystemPrompt, getInitialUserMessage, getExtractionPrompt, getMemoryUpdatePrompt } from '../lib/prompts'
 import { getMemory, updateMemory } from '../lib/memory'
-import { supabase } from '../lib/supabase'
+import { updateEntry } from '../lib/journalService'
 import { useAuth } from '../contexts/AuthContext'
 import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 import { getChatSession, saveChatSession } from '../lib/storage'
@@ -180,11 +180,11 @@ export default function AIConversation({ entry, onClose, onSaved }) {
 
     try {
       // 1. 立即保存对话记录
-      const { error: dbErr } = await supabase
-        .from('journal_entries')
-        .update({ full_conversation: convoRecord })
-        .eq('id', entry.id)
-        .eq('user_id', user.id)
+      const { error: dbErr } = await updateEntry({
+        id: entry.id,
+        userId: user.id,
+        fields: { full_conversation: convoRecord },
+      })
       if (dbErr) throw dbErr
 
       // 2. 立即跳回列表
@@ -213,9 +213,10 @@ export default function AIConversation({ entry, onClose, onSaved }) {
 
         // 写回提取结果
         if (Object.keys(extraction).length > 0) {
-          await supabase
-            .from('journal_entries')
-            .update({
+          updateEntry({
+            id: entry.id,
+            userId: user.id,
+            fields: {
               emotions:                  extraction.emotions                ?? [],
               overall_state_score:       extraction.overall_state_score      ?? null,
               body_sensations:           extraction.body_sensations          ?? null,
@@ -228,10 +229,8 @@ export default function AIConversation({ entry, onClose, onSaved }) {
               reflection_insight:        extraction.reflection_insight       ?? null,
               category_tags:             extraction.category_tags            ?? [],
               people_involved:           extraction.people_involved          ?? [],
-            })
-            .eq('id', entry.id)
-            .eq('user_id', user.id)
-            .then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
+            },
+          }).then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
         }
 
         // 500ms 间隔后更新记忆

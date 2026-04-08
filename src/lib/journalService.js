@@ -1,0 +1,42 @@
+// 日记条目数据访问层
+// 所有对 journal_entries 表的读写都在这里，组件不直接调 supabase
+import { supabase } from './supabase'
+
+// ─── 查询 ──────────────────────────────────────────────────────
+// 分页加载，按 created_at 倒序
+// 返回 { data, error }
+export async function fetchEntries({ userId, from, limit }) {
+  return supabase
+    .from('journal_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(from, from + limit - 1)
+}
+
+// ─── 新建 ──────────────────────────────────────────────────────
+// 立即返回（fire-and-forget），调用方自行处理 error
+export function insertEntry(entry) {
+  return supabase
+    .from('journal_entries')
+    .insert(entry)
+}
+
+// ─── 更新（通用）──────────────────────────────────────────────
+// fields: 任意字段对象；需同时传 id + userId 做 RLS 校验
+export function updateEntry({ id, userId, fields }) {
+  return supabase
+    .from('journal_entries')
+    .update(fields)
+    .eq('id', id)
+    .eq('user_id', userId)
+}
+
+// ─── 删除 ──────────────────────────────────────────────────────
+export function deleteEntry({ id, userId }) {
+  return supabase
+    .from('journal_entries')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
+}
