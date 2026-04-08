@@ -25,12 +25,12 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="h-full flex items-center justify-center bg-amber-50 p-6">
+        <div className="h-full flex items-center justify-center bg-primary-50 p-6">
           <div className="text-center space-y-3">
             <p className="text-lg font-medium text-gray-700">出了一点问题…</p>
             <p className="text-sm text-gray-400">{this.state.error?.message}</p>
             <button
-              className="mt-4 px-4 py-2 bg-amber-400 text-white rounded-lg text-sm"
+              className="mt-4 px-4 py-2 bg-primary-400 text-white rounded-lg text-sm"
               onClick={() => this.setState({ hasError: false, error: null })}
             >
               重试
@@ -48,9 +48,9 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-amber-50">
+      <div className="h-full flex items-center justify-center bg-primary-50">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 size={32} className="animate-spin text-amber-400" />
+          <Loader2 size={32} className="animate-spin text-primary-400" />
           <p className="text-sm text-gray-400">加载中…</p>
         </div>
       </div>

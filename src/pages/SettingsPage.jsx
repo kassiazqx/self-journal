@@ -86,16 +86,16 @@ export default function SettingsPage() {
                 onClick={() => { setSettings(s => ({ ...s, provider: p.id, apiKey: '' })); setKeyUnlocked(false) }}
                 className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
                   settings.provider === p.id
-                    ? 'border-amber-400 bg-amber-50'
+                    ? 'border-primary-400 bg-primary-50'
                     : 'border-gray-200 bg-white'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                    settings.provider === p.id ? 'border-amber-500' : 'border-gray-300'
+                    settings.provider === p.id ? 'border-primary-500' : 'border-gray-300'
                   }`}>
                     {settings.provider === p.id && (
-                      <div className="w-2 h-2 rounded-full bg-amber-500" />
+                      <div className="w-2 h-2 rounded-full bg-primary-500" />
                     )}
                   </div>
                   <div className="text-left">
@@ -135,7 +135,7 @@ export default function SettingsPage() {
                 data-form-type="other"
                 className={`w-full pl-9 pr-4 py-3 bg-gray-50 border rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none transition-colors ${
                   keyUnlocked
-                    ? 'border-amber-300 bg-white focus:border-amber-400 cursor-text'
+                    ? 'border-primary-300 bg-white focus:border-primary-400 cursor-text'
                     : 'border-gray-200 cursor-not-allowed select-none'
                 }`}
               />
@@ -145,7 +145,7 @@ export default function SettingsPage() {
               onClick={() => setKeyUnlocked(v => !v)}
               className={`flex-shrink-0 w-10 h-10 rounded-2xl border flex items-center justify-center transition-all active:scale-95 ${
                 keyUnlocked
-                  ? 'border-amber-300 bg-amber-50 text-amber-500'
+                  ? 'border-primary-300 bg-primary-50 text-primary-500'
                   : 'border-gray-200 bg-gray-50 text-gray-400'
               }`}
               title={keyUnlocked ? '锁定' : '编辑 API Key'}
@@ -189,7 +189,7 @@ export default function SettingsPage() {
             onClick={handleSave}
             disabled={!settings.apiKey.trim()}
             className={`flex-1 py-3.5 rounded-2xl text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 ${
-              saved ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'
+              saved ? 'bg-green-500 text-white' : 'bg-primary-500 text-white'
             }`}
           >
             {saved ? <><Check size={15} /> 已保存</> : '保存'}

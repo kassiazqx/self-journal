@@ -203,7 +203,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
                       onClick={() => toggleEmotion(tag)}
                       className={`px-3 py-1.5 rounded-full text-sm border transition-all active:scale-95 ${
                         isSelected
-                          ? 'bg-amber-500 text-white border-amber-500'
+                          ? 'bg-primary-500 text-white border-primary-500'
                           : 'bg-gray-50 text-gray-500 border-gray-200'
                       }`}
                     >
@@ -230,11 +230,11 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
                   value={emotionInput}
                   onChange={e => setEmotionInput(e.target.value)}
                   placeholder="输入情绪词，如：羞耻、嫉妒"
-                  className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+                  className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-primary-400"
                 />
                 <button
                   onClick={handleAddEmotion}
-                  className="px-4 py-2 bg-amber-500 text-white text-sm rounded-2xl active:scale-95"
+                  className="px-4 py-2 bg-primary-500 text-white text-sm rounded-2xl active:scale-95"
                 >
                   添加
                 </button>
@@ -255,7 +255,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
                 onClick={() => setStateScore(prev => prev === opt.value ? null : opt.value)}
                 className={`flex-1 flex flex-col items-center py-2 rounded-xl border text-xs transition-all active:scale-95 ${
                   stateScore === opt.value
-                    ? 'bg-amber-500 text-white border-amber-500'
+                    ? 'bg-primary-500 text-white border-primary-500'
                     : 'bg-white text-gray-400 border-gray-100'
                 }`}
               >
@@ -286,7 +286,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
                   onClick={() => setHandlingRating(prev => prev === opt ? null : opt)}
                   className={`py-2.5 rounded-xl text-sm border transition-all active:scale-95 ${
                     handlingRating === opt
-                      ? 'bg-amber-500 text-white border-amber-500'
+                      ? 'bg-primary-500 text-white border-primary-500'
                       : 'bg-gray-50 text-gray-600 border-gray-100'
                   }`}
                 >
@@ -315,7 +315,7 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
         )}
         <button
           onClick={handleComplete}
-          className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-amber-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-primary-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
         >
           <Check size={16} />
           {isEdit ? '保存' : '完成'}

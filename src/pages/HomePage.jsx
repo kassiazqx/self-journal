@@ -379,7 +379,7 @@ export default function HomePage({ onNextStep, editEntry }) {
               onClick={() => handleTemplateClick(t.id)}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                 selectedTemplate === t.id
-                  ? 'bg-amber-500 text-white shadow-sm'
+                  ? 'bg-primary-500 text-white shadow-sm'
                   : 'bg-white text-gray-600 border border-gray-200'
               }`}
             >
@@ -392,8 +392,8 @@ export default function HomePage({ onNextStep, editEntry }) {
 
       {/* 引导提示 */}
       {activeTemplate?.hint && (
-        <div className="mx-4 mb-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl fade-in">
-          <p className="text-sm text-amber-700 leading-relaxed">
+        <div className="mx-4 mb-3 px-4 py-3 bg-primary-50 border border-primary-100 rounded-2xl fade-in">
+          <p className="text-sm text-primary-700 leading-relaxed">
             💡 {activeTemplate.hint}
           </p>
         </div>
@@ -412,7 +412,7 @@ export default function HomePage({ onNextStep, editEntry }) {
                 onClick={() => toggleCategory(tag)}
                 className={`px-3 py-1.5 rounded-full text-sm border transition-all active:scale-95 flex items-center gap-1 ${
                   isSelected
-                    ? 'bg-amber-500 text-white border-amber-500'
+                    ? 'bg-primary-500 text-white border-primary-500'
                     : 'bg-white text-gray-500 border-gray-200'
                 }`}
               >
@@ -437,11 +437,11 @@ export default function HomePage({ onNextStep, editEntry }) {
               value={categoryInput}
               onChange={e => setCategoryInput(e.target.value)}
               placeholder="输入自定义标签，如：婆媳、备婚"
-              className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+              className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-primary-400"
             />
             <button
               onClick={handleAddCategory}
-              className="px-4 py-2 bg-amber-500 text-white text-sm rounded-2xl active:scale-95"
+              className="px-4 py-2 bg-primary-500 text-white text-sm rounded-2xl active:scale-95"
             >
               添加
             </button>
@@ -454,7 +454,7 @@ export default function HomePage({ onNextStep, editEntry }) {
             value={eventName}
             onChange={e => setEventName(e.target.value)}
             placeholder="例如：觉察日记app、reader网站搭建"
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-amber-400"
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-primary-400"
           />
         </div>
 
@@ -568,7 +568,7 @@ export default function HomePage({ onNextStep, editEntry }) {
             disabled={!content.trim()}
             className={`flex-1 h-14 rounded-2xl font-medium text-base flex items-center justify-center transition-all duration-200 active:scale-95 ${
               content.trim()
-                ? 'bg-amber-500 text-white shadow-sm hover:bg-amber-600'
+                ? 'bg-primary-500 text-white shadow-sm hover:bg-primary-600'
                 : 'bg-gray-100 text-gray-300 cursor-not-allowed'
             }`}
           >

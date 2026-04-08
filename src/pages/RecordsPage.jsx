@@ -126,7 +126,7 @@ function EntryCard({ entry, onOpen, onAction }) {
       {hasAI && (
         <div className="flex items-center gap-1 mt-2 flex-wrap">
           {[...new Set(entry.emotions ?? [])].slice(0, 3).map(e => (
-            <span key={e} className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
+            <span key={e} className="text-xs px-2 py-0.5 bg-primary-50 text-primary-600 rounded-full border border-primary-100">
               {e}
             </span>
           ))}
@@ -232,7 +232,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading ? (
           <div className="flex items-center justify-center pt-20">
-            <Loader2 size={28} className="animate-spin text-amber-400" />
+            <Loader2 size={28} className="animate-spin text-primary-400" />
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center pt-20 fade-in">
@@ -268,7 +268,7 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
               <button
                 onClick={() => fetchEntries(false)}
                 disabled={loadingMore}
-                className="w-full py-3 text-sm text-amber-500 flex items-center justify-center gap-2"
+                className="w-full py-3 text-sm text-primary-500 flex items-center justify-center gap-2"
               >
                 {loadingMore
                   ? <><Loader2 size={14} className="animate-spin" /> 加载中…</>

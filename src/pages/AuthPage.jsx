@@ -60,12 +60,12 @@ export default function AuthPage() {
   // 注册成功提示页
   if (mode === 'success') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-gradient-to-b from-amber-50 to-orange-50">
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-gradient-to-b from-primary-50 to-orange-50">
         <div className="w-full max-w-sm text-center fade-in">
           <div className="text-6xl mb-6">✉️</div>
           <h2 className="text-2xl font-bold text-gray-800 mb-3">确认邮件已发送</h2>
           <p className="text-gray-500 mb-2 leading-relaxed">
-            请前往 <span className="font-medium text-amber-600">{successEmail}</span> 收取确认邮件
+            请前往 <span className="font-medium text-primary-600">{successEmail}</span> 收取确认邮件
           </p>
           <p className="text-gray-400 text-sm mb-8">点击邮件中的链接即可完成注册</p>
           <button
@@ -80,10 +80,10 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-amber-50 to-orange-50">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-primary-50 to-orange-50">
       {/* 顶部 Logo 区域 */}
       <div className="flex flex-col items-center pt-20 pb-10 px-6">
-        <div className="w-20 h-20 bg-amber-500 rounded-3xl flex items-center justify-center shadow-lg mb-5">
+        <div className="w-20 h-20 bg-primary-500 rounded-3xl flex items-center justify-center shadow-lg mb-5">
           <BookOpen size={40} color="white" strokeWidth={1.5} />
         </div>
         <h1 className="text-2xl font-bold text-gray-800 mb-1">自我觉察日记</h1>
@@ -97,7 +97,7 @@ export default function AuthPage() {
           <button
             className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
               mode === 'login'
-                ? 'bg-amber-500 text-white shadow-sm'
+                ? 'bg-primary-500 text-white shadow-sm'
                 : 'text-gray-500'
             }`}
             onClick={() => { setMode('login'); setError('') }}
@@ -107,7 +107,7 @@ export default function AuthPage() {
           <button
             className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
               mode === 'signup'
-                ? 'bg-amber-500 text-white shadow-sm'
+                ? 'bg-primary-500 text-white shadow-sm'
                 : 'text-gray-500'
             }`}
             onClick={() => { setMode('signup'); setError('') }}
@@ -127,7 +127,7 @@ export default function AuthPage() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="your@email.com"
-                className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-gray-800 placeholder-gray-300 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 transition-all"
+                className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-gray-800 placeholder-gray-300 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all"
                 autoComplete="email"
                 inputMode="email"
               />
@@ -144,7 +144,7 @@ export default function AuthPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder={mode === 'signup' ? '至少 6 位' : '请输入密码'}
-                className="w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-2xl text-gray-800 placeholder-gray-300 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 transition-all"
+                className="w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-2xl text-gray-800 placeholder-gray-300 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               />
               <button
