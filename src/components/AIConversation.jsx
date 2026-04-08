@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Send, Loader2, Sparkles, Check, RotateCcw } from 'lucide-react'
 import { callAI } from '../lib/aiClient'
-import { getSystemPrompt, getInitialUserMessage, getExtractionPrompt, getMemoryUpdatePrompt } from '../lib/prompts'
-import { getMemory, updateMemory } from '../lib/memory'
-import { updateEntry } from '../lib/journalService'
+import { getSystemPrompt, getInitialUserMessage } from '../lib/prompts'
+import { getMemory } from '../lib/memory'
+import { saveConversation } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
 import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
 import { getChatSession, saveChatSession } from '../lib/storage'
@@ -176,86 +176,14 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     setSaving(true)
     setError('')
 
-    const convoRecord = visibleMsgs.map(m => ({ role: m.role, content: m.content }))
-
-    try {
-      // 1. 立即保存对话记录
-      const { error: dbErr } = await updateEntry({
-        id: entry.id,
-        userId: user.id,
-        fields: { full_conversation: convoRecord },
-      })
-      if (dbErr) throw dbErr
-
-      // 2. 立即跳回列表
-      onSaved?.()
-
-      // 3. 后台提取字段 + 更新记忆（fire-and-forget）
-      ;(async () => {
-        const convoText = visibleMsgs
-          .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
-          .join('\n\n')
-
-        // 提取字段
-        let extraction = {}
-        try {
-          const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt()}`
-          const raw = await callAI(
-            [{ role: 'user', content: extractPrompt }],
-            '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
-            { maxTokens: 1200 }
-          )
-          const match = raw.match(/\{[\s\S]*\}/)
-          if (match) extraction = JSON.parse(match[0])
-        } catch (e) {
-          console.error('[extract] 提取失败:', e)
-        }
-
-        // 写回提取结果
-        if (Object.keys(extraction).length > 0) {
-          updateEntry({
-            id: entry.id,
-            userId: user.id,
-            fields: {
-              emotions:                  extraction.emotions                ?? [],
-              overall_state_score:       extraction.overall_state_score      ?? null,
-              body_sensations:           extraction.body_sensations          ?? null,
-              current_thought:           extraction.current_thought          ?? null,
-              core_needs:                extraction.core_needs               ?? [],
-              current_behavior:          extraction.current_behavior         ?? null,
-              handling_rating:           extraction.handling_rating          ?? null,
-              cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
-              cognitive_analysis:        extraction.cognitive_analysis       ?? null,
-              reflection_insight:        extraction.reflection_insight       ?? null,
-              category_tags:             extraction.category_tags            ?? [],
-              people_involved:           extraction.people_involved          ?? [],
-            },
-          }).then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
-        }
-
-        // 500ms 间隔后更新记忆
-        await new Promise(r => setTimeout(r, 500))
-        try {
-          const memPrompt = getMemoryUpdatePrompt(convoText)
-          const raw = await callAI(
-            [{ role: 'user', content: memPrompt }],
-            '你是用户记忆整理助手，只返回纯 JSON，不加任何说明或 markdown。',
-            { maxTokens: 600 }
-          )
-          const match = raw.match(/\{[\s\S]*\}/)
-          if (match) {
-            const { rolling_summary, user_profile } = JSON.parse(match[0])
-            await updateMemory({ rolling_summary, user_profile })
-          }
-        } catch (e) {
-          console.error('[memory] 记忆更新失败:', e)
-        }
-      })()
-
-    } catch (e) {
-      setError('保存失败：' + e.message)
+    const { error } = await saveConversation({ visibleMsgs, entry })
+    if (error) {
+      setError('保存失败：' + error.message)
       setSaving(false)
+      return
     }
+    // 保存成功，立即跳回列表；后台提取和记忆更新在 conversationService 里静默执行
+    onSaved?.()
   }
 
   function handleClose() {

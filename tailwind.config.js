@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+import colors from 'tailwindcss/colors'
+
 export default {
   content: [
     "./index.html",
@@ -7,18 +9,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#fdf8f0',
-          100: '#faefd9',
-          200: '#f5dcb0',
-          300: '#eec27d',
-          400: '#e6a047',
-          500: '#e08a2a',
-          600: '#cc7020',
-          700: '#a9571c',
-          800: '#88451e',
-          900: '#6f3a1b',
-        },
+        // primary 是 amber 的别名：改主题色只需换这一行
+        primary: colors.amber,
         warm: {
           50: '#fdfaf7',
           100: '#f9f2ea',
