@@ -80,8 +80,6 @@ async function callGemini(messages, systemPrompt, apiKey, options = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    // ⚠️ 调试日志：打印完整 Gemini 错误响应，排查后可删除
-    console.error('[Gemini] HTTP', res.status, JSON.stringify(err, null, 2))
     const msg = err.error?.message || res.statusText
     const code = err.error?.code || err.error?.status || ''
     if (res.status === 400) {
