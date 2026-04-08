@@ -95,6 +95,7 @@ src/
 - [ ] Capacitor APK 打包
 
 ## ⚠️ 工作规范（重要）
+- **改代码前必须先读 `docs/coding-lessons.md`**，对照 8 条规则检查方案
 - **改代码前必须先讨论方案，不直接动手**
 - 流程：superpowers:brainstorming 讨论 → 用户确认 → 执行
 - 大改动用 Agent 后台跑，小修改直接用 Edit 工具
