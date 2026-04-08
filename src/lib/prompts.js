@@ -190,6 +190,11 @@ ${conversationText}
 }
 
 // ─── 字段提取提示词（对话结束后调用）──────────────────────────
+// ⚠️ 同步约束：以下 JSON 字段名与 journal_entries 表列名一一对应。
+// 新增或修改 DB 字段时，必须同步修改：
+//   1. 此函数里的 JSON 字段列表
+//   2. AIConversation.jsx finishAndSave() 里的 update 字段列表
+//   3. supabase-schema.sql
 export function getExtractionPrompt() {
   return `请根据我们刚才的完整对话（包括我最初的日记），提取以下信息，以纯 JSON 格式返回，不要有任何其他文字或 markdown 符号。如果某项信息在对话中没有提到，填 null。
 
