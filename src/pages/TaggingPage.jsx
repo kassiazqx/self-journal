@@ -305,14 +305,12 @@ export default function TaggingPage({ entry, isEdit = false, onComplete, onBack 
 
       {/* 底部操作栏 */}
       <div className="px-4 pb-6 pt-2 flex gap-3 flex-shrink-0">
-        {!isEdit && (
-          <button
-            onClick={handleReflection}
-            className="px-4 py-3 bg-white border border-gray-200 text-gray-400 text-sm rounded-2xl active:scale-95 transition-transform whitespace-nowrap"
-          >
-            深度复盘
-          </button>
-        )}
+        <button
+          onClick={handleReflection}
+          className="px-4 py-3 bg-white border border-gray-200 text-gray-400 text-sm rounded-2xl active:scale-95 transition-transform whitespace-nowrap"
+        >
+          深度复盘
+        </button>
         <button
           onClick={handleComplete}
           className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-primary-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"

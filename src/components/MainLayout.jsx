@@ -17,134 +17,133 @@ const NAV_ITEMS = [
   { id: 'settings', label: '设置', Icon: Settings },
 ]
 
+// ─── 导航栈工具函数 ────────────────────────────────────────────
+// screens: [{ type, ...data }]
+// type 枚举：'edit' | 'tagging' | 'reflection' | 'ai'
+// []（空栈）= 正常 Tab 布局
+//
+// 「edit」类型同时服务两种场景：
+//   1. 从记录列表发起的编辑（editEntry 已在 DB，isEdit = true）
+//   2. 新建流程从 TaggingPage 回退（entry 刚插入 DB，isEdit = false → 回退后变 true）
+//      B 方案：回退时把 tagging.entry 包成 { type:'edit', entry } 推入栈，
+//              所有字段自动保留；以后新增字段不需要改这里。
+
+function push(setScreens, screen) {
+  setScreens(prev => [...prev, screen])
+}
+function pop(setScreens) {
+  setScreens(prev => prev.slice(0, -1))
+}
+function reset(setScreens) {
+  setScreens([])
+}
+
 export default function MainLayout() {
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'home'
   })
   const [recordsRefreshKey, setRecordsRefreshKey] = useState(0)
-
-  // 流程状态：null → home | taggingEntry → TaggingPage | aiEntry → AI对话
-  const [taggingEntry, setTaggingEntry] = useState(null)   // 进入情绪标注页
-  const [aiEntry, setAiEntry]           = useState(null)   // 进入 AI 对话
-  const [suggestEntry, setSuggestEntry] = useState(null)   // 显示"聊聊吗？"横幅
-  const [reflectionEntry, setReflectionEntry] = useState(null) // 进入深度复盘页
-  const [reflectionIndex, setReflectionIndex] = useState(0)    // 复盘页当前卡片索引（AI来回后恢复）
-  const [reflectionAnswers, setReflectionAnswers] = useState({}) // 卡片答案快照（防止卸载丢失）
-
-  // 编辑模式：从列表/详情触发
-  const [editEntry, setEditEntry] = useState(null)         // 进入编辑流程（HomePage预填）
+  const [screens, setScreens] = useState([])       // 导航栈
+  const [suggestEntry, setSuggestEntry] = useState(null)  // 横幅（非全屏，单独存）
 
   const { user } = useAuth()
 
-  // ── HomePage "下一步" 完成后 ─────────────────────────────────
-  // entry 已保存到 Supabase，分析复杂度，进入 TaggingPage
+  // 当前最顶层屏幕（null = 正常 Tab 布局）
+  const currentScreen = screens[screens.length - 1] ?? null
+
+  // ── tab 切换时持久化 ──────────────────────────────────────────
+  const goTab = (id) => {
+    setActiveTab(id)
+    saveActiveTab(id)
+  }
+
+  // ── HomePage 「下一步」完成后 ─────────────────────────────────
   const handleNextStep = (entry) => {
     const { shouldSuggestChat } = analyzeContent(entry.content)
-    // 把分析结果挂在 entry 上，TaggingPage 完成后 MainLayout 用
-    setTaggingEntry({ ...entry, _shouldSuggestChat: shouldSuggestChat })
-    setEditEntry(null)
+    const isEdit = Boolean(screens.find(s => s.type === 'edit'))
+    reset(setScreens)
+    push(setScreens, {
+      type: 'tagging',
+      entry: { ...entry, _shouldSuggestChat: shouldSuggestChat },
+      isEdit,
+    })
     setRecordsRefreshKey(k => k + 1)
   }
 
-  // ── TaggingPage "完成/保存" 后 ───────────────────────────────
+  // ── TaggingPage 完成后 ────────────────────────────────────────
   const handleTaggingComplete = ({ stateScore, goToReflection } = {}) => {
+    const taggingScreen = currentScreen  // type === 'tagging'
+    const entry = taggingScreen?.entry
+
     if (goToReflection) {
-      const entryForReflection = { ...taggingEntry }
-      setTaggingEntry(null)
-      setReflectionIndex(0)
-      // 从 entry 已有字段初始化 answers，让编辑模式能预填
       const initAnswers = {}
-      getCardsForEntry(entryForReflection).forEach(c => {
-        const raw = entryForReflection[c.field]
+      getCardsForEntry(entry).forEach(c => {
+        const raw = entry[c.field]
         initAnswers[c.id] = Array.isArray(raw) ? raw.join('、') : (raw ?? '')
       })
-      setReflectionAnswers(initAnswers)
-      setReflectionEntry(entryForReflection)
+      // replace tagging → reflection
+      setScreens([{ type: 'reflection', entry, index: 0, answers: initAnswers }])
       return
     }
-    const shouldSuggest = taggingEntry?._shouldSuggestChat || (stateScore !== null && stateScore !== undefined && stateScore < 0)
-    setTaggingEntry(null)
+
+    const shouldSuggest = entry?._shouldSuggestChat ||
+      (stateScore !== null && stateScore !== undefined && stateScore < 0)
+    reset(setScreens)
     if (shouldSuggest) {
-      setSuggestEntry(taggingEntry)
+      setSuggestEntry(entry)
     } else {
-      handleSetActiveTab('records')
+      goTab('records')
       setRecordsRefreshKey(k => k + 1)
     }
   }
 
-  // ── 用户从"聊聊吗？"横幅点"聊聊" ────────────────────────────
+  // ── 建议横幅 ─────────────────────────────────────────────────
   const handleAcceptSuggest = () => {
     const entry = suggestEntry
     setSuggestEntry(null)
-    setAiEntry(entry)
+    push(setScreens, { type: 'ai', entry })
   }
 
-  const handleDeclineSuggest = () => {
-    setSuggestEntry(null)
-  }
-
-  // ── AI 对话结束 ──────────────────────────────────────────────
-  // 从复盘页唤起的 AI：关闭后回到复盘页（reflectionEntry 还在）
-  // 从其他地方唤起的 AI：关闭后 reflectionEntry 为 null，正常回主界面
-  const handleAIClose  = () => setAiEntry(null)
-  const handleAISaved  = () => {
-    setAiEntry(null)
-    setReflectionEntry(null)   // 无论从哪里来，保存完成后清掉复盘状态
-    handleSetActiveTab('records')
+  // ── AI 对话 ──────────────────────────────────────────────────
+  const handleAIClose = () => pop(setScreens)
+  const handleAISaved = () => {
+    reset(setScreens)
+    goTab('records')
     setRecordsRefreshKey(k => k + 1)
   }
 
-  // ── 深度复盘页关闭 ───────────────────────────────────────────
+  // ── 深度复盘 ─────────────────────────────────────────────────
   const handleReflectionClose = () => {
-    setReflectionEntry(null)
-    handleSetActiveTab('records')
+    reset(setScreens)
+    goTab('records')
     setRecordsRefreshKey(k => k + 1)
   }
 
-  // ── 从记录列表手动发起 AI 对话 ───────────────────────────────
-  const handleStartAI = (entry) => setAiEntry(entry)
-
-  // ── 从记录列表/详情发起编辑 ─────────────────────────────────
+  // ── 从记录列表/详情发起 AI 或编辑 ────────────────────────────
+  const handleStartAI  = (entry) => push(setScreens, { type: 'ai', entry })
   const handleStartEdit = (entry) => {
-    setEditEntry(entry)
-    handleSetActiveTab('home')
+    reset(setScreens)
+    push(setScreens, { type: 'edit', entry })
+    goTab('home')
   }
 
-  // tab 切换时持久化
-  const handleSetActiveTab = (id) => {
-    setActiveTab(id)
-    saveActiveTab(id)
-  }
+  // 横幅自动消失
   useEffect(() => {
     if (!suggestEntry) return
     const timer = setTimeout(() => setSuggestEntry(null), 4000)
     return () => clearTimeout(timer)
   }, [suggestEntry])
 
-  // ── 全屏覆盖：深度复盘（AI 唤起时让位给 AI）────────────────
-  if (reflectionEntry && !aiEntry) {
-    return (
-      <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
-        <ReflectionPage
-          entry={reflectionEntry}
-          onClose={handleReflectionClose}
-          onStartAI={handleStartAI}
-          initialIndex={reflectionIndex}
-          onIndexChange={setReflectionIndex}
-          initialAnswers={reflectionAnswers}
-          onAnswersChange={setReflectionAnswers}
-        />
-      </div>
-    )
-  }
+  // ─── 全屏覆盖渲染 ─────────────────────────────────────────────
+  const WRAPPER = 'flex flex-col max-w-lg mx-auto w-full'
+  const STYLE   = { height: '100dvh' }
 
-  // ── 全屏覆盖：AI 对话 ────────────────────────────────────────
-  if (aiEntry) {
+  if (currentScreen?.type === 'ai') {
     return (
-      <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
+      <div className={WRAPPER} style={STYLE}>
         <AIConversation
-          entry={aiEntry}
+          entry={currentScreen.entry}
           onClose={handleAIClose}
           onSaved={handleAISaved}
         />
@@ -152,40 +151,72 @@ export default function MainLayout() {
     )
   }
 
-  // ── 全屏覆盖：情绪标注页 ────────────────────────────────────
-  if (taggingEntry) {
+  if (currentScreen?.type === 'reflection') {
+    const s = currentScreen
     return (
-      <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
+      <div className={WRAPPER} style={STYLE}>
+        <ReflectionPage
+          entry={s.entry}
+          onClose={handleReflectionClose}
+          onBack={() => setScreens([{ type: 'tagging', entry: s.entry, isEdit: false }])}
+          onStartAI={(entry) => push(setScreens, { type: 'ai', entry })}
+          initialIndex={s.index}
+          onIndexChange={(i) =>
+            setScreens(prev => prev.map((sc, idx) =>
+              idx === prev.length - 1 ? { ...sc, index: i } : sc
+            ))
+          }
+          initialAnswers={s.answers}
+          onAnswersChange={(a) =>
+            setScreens(prev => prev.map((sc, idx) =>
+              idx === prev.length - 1 ? { ...sc, answers: a } : sc
+            ))
+          }
+        />
+      </div>
+    )
+  }
+
+  if (currentScreen?.type === 'tagging') {
+    const s = currentScreen
+    return (
+      <div className={WRAPPER} style={STYLE}>
         <TaggingPage
-          entry={taggingEntry}
-          isEdit={Boolean(editEntry)}
+          entry={s.entry}
+          isEdit={s.isEdit}
           onComplete={handleTaggingComplete}
           onBack={() => {
-            // 返回：回到 HomePage（编辑模式或新建）
-            setTaggingEntry(null)
+            if (s.isEdit) {
+              // 编辑旧记录：回到 edit 屏（pop 还原）
+              pop(setScreens)
+            } else {
+              // 新建流程：entry 已入库，切换成 edit 模式保留所有字段（B 方案）
+              // 以后加任何新字段，这里都不需要改
+              setScreens([{ type: 'edit', entry: s.entry }])
+            }
           }}
         />
       </div>
     )
   }
 
-  // ── 全屏覆盖：编辑模式（HomePage 预填）──────────────────────
-  if (editEntry) {
+  if (currentScreen?.type === 'edit') {
     return (
-      <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
+      <div className={WRAPPER} style={STYLE}>
         <div className="flex-1 overflow-y-auto">
           <HomePage
-            editEntry={editEntry}
+            editEntry={currentScreen.entry}
             onNextStep={handleNextStep}
+            onCancel={() => { reset(setScreens); goTab('records') }}
           />
         </div>
       </div>
     )
   }
 
-  // ── 正常 Tab 布局 ────────────────────────────────────────────
+  // ─── 正常 Tab 布局 ────────────────────────────────────────────
   return (
-    <div className="flex flex-col max-w-lg mx-auto w-full" style={{ height: '100dvh' }}>
+    <div className={`${WRAPPER} relative`} style={STYLE}>
       <div className="flex-1 overflow-hidden min-h-0">
 
         <div className={`h-full overflow-y-auto ${activeTab === 'home' ? 'block' : 'hidden'}`}>
@@ -206,7 +237,7 @@ export default function MainLayout() {
         </div>
       </div>
 
-      {/* "聊聊吗？"提示横幅（覆盖在底部导航上方）*/}
+      {/* 「聊聊吗？」提示横幅 */}
       {suggestEntry && (
         <div className="absolute bottom-16 left-0 right-0 max-w-lg mx-auto px-4 fade-in z-10">
           <div className="bg-white border border-primary-200 rounded-2xl px-4 py-3 shadow-md flex items-center gap-3">
@@ -223,7 +254,7 @@ export default function MainLayout() {
               聊聊
             </button>
             <button
-              onClick={handleDeclineSuggest}
+              onClick={() => setSuggestEntry(null)}
               className="text-gray-300 active:scale-95 transition-transform"
             >
               <X size={18} />
@@ -239,7 +270,7 @@ export default function MainLayout() {
             <button
               key={id}
               className={`nav-item ${activeTab === id ? 'active' : ''}`}
-              onClick={() => handleSetActiveTab(id)}
+              onClick={() => goTab(id)}
             >
               <Icon size={22} strokeWidth={activeTab === id ? 2.2 : 1.8} />
               <span className={`text-xs font-medium ${activeTab === id ? 'text-primary-500' : 'text-gray-400'}`}>

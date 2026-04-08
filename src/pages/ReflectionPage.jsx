@@ -9,7 +9,7 @@ import { getCardsForEntry } from '../lib/reflectionQuestions'
  *   onClose    — 关闭页面回调（返回记录列表）
  *   onStartAI  — 唤起 AI 对话回调，传入带 _reflectionAnswers 的 entry
  */
-export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex = 0, onIndexChange, initialAnswers = {}, onAnswersChange }) {
+export default function ReflectionPage({ entry, onClose, onStartAI, onBack, initialIndex = 0, onIndexChange, initialAnswers = {}, onAnswersChange }) {
   const cards = getCardsForEntry(entry)
   const total = cards.length
 
@@ -80,6 +80,19 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
     }
   }
 
+  // ── 返回情绪标签页（第一张卡片时）────────────────────────────
+  const handleBack = () => {
+    const currentAnswer = answers[card.id]
+    if (currentAnswer?.toString().trim()) {
+      updateEntry({
+        id: entry.id,
+        userId: entry.user_id,
+        fields: { [card.field]: toSaveValue(card.field, currentAnswer) },
+      }).then(({ error: e }) => { if (e) console.error('[reflection] 返回前保存失败:', e) })
+    }
+    onBack?.()
+  }
+
   // ── 触摸滑动 ─────────────────────────────────────────────────
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX
@@ -130,10 +143,8 @@ export default function ReflectionPage({ entry, onClose, onStartAI, initialIndex
       {/* 顶栏 */}
       <div className="flex items-center justify-between px-4 pt-5 pb-3 flex-shrink-0">
         <button
-          onClick={() => goTo(currentIndex - 1)}
-          className={`text-sm text-gray-400 w-14 text-left active:scale-95 transition-transform ${
-            currentIndex === 0 ? 'invisible' : ''
-          }`}
+          onClick={() => currentIndex === 0 ? handleBack() : goTo(currentIndex - 1)}
+          className="text-sm text-gray-400 w-14 text-left active:scale-95 transition-transform"
         >
           ‹ {currentIndex}/{total}
         </button>
