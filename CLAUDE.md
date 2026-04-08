@@ -101,6 +101,26 @@ src/
 - 大改动用 Agent 后台跑，小修改直接用 Edit 工具
 - 写大文件用 Write 工具直接写，不要交给 Agent（会 504 超时）
 
+## 🚦 Git 提交强制流程（每个节点都必须走完）
+
+```
+改代码
+  ↓
+npm run build   ← AI 执行，确认无编译错误
+  ↓
+npm run dev     ← AI 启动，列出【需要手动验证的操作清单】
+  ↓
+用户本地点一遍  ← 用户确认"没问题"
+  ↓
+git commit      ← 才可以提交
+  ↓
+用户确认要上线  ← 才可以 git push
+```
+
+**AI 不得在用户确认前自行 commit。**
+**每次完成一个 Step，AI 必须明确列出要验证的操作点，等用户回复"没问题"后再提交。**
+**`npm run build` 通过 ≠ 可以 commit，build 只检查编译，不检查运行时行为。**
+
 ## 注意事项
 - .env 文件不能提交 GitHub（已在 .gitignore）
 - Vercel 环境变量已配置完毕
