@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Key, Check, Loader2, LogOut } from 'lucide-react'
+import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState(null) // null | 'ok' | 'error'
   const [testMsg, setTestMsg] = useState('')
   const [saved, setSaved] = useState(false)
+  const [keyUnlocked, setKeyUnlocked] = useState(false) // API Key 是否处于编辑模式
 
   useEffect(() => {
     setSettings(getAISettings())
@@ -82,7 +83,7 @@ export default function SettingsPage() {
             {PROVIDERS.map(p => (
               <button
                 key={p.id}
-                onClick={() => setSettings(s => ({ ...s, provider: p.id, apiKey: '' }))}
+                onClick={() => { setSettings(s => ({ ...s, provider: p.id, apiKey: '' })); setKeyUnlocked(false) }}
                 className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
                   settings.provider === p.id
                     ? 'border-amber-400 bg-amber-50'
@@ -120,15 +121,37 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400 mb-3">
             仅保存在你的设备本地，不会上传到任何服务器
           </p>
-          <div className="relative">
-            <Key size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-            <input
-              type="password"
-              value={settings.apiKey}
-              onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
-              placeholder={currentProvider?.hint || '请输入 API Key'}
-              className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-amber-400 transition-colors"
-            />
+          <div className="relative flex items-center gap-2">
+            <div className="relative flex-1">
+              <Key size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+              <input
+                type="password"
+                value={settings.apiKey}
+                onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
+                placeholder={keyUnlocked ? (currentProvider?.hint || '请输入 API Key') : '••••••••••••••••'}
+                readOnly={!keyUnlocked}
+                autoComplete="off"
+                data-lpignore="true"
+                data-form-type="other"
+                className={`w-full pl-9 pr-4 py-3 bg-gray-50 border rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none transition-colors ${
+                  keyUnlocked
+                    ? 'border-amber-300 bg-white focus:border-amber-400 cursor-text'
+                    : 'border-gray-200 cursor-not-allowed select-none'
+                }`}
+              />
+            </div>
+            {/* 锁 / 编辑 切换按钮 */}
+            <button
+              onClick={() => setKeyUnlocked(v => !v)}
+              className={`flex-shrink-0 w-10 h-10 rounded-2xl border flex items-center justify-center transition-all active:scale-95 ${
+                keyUnlocked
+                  ? 'border-amber-300 bg-amber-50 text-amber-500'
+                  : 'border-gray-200 bg-gray-50 text-gray-400'
+              }`}
+              title={keyUnlocked ? '锁定' : '编辑 API Key'}
+            >
+              {keyUnlocked ? <Pencil size={14} /> : <Lock size={14} />}
+            </button>
           </div>
 
           {/* 如何获取 */}
