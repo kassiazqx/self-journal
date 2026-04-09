@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   context_type text NOT NULL CHECK (context_type IN ('entry', 'letter')),
   messages    jsonb NOT NULL DEFAULT '[]',
   created_at  timestamptz DEFAULT now(),
-  updated_at  timestamptz DEFAULT now()
+  updated_at  timestamptz DEFAULT now(),
+  CONSTRAINT conversations_entry_unique UNIQUE (entry_id, context_type)
 );
 
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
@@ -230,22 +231,27 @@ CREATE POLICY "user_review_letters_policy"
 
 ### 4.3 给 journal_entries 增列
 
+> **已有字段（不需要 ALTER，只需确认存在）：** `body_sensations`、`current_thought`、`core_needs`、`reflection_insight`、`overall_state_score`、`emotions`。下面只列**新增列**。
+
 ```sql
--- 情绪描述层（AI生成的丰富表达，用于展示）
+-- 情绪描述层（AI生成的丰富自然表达，用于展示；区别于基础层 emotions 只用于统计）
 ALTER TABLE journal_entries
   ADD COLUMN IF NOT EXISTS emotion_display text[] DEFAULT '{}';
 
--- 基础层映射置信度（0.0-1.0，低于0.7时在详情页提示）
+-- 基础层映射置信度（0.0-1.0；低于 0.75 时在详情页提示「基础标签待确认」）
 ALTER TABLE journal_entries
   ADD COLUMN IF NOT EXISTS emotion_confidence float DEFAULT null;
 
--- 附件预留（图片/音频等，现在不实现，字段先占位）
+-- 附件预留（图片/音频等，当前阶段不实现，字段先占位避免将来迁移）
 -- 格式：[{ "type": "image", "url": "...", "thumb_url": "...", "size": 204800 }]
 ALTER TABLE journal_entries
   ADD COLUMN IF NOT EXISTS attachments jsonb DEFAULT '[]';
 ```
 
-> 说明：`emotions` 字段继续存在，作为基础层（40词标准词库的映射结果）。新增 `emotion_display` 作为描述层（更丰富自然的表达）。两者都由 AI 提取，但用途不同：`emotion_display` 用于展示，`emotions` 用于统计聚合。
+> **字段分工说明：**
+> - `emotions`（已有）：基础层，49词标准词库的映射结果，用于统计聚合（情绪频率图表等）
+> - `emotion_display`（新增）：描述层，AI 生成的更丰富自然表达，用于详情页展示
+> - `emotion_confidence`（新增）：`mapDisplayToBase()` 返回的 `minConfidence`，决定是否显示「待确认」提示
 
 ### 4.4 db.js 适配层（必须新建）
 
@@ -263,6 +269,23 @@ export const db = {
 }
 ```
 
+**错误处理规范：** db.js 本身不处理错误，只透传。调用方（各 lib 文件）负责处理 `{ data, error }` 的 error。不允许在 db.js 里加 `if (error) throw error`——这会阻断错误上下文，让调用方无法区分不同错误类型。
+
+```js
+// ✅ 正确写法（在调用方处理）
+const { data, error } = await db.from('journal_entries').insert(...)
+if (error) {
+  console.error('[saveEntry]', error.message)
+  return { ok: false, error }
+}
+
+// ❌ 错误写法（不要在 db.js 里抛出）
+from: (table) => {
+  const result = supabase.from(table)
+  // 不要在这里处理错误
+}
+```
+
 > 第一阶段可以只做简单透传，关键是**建立规范**：其他文件改成 `import { db } from './db'`，不直接 import supabase。未来换 SQLite 只需替换 db.js 内部实现。
 
 ### 4.5 执行顺序
@@ -275,30 +298,36 @@ export const db = {
 
 ---
 
-## 五、情绪词库（基础层，固定 42 词）
+## 五、情绪词库（基础层，固定 49 词）
 
-这 42 个词是统计口径，不随用户输入自动扩展。保存在新文件 `src/lib/emotionMap.js` 里。
+这 49 个词是统计口径，不随用户输入自动扩展。保存在新文件 `src/lib/emotionMap.js` 里。
+
+词库依据 Ekman 基础情绪理论、Plutchik 情绪轮盘和 Cowen & Keltner（2017）27种情绪研究确定，覆盖自我觉察场景下出现频率最高的情绪类型。
 
 ### 词库分组
 
-**负面情绪（22词）**
+**负面情绪（25词）**
 ```
 难过  愤怒  委屈  焦虑  羞愧  无力
 害怕  孤独  绝望  沮丧  厌烦  烦躁
 压抑  紧张  失落  嫉妒  内疚  抗拒
-疲惫  麻木  不甘  崩溃
+疲惫  麻木  不甘  崩溃  厌恶  悲痛  羞耻
 ```
+- 新增：**厌恶**（Ekman 基础情绪，独立于厌烦）；**悲痛**（深度失去感，区别于难过的轻度哀伤）；**羞耻**（自我否定感，区别于羞愧的行为内疚）
 
-**正面情绪（12词）**
+**正面情绪（15词）**
 ```
 轻松  满足  感激  开心  平静  期待
 温暖  喜悦  自豪  踏实  安心  充实
+兴奋  爱  敬畏
 ```
+- 新增：**兴奋**（高唤醒正向，从 SYNONYM_MAP 中原映射到"期待"的词独立出来）；**爱**（深度连结感，Plutchik 核心词）；**敬畏**（Cowen 27种之一，自我超越体验）
 
-**混合/中性情绪（8词）**
+**混合/中性情绪（9词）**
 ```
-迷茫  矛盾  好奇  纠结  释然  依恋  敏感  复杂
+迷茫  矛盾  好奇  纠结  释然  依恋  敏感  复杂  惊讶  无聊
 ```
+- 新增：**惊讶**（Ekman 基础情绪，可正可负）；**无聊**（低唤醒中性，自我觉察中频繁出现）
 
 ### 本地映射规则
 
@@ -307,56 +336,70 @@ export const db = {
 ```js
 // src/lib/emotionMap.js
 
-// 基础层词库（42词，完整列表）
+// 基础层词库（49词，完整列表）
 export const EMOTION_BASE = [
-  // 负面
+  // 负面（25词）
   '难过','愤怒','委屈','焦虑','羞愧','无力','害怕','孤独','绝望','沮丧',
   '厌烦','烦躁','压抑','紧张','失落','嫉妒','内疚','抗拒','疲惫','麻木',
-  '不甘','崩溃',
-  // 正面
+  '不甘','崩溃','厌恶','悲痛','羞耻',
+  // 正面（15词）
   '轻松','满足','感激','开心','平静','期待','温暖','喜悦','自豪','踏实',
-  '安心','充实',
-  // 混合
-  '迷茫','矛盾','好奇','纠结','释然','依恋','敏感','复杂',
+  '安心','充实','兴奋','爱','敬畏',
+  // 混合（9词）
+  '迷茫','矛盾','好奇','纠结','释然','依恋','敏感','复杂','惊讶','无聊',
 ]
 
-// 近义词映射表（描述层词 → 基础层词，按相似度排列）
+// 负面情绪子集（供 contentAnalysis.js 判断负面情绪使用，避免硬编码）
+export const EMOTION_NEGATIVE = EMOTION_BASE.slice(0, 25)
+
+// 近义词映射表（描述层词 → 基础层词）
 const SYNONYM_MAP = {
+  // ── 负面 ──
   '难受':   '难过',  '伤心':   '难过',  '悲伤':   '难过',  '心疼':   '难过',
   '生气':   '愤怒',  '气愤':   '愤怒',  '愤恨':   '愤怒',  '恼火':   '愤怒',
-  '委屈':   '委屈',  '心酸':   '委屈',  '不公':   '委屈',
+  '心酸':   '委屈',  '不公':   '委屈',
   '担心':   '焦虑',  '不安':   '焦虑',  '忧虑':   '焦虑',  '惶恐':   '焦虑',
   '害羞':   '羞愧',  '难堪':   '羞愧',  '自责':   '羞愧',  '惭愧':   '羞愧',
   '无奈':   '无力',  '力不从心':'无力', '无法改变':'无力',
-  '恐惧':   '害怕',  '慌':     '害怕',  '惊慌':   '害怕',  '害怕':   '害怕',
+  '恐惧':   '害怕',  '慌':     '害怕',  '惊慌':   '害怕',
   '寂寞':   '孤独',  '孤立':   '孤独',  '被忽视': '孤独',
-  '沮丧':   '沮丧',  '消沉':   '沮丧',  '意志消沉':'沮丧',
+  '消沉':   '沮丧',  '意志消沉':'沮丧',
   '烦':     '烦躁',  '心烦':   '烦躁',  '焦躁':   '烦躁',
   '郁闷':   '压抑',  '憋屈':   '压抑',  '憋':     '压抑',
   '紧绷':   '紧张',  '绷':     '紧张',
-  '失意':   '失落',  '沮丧':   '失落',
+  '失意':   '失落',
   '羡慕':   '嫉妒',
   '愧疚':   '内疚',  '后悔':   '内疚',
   '排斥':   '抗拒',  '不想':   '抗拒',
   '累':     '疲惫',  '精疲力竭':'疲惫', '筋疲力尽':'疲惫',
-  '麻木':   '麻木',  '木木的': '麻木',  '没感觉': '麻木',
+  '木木的': '麻木',  '没感觉': '麻木',
   '不服气': '不甘',  '心有不甘':'不甘',
-  '崩了':   '崩溃',  '撑不住': '崩溃',  '绝望':   '崩溃',
-  '开心':   '开心',  '快乐':   '开心',  '高兴':   '开心',
-  '轻松':   '轻松',  '放松':   '轻松',
-  '满足':   '满足',  '知足':   '满足',
+  '崩了':   '崩溃',  '撑不住': '崩溃',
+  '恶心':   '厌恶',  '反感':   '厌恶',  '厌恶感': '厌恶',
+  '哀痛':   '悲痛',  '极度悲伤':'悲痛', '痛失':   '悲痛',
+  '羞耻感': '羞耻',  '丢脸':   '羞耻',  '无地自容':'羞耻',
+  // ── 正面 ──
+  '快乐':   '开心',  '高兴':   '开心',
+  '放松':   '轻松',
+  '知足':   '满足',
   '感恩':   '感激',  '谢谢':   '感激',
   '安静':   '平静',  '内心平静':'平静', '淡然':   '平静',
-  '好期待': '期待',  '兴奋':   '期待',  '期盼':   '期待',
-  '被爱':   '温暖',  '被关心': '温暖',  '暖':     '温暖',
-  '欣喜':   '喜悦',  '快乐':   '喜悦',
+  '期盼':   '期待',
+  '被关心': '温暖',  '暖':     '温暖',  '被爱':   '温暖',
+  '欣喜':   '喜悦',
   '骄傲':   '自豪',
   '稳':     '踏实',  '安稳':   '踏实',
-  '充实':   '充实',  '有意义': '充实',
-  '迷失':   '迷茫',  '方向感': '迷茫',
-  '纠结':   '纠结',  '左右为难':'纠结',
+  '有意义': '充实',
+  '亢奋':   '兴奋',  '激动':   '兴奋',  '振奋':   '兴奋',  '好嗨':   '兴奋',
+  '爱意':   '爱',    '心动':   '爱',    '珍惜':   '爱',
+  '感动':   '敬畏',  '震撼':   '敬畏',  '被震到': '敬畏',  '崇敬':   '敬畏',
+  // ── 混合 ──
+  '迷失':   '迷茫',  '找不到方向':'迷茫',
+  '左右为难':'纠结',
   '想通了': '释然',  '放下了': '释然',
-  '好奇':   '好奇',  '感兴趣': '好奇',
+  '感兴趣': '好奇',
+  '吃惊':   '惊讶',  '没想到': '惊讶',  '意外':   '惊讶',  '惊喜':   '惊讶',
+  '无聊透了':'无聊', '百无聊赖':'无聊', '提不起劲':'无聊',
 }
 
 /**
@@ -815,6 +858,7 @@ export const AWARENESS_QUESTIONS = [
 
 ```js
 // 在 contentAnalysis.js 里新增
+import { EMOTION_NEGATIVE } from './emotionMap'  // 复用49词基础层的负面组，不要重复硬编码
 
 /**
  * 根据文本复杂度，返回觉察流应该从哪一层开始
@@ -826,9 +870,8 @@ export function getAwarenessStartTier(text) {
 
   const { score } = analyzeContent(text)
 
-  // 内容已经写到了较深处，才跳起点
-  // 关键词检测：如果已经写了感受/情绪类词，跳过 tier 1
-  const hasEmotionWords = [...STRONG_NEGATIVE, ...POSITIVE].some(w => text.includes(w))
+  // 负面情绪词检测：直接从 EMOTION_NEGATIVE 里查，保持词库单一来源
+  const hasEmotionWords = EMOTION_NEGATIVE.some(w => text.includes(w))
   // 如果写了身体/需求关键词，跳得更靠后
   const hasBodyWords = ['身体', '胸口', '肚子', '喉咙', '头疼', '心跳', '紧', '沉'].some(w => text.includes(w))
   const hasNeedWords = ['需要', '想要', '希望', '重要', '被理解', '安全'].some(w => text.includes(w))
@@ -859,9 +902,12 @@ export function getAwarenessStartTier(text) {
   最后一问答完 → 自动进入保存流程
 
 任意时刻：
-  - 点"保存并退出" → 保存当前已答内容，退出
-  - 点"✦ 深入觉察" → AI 接手，进入 AI 模式（见第九章）
-  - 点"← 返回" → 回到写作页（内容保留在 localStorage）
+  - 点「保存并退出」→ **只保存用户实际已回答的 Q&A**（不包含尚未展示的问题），退出
+  - 点「✦ 深入觉察」 → AI 接手，进入 AI 模式（见第九章）
+  - 点「← 返回」 → 回到写作页（内容保留在 localStorage）
+
+> **messages 记录规范：** messages 数组里只包含「已展示的问题 + 用户已填写的回答」。
+> 用户在 tier 2 提前退出，tier 3-5 的问题不得出现在 messages 里（哪怕是空字符串）。
 ```
 
 ### 8.6 AwarenessFlow 的 Props 和状态
@@ -916,6 +962,17 @@ function buildAIContext(rawContent, answers, previousAiMessages) {
     `请从问题库中选择下一个最合适的问题，或者根据对话自然提问。只返回问题本身，不要加任何前缀或解释。`
 }
 ```
+
+**AI 返回内容处理：** AI 有时会返回带换行的多行文本。取第一个非空行作为展示问题：
+
+```js
+function extractQuestion(aiRawResponse) {
+  const lines = aiRawResponse.split('\n').map(l => l.trim()).filter(Boolean)
+  return lines[0] ?? ''  // 取第一个非空行；空字符串表示 AI 返回为空（需降级处理）
+}
+```
+
+> 如果 `extractQuestion` 返回空字符串，说明 AI 调用失败或返回异常，此时在 AwarenessFlow 里展示一个默认兜底问题（从 `AWARENESS_QUESTIONS` 里随机取一道 tier=3 的问题），不向用户展示错误信息。
 
 ### 9.3 AI 模式下的系统 prompt
 
@@ -1153,24 +1210,25 @@ const DRAFT_KEY = 'journal_draft'
 ```js
 // 同时查两张表，在前端合并后按日期排序
 const [entries, letters] = await Promise.all([
-  supabase.from('journal_entries')
+  db.from('journal_entries')
     .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(50),
 
-  supabase.from('review_letters')
+  db.from('review_letters')
     .select('id, content, period_start, period_end, is_read, created_at')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+    .order('period_end', { ascending: false })   // 按 period_end 排序：信件代表的是它所覆盖期间的结束时间
     .limit(20),
 ])
 
 // 合并成统一数组，加 _type 字段区分
+// 回顾信用 period_end 作为排序时间戳（而非 created_at），使其出现在列表中正确的时间位置
 const combined = [
-  ...entries.data.map(e => ({ ...e, _type: 'entry' })),
-  ...letters.data.map(l => ({ ...l, _type: 'letter' })),
-].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  ...entries.data.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
+  ...letters.data.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
+].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
 ```
 
 ---
@@ -1239,6 +1297,7 @@ const combined = [
 - 字段为空时，整行隐藏（不显示空占位）
 - 字段内容可以点击进入编辑模式（inline 编辑，onBlur 自动保存）
 - **字段编辑只更新该字段，不触发任何 AI 调用**
+- **inline 编辑保存失败时：** 字段恢复原值，底部显示 toast 提示「保存失败，请检查网络」（2秒后自动消失）；不弹出模态框，不跳转
 
 **所有字段都是空时（还没做过 AI 分析）**，核心字段区显示：
 
@@ -1340,21 +1399,45 @@ messages.forEach(msg => {
 
 ### 13.1 触发逻辑（reviewLetterService.js）
 
-每次用户完成一次写作保存后，后台检查是否需要生成回顾信：
+**触发时机：** 应用启动时（App.jsx 的 `useEffect`）或用户切换到记录页（RecordsPage mounted）时检查。**不在保存时触发**——保存后直接返回列表，检查逻辑在列表页初始化时运行。
+
+**触发配置（可扩展）：**
+```js
+// 触发配置结构（将来支持更多类型，从 user_options 或 localStorage 读取）
+// {
+//   type: 'count' | 'days' | 'manual',
+//   count_threshold: 10,          // type='count' 时生效
+//   day_interval: 7,              // type='days' 时生效
+//   require_new_entries: true     // 若上次已生成后无新条目，不再触发
+// }
+```
+
+**getUserLetterPrefs 实现：** 从 user_options 表或 localStorage 读取用户设置，不存在时返回默认值：
+```js
+async function getUserLetterPrefs(userId) {
+  // 先查 user_options（将来持久化到 DB）
+  // 目前 MVP 阶段用 localStorage 存偏好
+  const stored = localStorage.getItem(`letter_prefs_${userId}`)
+  if (stored) {
+    try { return JSON.parse(stored) } catch { /* fallback */ }
+  }
+  // 默认：每写 10 条自动触发一次
+  return { type: 'count', count_threshold: 10, day_interval: 7, require_new_entries: true }
+}
+```
 
 ```js
 // src/lib/reviewLetterService.js
+import { db } from './db'
 
 export async function checkAndGenerateLetter(userId) {
   // 读取用户设置（触发偏好）
   const prefs = await getUserLetterPrefs(userId)
-  // prefs: { triggerType: '7days' | '10entries' | 'manual', dayInterval: 7, entryThreshold: 10 }
 
-  if (prefs.triggerType === 'manual') return  // 手动触发，不自动生成
+  if (prefs.type === 'manual') return  // 手动触发，不自动生成
 
   // 查最新一封回顾信
-  const { data: lastLetter } = await supabase
-    .from('review_letters')
+  const { data: lastLetter } = await db.from('review_letters')
     .select('created_at, period_end')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -1366,20 +1449,22 @@ export async function checkAndGenerateLetter(userId) {
     ? (Date.now() - lastLetterDate.getTime()) / (1000 * 60 * 60 * 24)
     : Infinity
 
-  // 查上次回顾信之后的新 entry 数量（有情绪类内容的）
-  const { count: newEntryCount } = await supabase
-    .from('journal_entries')
+  // 查上次回顾信之后的新 entry 数量（只统计情感类模板）
+  const { count: newEntryCount } = await db.from('journal_entries')
     .select('id', { count: 'exact' })
     .eq('user_id', userId)
     .gt('created_at', lastLetter?.period_end ?? '1970-01-01')
-    .in('template_type', ['awareness', 'emotion', 'gratitude'])  // 只统计情感类
+    .in('template_type', ['awareness', 'emotion', 'gratitude'])
+
+  // require_new_entries：上次生成后无新条目则不触发
+  if (prefs.require_new_entries && newEntryCount === 0) return
 
   const shouldGenerate =
-    (prefs.triggerType === '7days' && daysSinceLast >= prefs.dayInterval) ||
-    (prefs.triggerType === '10entries' && newEntryCount >= prefs.entryThreshold)
+    (prefs.type === 'days'  && daysSinceLast >= prefs.day_interval) ||
+    (prefs.type === 'count' && newEntryCount >= prefs.count_threshold)
 
   if (shouldGenerate) {
-    await generateReviewLetter(userId, lastLetter?.period_end)
+    await generateReviewLetter(userId, lastLetter?.period_end, prefs)
   }
 }
 ```
@@ -1387,12 +1472,11 @@ export async function checkAndGenerateLetter(userId) {
 ### 13.2 生成回顾信（AI 调用）
 
 ```js
-async function generateReviewLetter(userId, periodStart) {
+async function generateReviewLetter(userId, periodStart, prefs) {
   const periodEnd = new Date().toISOString()
 
   // 读取这段时间的 entries（最多20条，避免超 token）
-  const { data: entries } = await supabase
-    .from('journal_entries')
+  const { data: entries } = await db.from('journal_entries')
     .select('content, emotions, emotion_display, core_needs, created_at')
     .eq('user_id', userId)
     .gt('created_at', periodStart ?? '1970-01-01')
@@ -1413,18 +1497,25 @@ async function generateReviewLetter(userId, periodStart) {
     { maxTokens: 1000 }
   )
 
-  // 提取 insights（从同一次 AI 返回中解析，或单独调用）
-  // 简单方案：回顾信末尾让 AI 附上结构化 insights JSON
+  // 提取 insights（AI 在回顾信末尾附上结构化 JSON）
   const insightsMatch = rawLetter.match(/```json([\s\S]*?)```/)
-  const insights = insightsMatch ? JSON.parse(insightsMatch[1]) : {}
+  let insights = {}
+  if (insightsMatch) {
+    try {
+      insights = JSON.parse(insightsMatch[1])
+    } catch (e) {
+      // JSON 解析失败：insights 留空 {}，回顾信正常保存，不影响用户
+      console.warn('[reviewLetter] insights JSON parse failed', e)
+    }
+  }
   const letterContent = rawLetter.replace(/```json[\s\S]*?```/, '').trim()
 
-  await supabase.from('review_letters').insert({
+  await db.from('review_letters').insert({
     user_id: userId,
     entry_ids: entries.map(e => e.id),
     content: letterContent,
     insights,
-    trigger_type: prefs.triggerType,
+    trigger_type: prefs.type,
     period_start: periodStart ?? entries[0]?.created_at,
     period_end: periodEnd,
     is_read: false,
@@ -1648,6 +1739,7 @@ const [entryNeeds, letterInsights] = await Promise.all([
 - [ ] 输入框光标颜色是灰色（不是彩色）
 - [ ] 底部左下角有 ✦ 深入觉察，右下角有 ✓ 按钮
 - [ ] 切换模板不清空已输入的文字
+- [ ] 切换模板**不弹出任何确认对话框**，直接切换引导词，无需打断用户
 
 **验收（功能）：**
 - [ ] 写了文字后点 ✓，entry 成功插入 `journal_entries`（Supabase 可以查到）
@@ -1687,6 +1779,8 @@ const [entryNeeds, letterInsights] = await Promise.all([
 
 **做什么：** 按第十章，更新保存逻辑：存 conversations 表、提取 emotion_display、本地映射基础层。
 
+> ⚠️ **执行 Step 7 前，需要先与用户讨论 user_memory 策略**（见附录 A）。讨论结论将决定 conversationService.js 是否保留现有的 memory 更新逻辑，以及 prompts.js 里的系统 prompt 是否需要修改。**这是 Step 7 唯一一个需要先讨论再动手的环节。**
+
 **验收：**
 - [ ] 完成写作流后，`conversations` 表里能查到对应记录，messages 字段有完整问答
 - [ ] `journal_entries` 里的 `emotion_display` 有 AI 提取的描述层词汇
@@ -1700,11 +1794,14 @@ const [entryNeeds, letterInsights] = await Promise.all([
 
 **做什么：** 移除 TaggingPage 和 ReflectionPage 的引用；新增洞察 Tab；整合 AwarenessFlow 进导航栈。
 
+> ⚠️ **旧 localStorage 清理：** 当前导航栈状态用 `screens` 数组存在 localStorage 里。新版改用组件内 state 管理，不再需要 localStorage 持久化导航状态。在 Step 8 里清除这个旧 key：`localStorage.removeItem('nav_screens')` 或类似的 key 名。**在清理前先搜索代码确认 key 名，不要盲目删除。**
+
 **验收：**
 - [ ] 底部导航有 4 个 Tab：写、记录、洞察、设置（图标可暂用占位符）
 - [ ] 删除 TaggingPage、ReflectionPage 的 import，`npm run build` 无报错
 - [ ] 写作完成后能正确进入 AwarenessFlow，完成后能回到记录列表
 - [ ] 详情页的 ✦ 深度觉察按钮能再次进入 AwarenessFlow（带历史上下文）
+- [ ] 旧的导航栈 localStorage key 已清理，不影响新版本导航
 
 ---
 
@@ -1877,4 +1974,5 @@ const [entryNeeds, letterInsights] = await Promise.all([
 3. user_memory 是否需要设计"衰减"机制——久远的记忆自动降权？
 
 > 📌 **这个议题在本次实现前需要单独讨论和定案，然后更新 prompts.js 的 system prompt。**
-```
+
+**讨论方式：** 到达 Step 7 时，请告诉 AI「我们来讨论 user_memory 策略」，AI 会按附录 A 里的三个方向逐一采访你，定案后直接写入 conversationService.js 和 prompts.js 实现逻辑，不需要重新写大量文档。
