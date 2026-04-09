@@ -22,6 +22,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { db } from '../lib/db'
 import { getAwarenessStartTier } from '../lib/contentAnalysis'
 import { EMOTION_NEGATIVE } from '../lib/emotionMap'
+import { callAI } from '../lib/aiClient'
+import { AWARENESS_SYSTEM_PROMPT, buildAwarenessContext } from '../lib/prompts'
 
 // ─── 问题库（每题 3 个备选文本，「换一个」循环）──────────────────────
 const QUESTION_POOL = [
@@ -102,13 +104,19 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
   const [timestamps, setTimestamps]       = useState([])   // 每题首次提交时的时间戳
   const [opacity, setOpacity]             = useState(1)
   const [transitioning, setTransitioning] = useState(false)
+  const [mode, setMode]                   = useState('local')
+  const [aiQuestion, setAiQuestion]       = useState('')
+  const [aiLoading, setAiLoading]         = useState(false)
 
   const textareaRef  = useRef(null)
   const saveTimerRef = useRef(null)
 
   // 把最新 state 存进 ref，供 cleanup 使用（避免 stale closure）
   const latestRef = useRef({})
-  latestRef.current = { questions, answers, currentIdx, currentAnswer, altIndices, timestamps }
+  latestRef.current = {
+    questions, answers, currentIdx, currentAnswer, altIndices, timestamps,
+    mode, aiQuestion,
+  }
 
   // ── 初始化：过滤问题，分配状态数组 ──────────────────────────────
   useEffect(() => {
@@ -246,11 +254,48 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
 
     scheduleSave(msgs)
 
+    const keepAIMode = mode === 'ai'
+    if (keepAIMode) {
+      setAiLoading(true)
+      setAiQuestion('')
+    }
+
     await fade(() => {
       const next = currentIdx + 1
       setCurrentIdx(next)
       setCurrentAnswer(newAnswers[next])   // 如果曾后退过，恢复之前填过的答案
     })
+
+    // AI 模式：自动生成下一题
+    if (keepAIMode) {
+      setAiLoading(true)
+      try {
+        const nextMsgs = buildMessages(
+          { questions, answers: newAnswers, currentIdx: currentIdx + 1,
+            currentAnswer: newAnswers[currentIdx + 1] || '', altIndices, timestamps: newTimestamps },
+          entry
+        )
+        const ctx = buildAwarenessContext(entry.content, nextMsgs)
+        const raw = await callAI(
+          [{ role: 'user', content: ctx }],
+          AWARENESS_SYSTEM_PROMPT,
+          { maxTokens: 150 }
+        )
+        const q = raw.split('\n').map(l => l.trim()).filter(Boolean)[0] ?? ''
+        if (q) {
+          setAiQuestion(q)
+        } else {
+          setMode('local')
+          setAiQuestion('')
+        }
+      } catch (e) {
+        console.error('[AwarenessFlow] AI 下一题失败:', e)
+        setMode('local')
+        setAiQuestion('')
+      } finally {
+        setAiLoading(false)
+      }
+    }
   }
 
   // ── 保存退出 ─────────────────────────────────────────────────────
@@ -265,6 +310,67 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
     onComplete()
   }
 
+  // ── 切换 AI 模式 ─────────────────────────────────────────────────
+  async function handleToggleAI() {
+    if (mode === 'ai') {
+      // 退出 AI 模式：保存当前 AI 回答（如果有），然后切到下一张本地卡片
+      if (currentAnswer.trim()) {
+        const now = new Date().toISOString()
+        const newAnswers = [...answers]
+        const newTimestamps = [...timestamps]
+        const msgs = buildMessages(
+          { questions, answers: newAnswers, currentIdx, currentAnswer: '', altIndices, timestamps: newTimestamps },
+          entry
+        )
+        msgs.push({ role: 'assistant', content: aiQuestion, timestamp: now, source: 'ai_question' })
+        msgs.push({ role: 'user', content: currentAnswer.trim(), timestamp: now, source: 'ai_answer' })
+        scheduleSave(msgs)
+      }
+
+      const nextIdx = Math.min(currentIdx + 1, questions.length - 1)
+      setMode('local')
+      setAiQuestion('')
+      setCurrentIdx(nextIdx)
+      setCurrentAnswer(answers[nextIdx] || '')
+      return
+    }
+
+    // 进入 AI 模式：先保存当前本地答案，清空输入框
+    const newAnswers = [...answers]
+    newAnswers[currentIdx] = currentAnswer
+    setAnswers(newAnswers)
+    const msgs = buildMessages(
+      { questions, answers: newAnswers, currentIdx, currentAnswer, altIndices, timestamps },
+      entry
+    )
+    scheduleSave(msgs)
+    setCurrentAnswer('')  // 清空输入框，给 AI 对话用
+
+    setMode('ai')
+    setAiLoading(true)
+    try {
+      const ctx = buildAwarenessContext(entry.content, msgs)
+      const raw = await callAI(
+        [{ role: 'user', content: ctx }],
+        AWARENESS_SYSTEM_PROMPT,
+        { maxTokens: 150 }
+      )
+      const q = raw.split('\n').map(l => l.trim()).filter(Boolean)[0] ?? ''
+      if (q) {
+        setAiQuestion(q)
+      } else {
+        setMode('local')
+        setCurrentAnswer(newAnswers[currentIdx] || '')
+      }
+    } catch (e) {
+      console.error('[AwarenessFlow] AI 调用失败:', e)
+      setMode('local')
+      setCurrentAnswer(newAnswers[currentIdx] || '')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   // ── 渲染 ─────────────────────────────────────────────────────────
   if (questions.length === 0) {
     return (
@@ -275,7 +381,9 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
     )
   }
 
-  const currentQ = questions[currentIdx]?.texts[altIndices[currentIdx] || 0] ?? ''
+  const currentQ = mode === 'ai' && aiQuestion
+    ? aiQuestion
+    : (questions[currentIdx]?.texts[altIndices[currentIdx] || 0] ?? '')
   const hasAlts  = (questions[currentIdx]?.texts?.length ?? 1) > 1
   const isFirst  = currentIdx === 0
   const isLast   = currentIdx === questions.length - 1
@@ -311,9 +419,11 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
         <div>
           <div style={{ fontSize: 17, fontWeight: 500, color: '#333',
             lineHeight: 1.65, marginBottom: 8 }}>
-            {currentQ}
+            {aiLoading
+              ? <span style={{ color: '#ccc', fontSize: 15 }}>AI 正在想下一个问题…</span>
+              : currentQ}
           </div>
-          {hasAlts && (
+          {!aiLoading && hasAlts && mode !== 'ai' && (
             <button onClick={handleRefresh}
               style={{ background: 'none', border: 'none', fontSize: 11,
                 color: '#ccc', cursor: 'pointer', padding: 0, letterSpacing: '0.3px' }}>
@@ -342,25 +452,32 @@ export default function AwarenessFlow({ entry, onComplete, onExit,
         background: 'linear-gradient(transparent, #faf8f4 38%)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 
-        {/* 左：✦ 深入觉察（Task 7 实现 AI 接手，现在占位） */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        {/* 左：✦ 深入觉察 */}
+        <button onClick={handleToggleAI}
+          disabled={aiLoading || transitioning}
+          style={{ display: 'flex', alignItems: 'center', gap: 5,
+            background: 'none', border: 'none', cursor: aiLoading ? 'default' : 'pointer', padding: 0,
+            opacity: aiLoading ? 0.5 : 1 }}>
           <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#f0ece4',
-            border: '1px solid #ddd8cf', display: 'flex', alignItems: 'center',
+            border: `1px solid ${mode === 'ai' ? '#c9a96e' : '#ddd8cf'}`,
+            display: 'flex', alignItems: 'center',
             justifyContent: 'center', fontSize: 11, color: '#b8a88a' }}>✦</div>
-          <span style={{ fontSize: 10, color: '#ddd' }}>深入觉察</span>
-        </div>
+          <span style={{ fontSize: 10, color: '#ddd' }}>
+            {aiLoading ? '思考中…' : mode === 'ai' ? '× 暂停引导' : '深入觉察'}
+          </span>
+        </button>
 
         {/* 右：继续 / 完成 */}
         <button onClick={handleNext}
-          disabled={!currentAnswer.trim() || transitioning}
+          disabled={!currentAnswer.trim() || transitioning || aiLoading}
           style={{ padding: '10px 24px', borderRadius: 22,
-            background: currentAnswer.trim() ? '#2d2928' : '#e8e3dc',
-            color: currentAnswer.trim() ? 'white' : '#bbb',
+            background: currentAnswer.trim() && !aiLoading ? '#2d2928' : '#e8e3dc',
+            color: currentAnswer.trim() && !aiLoading ? 'white' : '#bbb',
             fontSize: 14, border: 'none',
-            cursor: currentAnswer.trim() ? 'pointer' : 'default',
+            cursor: currentAnswer.trim() && !aiLoading ? 'pointer' : 'default',
             transition: 'background 0.2s, color 0.2s',
-            boxShadow: currentAnswer.trim() ? '0 2px 10px rgba(0,0,0,0.15)' : 'none' }}>
-          {isLast ? '完成 ✓' : '继续 →'}
+            boxShadow: currentAnswer.trim() && !aiLoading ? '0 2px 10px rgba(0,0,0,0.15)' : 'none' }}>
+          {aiLoading ? '思考中…' : (isLast ? '完成 ✓' : '继续 →')}
         </button>
       </div>
     </div>

@@ -214,3 +214,33 @@ export function getExtractionPrompt() {
   "people_involved": ["涉及的人，用关系称呼如：妈妈、同事小李，没有则空数组"]
 }`
 }
+
+// ─── AwarenessFlow 单屏模式系统 prompt ─────────────────────────
+export const AWARENESS_SYSTEM_PROMPT =
+  `你是一位温和的倾听者，陪伴用户探索自己的情绪和想法。
+
+【单屏模式特别说明】
+当前是单屏专注模式，每次只问一个问题。只返回问题本身，不要加“我注意到你…”等共情前缀，不要解释为什么问这个问题。直接给出问题。
+
+【对话原则】
+- 从已有的问答上下文出发，问还没问过的
+- 不重复用户已经写清楚的内容
+- 只问开放式问题，不问封闭式（是/否）
+- 如果用户已经说得很充分，可以问一个轻柔的收尾问题（如“写完这些，有什么新的发现吗？”）`
+
+// ─── 构建传给 AI 的觉察上下文 ──────────────────────────────────
+export function buildAwarenessContext(rawContent, answeredMessages) {
+  const qaText = answeredMessages
+    .filter(m => m.source !== 'raw')
+    .map(m => {
+      if (m.role === 'local' || m.role === 'assistant') return `问：${m.content}`
+      if (m.role === 'user') return `答：${m.content}`
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+
+  return `用户刚才写道：\n${rawContent}\n\n` +
+    (qaText ? `已经聊到的部分：\n${qaText}\n\n` : '') +
+    `请根据对话上下文，提出下一个最合适的问题。只返回问题本身，不要加任何前缀或解释。`
+}
