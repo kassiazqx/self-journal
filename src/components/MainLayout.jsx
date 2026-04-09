@@ -7,7 +7,6 @@ import SettingsPage from '../pages/SettingsPage'
 import TaggingPage from '../pages/TaggingPage'
 import AIConversation from './AIConversation'
 import ReflectionPage from '../pages/ReflectionPage'
-import { analyzeContent } from '../lib/contentAnalysis'
 import { getCardsForEntry } from '../lib/reflectionQuestions'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
 
@@ -58,17 +57,18 @@ export default function MainLayout() {
     saveActiveTab(id)
   }
 
-  // ── HomePage 「下一步」完成后 ─────────────────────────────────
-  const handleNextStep = (entry) => {
-    const { shouldSuggestChat } = analyzeContent(entry.content)
-    const isEdit = Boolean(screens.find(s => s.type === 'edit'))
+  // ── HomePage 「✓完成」后 ──────────────────────────────────────
+  // onDone(entry, gotoAwareness)
+  //   gotoAwareness=true  → 进 AI 对话（觉察模板）
+  //   gotoAwareness=false → 直接跳列表（随记 / 编辑模式）
+  const handleDone = (entry, gotoAwareness) => {
     reset(setScreens)
-    push(setScreens, {
-      type: 'tagging',
-      entry: { ...entry, _shouldSuggestChat: shouldSuggestChat },
-      isEdit,
-    })
     setRecordsRefreshKey(k => k + 1)
+    if (gotoAwareness) {
+      push(setScreens, { type: 'ai', entry })
+    } else {
+      goTab('records')
+    }
   }
 
   // ── TaggingPage 完成后 ────────────────────────────────────────
@@ -206,7 +206,7 @@ export default function MainLayout() {
         <div className="flex-1 overflow-y-auto">
           <HomePage
             editEntry={currentScreen.entry}
-            onNextStep={handleNextStep}
+            onDone={handleDone}
             onCancel={() => { reset(setScreens); goTab('records') }}
           />
         </div>
@@ -220,7 +220,7 @@ export default function MainLayout() {
       <div className="flex-1 overflow-hidden min-h-0">
 
         <div className={`h-full overflow-y-auto ${activeTab === 'home' ? 'block' : 'hidden'}`}>
-          <HomePage onNextStep={handleNextStep} />
+          <HomePage onDone={handleDone} />
         </div>
 
         <div className={`h-full overflow-y-auto ${activeTab === 'records' ? 'block' : 'hidden'}`}>

@@ -20,6 +20,8 @@ export function insertEntry(entry) {
   return supabase
     .from('journal_entries')
     .insert(entry)
+    .select()
+    .single()
 }
 
 // ─── 更新（通用）──────────────────────────────────────────────

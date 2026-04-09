@@ -1,287 +1,140 @@
-import { useState, useRef, useEffect } from 'react'
-import { Mic, MicOff, ArrowRight, Plus, X } from 'lucide-react'
+/**
+ * 写作页（v2）
+ *
+ * 核心变化：
+ *   - 顶部模板横排小灰字标签，激活态用模板色
+ *   - 引导词竖线行（颜色跟模板走，opacity 0.5）
+ *   - 全屏输入区，光标灰色
+ *   - 底部浮动栏：✦ 深入觉察（左）+ ✓ 按钮（右）
+ *   - 切换模板不清空内容、不弹框
+ *   - 随记模板点 ✓ 直接保存跳列表，其他模板进觉察流
+ *   - 草稿 3 秒自动存 localStorage，重开有恢复提示
+ *
+ * Props：
+ *   onDone(entry, gotoAwareness)  新建完成回调，gotoAwareness=false 时直接跳列表
+ *   editEntry                      编辑模式传入已有记录
+ *   onCancel                       编辑模式取消按钮
+ */
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
-import { detectCategories, PREDEFINED_CATEGORIES, detectPeople } from '../lib/keywordDetection'
-import { TEMPLATES } from '../lib/templates'
+import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
 import { insertEntry, updateEntry } from '../lib/journalService'
+import { Mic, MicOff } from 'lucide-react'
 
-// crypto.randomUUID() 只在 HTTPS / localhost 下可用。
-// 手机通过局域网 HTTP 访问时会抛错，用这个兜底。
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-  // RFC 4122 v4 fallback
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
-  })
+// ─── 草稿 localStorage ──────────────────────────────────────────
+const DRAFT_KEY = 'journal_draft'
+
+function saveDraft(content, templateId) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      content,
+      template: templateId,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch (_) {}
 }
 
-// 把 Date 转成 datetime-local input 需要的格式：YYYY-MM-DDTHH:mm
-function toDatetimeLocal(date) {
-  const d = new Date(date)
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    // 超过 24 小时丢弃
+    if (Date.now() - new Date(draft.savedAt).getTime() > 86400000) {
+      localStorage.removeItem(DRAFT_KEY)
+      return null
+    }
+    return draft
+  } catch (_) {
+    return null
+  }
 }
 
-// 从文本中推断时间，返回 datetime-local 字符串
-// 只在用户没有手动改过时间时调用
-function inferDatetime(text) {
-  const now = new Date()
-  const d = new Date(now)
-
-  const chineseHourMap = {
-    一: 1,
-    二: 2,
-    三: 3,
-    四: 4,
-    五: 5,
-    六: 6,
-    七: 7,
-    八: 8,
-    九: 9,
-    十: 10,
-    十一: 11,
-    十二: 12,
-  }
-
-  const toClosestHour = (hour, minute) => {
-    if (hour < 1 || hour > 11) return hour
-
-    const candidateA = new Date(d)
-    candidateA.setHours(hour, minute, 0, 0)
-
-    const candidateB = new Date(d)
-    candidateB.setHours(hour + 12, minute, 0, 0)
-
-    return Math.abs(candidateA.getTime() - now.getTime()) <= Math.abs(candidateB.getTime() - now.getTime())
-      ? hour
-      : hour + 12
-  }
-
-  // 展开口语缩写，方便后续统一判断
-  const t = text
-    .replace(/昨晚|昨夜/g, '昨天晚上')
-    .replace(/今晚/g, '今天晚上')
-    .replace(/今早|今晨/g, '今天早上')
-
-  const periodPrefix = t.match(/凌晨|早上|上午|中午|下午|傍晚|晚上|夜里/)?.[0] ?? null
-
-  let dayOffset = 0
-  // 日期偏移（今天优先级最高，大前天必须在前天之前检查）
-  if (t.includes('今天')) {
-    dayOffset = 0
-  }
-  else if (t.includes('大前天')) {
-    dayOffset = -3
-    d.setDate(d.getDate() - 3)
-  }
-  else if (t.includes('前天')) {
-    dayOffset = -2
-    d.setDate(d.getDate() - 2)
-  }
-  else if (t.includes('昨天')) {
-    dayOffset = -1
-    d.setDate(d.getDate() - 1)
-  }
-
-  // 先识别明确时间点：9点10 / 9:10 / 9：10 / 晚上9点 / 九点半 / 九点二十 / 九点一刻
-  const colonMatch = t.match(/(?:^|[^\d])(\d{1,2})[:：](\d{1,2})(?:[^\d]|$)/)
-  const pointMatch = t.match(/(?:^|[^\d])(\d{1,2})点(?:(\d{1,2})分?)?(?:[^\d]|$)/)
-  const chinesePointMatch = t.match(/(十二|十一|十|[一二三四五六七八九])点(半|一刻|两刻|三刻|四刻|[二三四五][十]?[一二三四五六七八九]?分?|[十][一二三四五六七八九]?分?|[一二三四五六七八九]分)?/)
-
-  // 中文分钟解析
-  const parseChineseMinute = (str) => {
-    if (!str) return 0
-    if (str === '半') return 30
-    if (str === '一刻') return 15
-    if (str === '两刻') return 30
-    if (str === '三刻') return 45
-    if (str === '四刻') return 60
-    // 处理"二十"、"三十五分"等
-    const minMap = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
-    const clean = str.replace(/分$/, '')
-    if (clean.startsWith('十')) {
-      const rest = clean.slice(1)
-      return 10 + (minMap[rest] ?? 0)
-    }
-    if (clean.length >= 2 && clean[1] === '十') {
-      const tens = minMap[clean[0]] ?? 0
-      const rest = clean.slice(2)
-      return tens * 10 + (minMap[rest] ?? 0)
-    }
-    return minMap[clean] ?? 0
-  }
-
-  let explicitHour = null
-  let explicitMinute = 0
-
-  if (colonMatch) {
-    explicitHour = Number(colonMatch[1])
-    explicitMinute = Number(colonMatch[2])
-  } else if (pointMatch) {
-    explicitHour = Number(pointMatch[1])
-    explicitMinute = pointMatch[2] ? Number(pointMatch[2]) : 0
-  } else if (chinesePointMatch) {
-    explicitHour = chineseHourMap[chinesePointMatch[1]] ?? null
-    explicitMinute = parseChineseMinute(chinesePointMatch[2])
-  }
-
-  if (explicitHour !== null && explicitHour >= 0 && explicitHour <= 23 && explicitMinute >= 0 && explicitMinute <= 59) {
-    let hour = explicitHour
-
-    if (periodPrefix) {
-      if ((periodPrefix === '下午' || periodPrefix === '晚上' || periodPrefix === '夜里') && hour < 12) hour += 12
-      if (periodPrefix === '中午' && hour < 11) hour += 12
-    } else if (dayOffset === 0) {
-      hour = toClosestHour(hour, explicitMinute)
-    }
-
-    d.setHours(hour, explicitMinute, 0, 0)
-    return toDatetimeLocal(d)
-  }
-
-  // 时段 → 设定代表小时
-  if (t.includes('凌晨'))                            d.setHours(1, 0, 0, 0)
-  else if (t.includes('早上') || t.includes('上午')) d.setHours(9, 0, 0, 0)
-  else if (t.includes('中午'))                       d.setHours(12, 0, 0, 0)
-  else if (t.includes('下午'))                       d.setHours(16, 0, 0, 0)
-  else if (t.includes('傍晚'))                       d.setHours(18, 0, 0, 0)
-  else if (t.includes('晚上') || t.includes('夜里')) d.setHours(21, 0, 0, 0)
-
-  return toDatetimeLocal(d)
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY) } catch (_) {}
 }
 
-// Props:
-//   onNextStep(entry)  — 立即跳转，后台保存
-//   editEntry          — 编辑模式：传入已有记录，预填内容
-export default function HomePage({ onNextStep, editEntry, onCancel }) {
+// ─── 主组件 ──────────────────────────────────────────────────────
+export default function HomePage({ onDone, editEntry, onCancel }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
 
+  // 当前激活模板
+  const [template, setTemplate] = useState(() =>
+    isEditMode ? resolveTemplate(editEntry.template_type) : DEFAULT_TEMPLATE
+  )
+
+  // 写作内容
   const [content, setContent] = useState(editEntry?.content ?? '')
-  const [selectedTemplate, setSelectedTemplate] = useState(editEntry?.template_type ?? null)
-  const [entryDatetime, setEntryDatetime] = useState(
-    editEntry ? toDatetimeLocal(editEntry.created_at) : toDatetimeLocal(new Date())
-  )
-  const [error, setError] = useState('')
-  const [voiceError, setVoiceError] = useState('')
-  const textareaRef = useRef(null)
-  const dateInputRef = useRef(null)
-  const timeInputRef = useRef(null)
 
-  // 大类标签
-  const initCategories = () => {
-    if (editEntry?.category_tags?.length > 0) return editEntry.category_tags
-    return []
-  }
-  const [selectedCategories, setSelectedCategories] = useState(initCategories())
-  const [extraCategories, setExtraCategories] = useState(() => {
-    // 编辑模式：已有标签中不在预设列表里的，作为自定义标签
-    return (editEntry?.category_tags ?? []).filter(t => !PREDEFINED_CATEGORIES.includes(t))
-  })
-  const [showCategoryInput, setShowCategoryInput] = useState(false)
-  const [categoryInput, setCategoryInput] = useState('')
-  const userEditedCategories = useRef(isEditMode)
+  // 草稿恢复提示
+  const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const draftRef = useRef(null)
 
-  // 关联事件
-  const [eventName, setEventName] = useState(editEntry?.event_name ?? '')
+  // 保存中状态（防重复点击）
+  const [saving, setSaving] = useState(false)
 
-  // 涉及人员
-  const [selectedPeople, setSelectedPeople] = useState(
-    editEntry?.people_involved ?? []
-  )
-  const userEditedPeople = useRef(isEditMode)
-
-  // 用户是否手动改过时间（手动改过后不再自动覆盖）
-  const userEditedDate = useRef(isEditMode)
-
+  // 语音
   const { isRecording, isSupported, startRecording, stopRecording } = useSpeechRecognition()
   const voiceBaseRef = useRef('')
   const committedRef = useRef('')
 
-  // 自动调整文本框高度
+  const textareaRef = useRef(null)
+  const draftTimerRef = useRef(null)
+
+  // ── 草稿检查（仅新建模式）──────────────────────────────────────
   useEffect(() => {
-    const ta = textareaRef.current
-    if (ta) {
-      ta.style.height = 'auto'
-      ta.style.height = Math.min(ta.scrollHeight, 280) + 'px'
+    if (isEditMode) return
+    const draft = loadDraft()
+    if (draft?.content) {
+      draftRef.current = draft
+      setShowDraftBanner(true)
     }
-  }, [content])
+  }, [isEditMode])
 
-  // 随输入自动推断时间（仅新建模式、用户未手动改过时间）
+  // ── 自动保存草稿（新建模式，每 3 秒）──────────────────────────
   useEffect(() => {
-    if (isEditMode || userEditedDate.current) return
-    if (!content) return
-    setEntryDatetime(inferDatetime(content))
-  }, [content, isEditMode])
+    if (isEditMode) return
+    clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      if (content.trim()) saveDraft(content, template.id)
+    }, 3000)
+    return () => clearTimeout(draftTimerRef.current)
+  }, [content, template.id, isEditMode])
 
-  // 随输入自动匹配大类标签（仅用户未手动调整过时）
+  // ── textarea 自动聚焦 ──────────────────────────────────────────
   useEffect(() => {
-    if (userEditedCategories.current) return
-    setSelectedCategories(detectCategories(content))
-  }, [content])
+    textareaRef.current?.focus()
+  }, [])
 
-  // 随输入自动识别涉及人员（仅用户未手动调整过时）
-  useEffect(() => {
-    if (userEditedPeople.current) return
-    setSelectedPeople(detectPeople(content))
-  }, [content])
-
-  const activeTemplate = TEMPLATES.find(t => t.id === selectedTemplate)
-
-  const handleTemplateClick = (templateId) => {
-    setSelectedTemplate(prev => prev === templateId ? null : templateId)
+  // ── 恢复草稿 ──────────────────────────────────────────────────
+  const handleResumeDraft = () => {
+    if (draftRef.current) {
+      setContent(draftRef.current.content)
+      const t = resolveTemplate(draftRef.current.template)
+      setTemplate(t)
+    }
+    setShowDraftBanner(false)
   }
 
-  const toggleCategory = (cat) => {
-    userEditedCategories.current = true
-    setSelectedCategories(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    )
+  const handleDiscardDraft = () => {
+    clearDraft()
+    setShowDraftBanner(false)
   }
 
-  const handleAddCategory = () => {
-    const tag = categoryInput.trim()
-    if (!tag) return
-    if (!extraCategories.includes(tag)) setExtraCategories(prev => [...prev, tag])
-    setSelectedCategories(prev => prev.includes(tag) ? prev : [...prev, tag])
-    userEditedCategories.current = true
-    setCategoryInput('')
-    setShowCategoryInput(false)
+  // ── 模板切换（不清空内容）─────────────────────────────────────
+  const handleTemplateClick = (tpl) => {
+    setTemplate(tpl)
+    textareaRef.current?.focus()
   }
 
-  // 用户手动改日期
-  const handleDatePartChange = (dateVal) => {
-    userEditedDate.current = true
-    const timePart = entryDatetime.slice(11, 16) || '00:00'
-    setEntryDatetime(`${dateVal}T${timePart}`)
-  }
-
-  // 用户手动改时间
-  const handleTimePartChange = (timeVal) => {
-    userEditedDate.current = true
-    const datePart = entryDatetime.slice(0, 10)
-    setEntryDatetime(`${datePart}T${timeVal}`)
-  }
-
-  // 日期显示文字
-  const formatDateLabel = () => {
-    const d = new Date(entryDatetime)
-    return d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
-  }
-
-  // 时间显示文字
-  const formatTimeLabel = () => {
-    const d = new Date(entryDatetime)
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-
-  // 语音
-  const handleVoiceStart = () => {
-    setVoiceError('')
+  // ── 语音 ──────────────────────────────────────────────────────
+  const handleVoiceToggle = () => {
+    if (isRecording) {
+      stopRecording()
+      return
+    }
     voiceBaseRef.current = content.trimEnd()
     committedRef.current = ''
     startRecording(
@@ -290,295 +143,251 @@ export default function HomePage({ onNextStep, editEntry, onCancel }) {
         const parts = [voiceBaseRef.current, committedRef.current + interim].filter(Boolean)
         setContent(parts.join('\n'))
       },
-      (err) => {
-        setVoiceError(err)
-        setTimeout(() => setVoiceError(''), 3000)
-      },
+      () => {},
       () => {}
     )
   }
 
-  const handleVoiceToggle = () => {
-    if (isRecording) stopRecording()
-    else handleVoiceStart()
-  }
+  // ── 点 ✓（完成写作）──────────────────────────────────────────
+  const handleDone = useCallback(async () => {
+    if (!content.trim() || saving) return
+    setSaving(true)
 
-  // 点"下一步"：立即跳转，后台静默保存
-  const handleNext = () => {
-    if (!content.trim()) {
-      setError('请先写点什么～')
-      setTimeout(() => setError(''), 2000)
+    const trimmed = content.trim()
+
+    if (isEditMode) {
+      // 编辑模式：后台 UPDATE，立即回调
+      const fields = {
+        content: trimmed,
+        template_type: template.id,
+      }
+      const updatedEntry = { ...editEntry, ...fields }
+      onDone?.(updatedEntry, false)  // 编辑不进觉察流
+      updateEntry({ id: editEntry.id, userId: user.id, fields })
+        .then(({ error }) => { if (error) console.error('[edit]', error) })
       return
     }
 
-    const templateType = selectedTemplate || (isEditMode ? editEntry.template_type : 'free')
-    const createdAt = new Date(entryDatetime).toISOString()
+    // 新建模式：先 INSERT 拿到 id，再决定跳转
+    const { data: entry, error } = await insertEntry({
+      user_id: user.id,
+      content: trimmed,
+      template_type: template.id,
+      created_at: new Date().toISOString(),
+    })
 
-    if (isEditMode) {
-      // 编辑：立即回调（entry.id 已知），后台 UPDATE 原文
-      const fields = { content: content.trim(), template_type: templateType, created_at: createdAt, category_tags: selectedCategories, event_name: eventName.trim() || null, people_involved: selectedPeople }
-      const updatedEntry = { ...editEntry, ...fields }
-      onNextStep?.(updatedEntry)
-      updateEntry({ id: editEntry.id, userId: user.id, fields })
-        .then(({ error: e }) => { if (e) console.error('[edit] 后台保存失败:', e) })
-    } else {
-      // 新建：用 generateUUID() 生成 ID，立即跳转，后台 INSERT
-      const newId = generateUUID()
-      const newEntry = {
-        id: newId,
-        user_id: user.id,
-        content: content.trim(),
-        template_type: templateType,
-        created_at: createdAt,
-        category_tags: selectedCategories,
-        event_name: eventName.trim() || null,
-        people_involved: selectedPeople,
-      }
-      onNextStep?.(newEntry)
-      insertEntry(newEntry)
-        .then(({ error: e }) => { if (e) console.error('[insert] 后台保存失败:', e) })
+    setSaving(false)
+
+    if (error || !entry) {
+      console.error('[insert]', error)
+      setSaving(false)
+      return
     }
 
-    // 重置表单
-    setContent('')
-    setSelectedTemplate(null)
-    setEntryDatetime(toDatetimeLocal(new Date()))
-    setSelectedCategories([])
-    setExtraCategories([])
-    setEventName('')
-    setSelectedPeople([])
-    userEditedDate.current = false
-    userEditedCategories.current = false
-    userEditedPeople.current = false
-  }
+    clearDraft()
 
+    // 随记模板不进觉察流
+    const gotoAwareness = template.awarenessStart !== null
+    onDone?.(entry, gotoAwareness)
+
+    // 重置写作区
+    setContent('')
+    setTemplate(DEFAULT_TEMPLATE)
+  }, [content, saving, isEditMode, template, editEntry, user, onDone])
+
+  // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
+  const handleDeepAwareness = useCallback(async () => {
+    if (!content.trim() || saving) return
+    setSaving(true)
+
+    const { data: entry, error } = await insertEntry({
+      user_id: user.id,
+      content: content.trim(),
+      template_type: template.id,
+      created_at: new Date().toISOString(),
+    })
+
+    setSaving(false)
+    if (error || !entry) { console.error('[insert]', error); return }
+
+    clearDraft()
+    onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
+    setContent('')
+    setTemplate(DEFAULT_TEMPLATE)
+  }, [content, saving, template, user, onDone])
+
+  // ── 渲染 ──────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
-      {/* 顶部标题 */}
-      <div className="px-5 pt-5 pb-3">
-        <h1 className="text-xl font-bold text-gray-800">
-          {isEditMode ? '编辑记录' : '今天，想记点什么？'}
-        </h1>
-        <p className="text-sm text-gray-400 mt-0.5">
-          {new Date().toLocaleDateString('zh-CN', {
-            month: 'long', day: 'numeric', weekday: 'long',
-          })}
+    <div
+      className="flex flex-col h-full relative"
+      style={{ backgroundColor: '#faf8f4' }}
+    >
+      {/* ── 草稿恢复横幅 ── */}
+      {showDraftBanner && (
+        <div className="px-4 pt-3 fade-in">
+          <div
+            className="flex items-center justify-between px-4 py-2.5 rounded-2xl"
+            style={{ backgroundColor: '#f0ece4', border: '1px solid #ddd8cf' }}
+          >
+            <span className="text-xs text-gray-500">你有一条未完成的记录，要继续写吗？</span>
+            <div className="flex gap-3 ml-3">
+              <button
+                onClick={handleResumeDraft}
+                className="text-xs font-medium"
+                style={{ color: template.color }}
+              >
+                继续
+              </button>
+              <button onClick={handleDiscardDraft} className="text-xs text-gray-400">
+                新建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 模板标签栏 ── */}
+      <div className="flex items-center gap-0.5 px-[18px] pt-3">
+        {TEMPLATES.map(t => (
+          <button
+            key={t.id}
+            onClick={() => handleTemplateClick(t)}
+            className="px-[7px] py-[3px] rounded-[5px] transition-colors"
+            style={{
+              fontSize: '11px',
+              fontWeight: template.id === t.id ? 500 : 400,
+              color: template.id === t.id ? t.color : '#ccc',
+              letterSpacing: '0.1px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+
+        {/* 编辑模式取消按钮 */}
+        {isEditMode && onCancel && (
+          <button
+            onClick={onCancel}
+            className="ml-auto text-xs text-gray-400 px-2 py-1"
+          >
+            取消
+          </button>
+        )}
+      </div>
+
+      {/* ── 引导词行（细竖线 + 文字）── */}
+      <div className="flex items-flex-start gap-2 px-[18px] pt-[10px]">
+        <div
+          style={{
+            width: '1.5px',
+            borderRadius: '1px',
+            flexShrink: 0,
+            alignSelf: 'stretch',
+            minHeight: '16px',
+            marginTop: '2px',
+            backgroundColor: template.color,
+            opacity: 0.5,
+          }}
+        />
+        <p
+          style={{
+            fontSize: '12px',
+            lineHeight: 1.65,
+            fontWeight: 400,
+            letterSpacing: '0.1px',
+            color: template.color,
+            opacity: 0.8,
+          }}
+        >
+          {template.guide}
         </p>
       </div>
 
-      {/* 模板快捷按钮 */}
-      <div className="px-4 mb-4">
-        <div className="flex flex-wrap gap-2">
-          {TEMPLATES.map(t => (
-            <button
-              key={t.id}
-              onClick={() => handleTemplateClick(t.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                selectedTemplate === t.id
-                  ? 'bg-primary-500 text-white shadow-sm'
-                  : 'bg-white text-gray-600 border border-gray-200'
-              }`}
-            >
-              <span>{t.emoji}</span>
-              <span>{t.label}</span>
-            </button>
-          ))}
-        </div>
+      {/* ── 输入区 ── */}
+      <div className="flex-1 px-[18px] pt-[14px] pb-[80px]">
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          placeholder="把脑子里的写下来…"
+          className="w-full h-full border-none outline-none bg-transparent resize-none"
+          style={{
+            fontSize: '15px',
+            lineHeight: 1.85,
+            color: '#2d2d2d',
+            caretColor: '#aaa',
+            fontFamily: 'inherit',
+          }}
+        />
       </div>
 
-      {/* 引导提示 */}
-      {activeTemplate?.hint && (
-        <div className="mx-4 mb-3 px-4 py-3 bg-primary-50 border border-primary-100 rounded-2xl fade-in">
-          <p className="text-sm text-primary-700 leading-relaxed">
-            💡 {activeTemplate.hint}
-          </p>
-        </div>
-      )}
-
-      {/* 大类标签 */}
-      <div className="px-4 mb-3">
-        <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">相关主题（选填）</p>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {[...PREDEFINED_CATEGORIES, ...extraCategories].map(tag => {
-            const isSelected = selectedCategories.includes(tag)
-            const isCustom = extraCategories.includes(tag)
-            return (
-              <button
-                key={tag}
-                onClick={() => toggleCategory(tag)}
-                className={`px-3 py-1.5 rounded-full text-sm border transition-all active:scale-95 flex items-center gap-1 ${
-                  isSelected
-                    ? 'bg-primary-500 text-white border-primary-500'
-                    : 'bg-white text-gray-500 border-gray-200'
-                }`}
-              >
-                <span>{tag}</span>
-                {isCustom && isSelected && <X size={12} />}
-              </button>
-            )
-          })}
-
-          <button
-            onClick={() => setShowCategoryInput(p => !p)}
-            className="px-3 py-1.5 rounded-full text-sm border border-dashed border-gray-300 text-gray-400 bg-white flex items-center gap-1 active:scale-95"
-          >
-            <Plus size={14} />
-            <span>新增</span>
-          </button>
-        </div>
-
-        {showCategoryInput && (
-          <div className="flex gap-2 mt-2 fade-in">
-            <input
-              value={categoryInput}
-              onChange={e => setCategoryInput(e.target.value)}
-              placeholder="输入自定义标签，如：婆媳、备婚"
-              className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-primary-400"
-            />
-            <button
-              onClick={handleAddCategory}
-              className="px-4 py-2 bg-primary-500 text-white text-sm rounded-2xl active:scale-95"
-            >
-              添加
-            </button>
-          </div>
-        )}
-
-        <div className="mt-3">
-          <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">关联事件（选填）</p>
-          <input
-            value={eventName}
-            onChange={e => setEventName(e.target.value)}
-            placeholder="例如：觉察日记app、reader网站搭建"
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-2xl text-sm text-gray-600 focus:outline-none focus:border-primary-400"
-          />
-        </div>
-
-        {/* 涉及人员 */}
-        {selectedPeople.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">涉及人员</p>
-            <div className="flex flex-wrap gap-2">
-              {selectedPeople.map(person => (
-                <button
-                  key={person}
-                  onClick={() => {
-                    userEditedPeople.current = true
-                    setSelectedPeople(prev => prev.filter(p => p !== person))
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-gray-100 text-gray-600 border border-gray-200 active:scale-95"
-                >
-                  <span>👤 {person}</span>
-                  <X size={12} className="text-gray-400" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 语音错误提示 */}
-      {voiceError && (
-        <div className="mx-4 mb-3 px-4 py-2.5 bg-red-50 border border-red-100 rounded-2xl fade-in">
-          <p className="text-sm text-red-500">{voiceError}</p>
-        </div>
-      )}
-
-      {/* 主输入区域 */}
-      <div className="flex-1 px-4 pb-4 flex flex-col gap-3">
-        <div className="card flex-1 flex flex-col">
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            placeholder={
-              activeTemplate?.hint
-                ? '按照上方提示，把想到的都写下来…'
-                : '随便写点什么，今天发生了什么，现在感受怎么样…'
-            }
-            className="flex-1 w-full min-h-[180px] text-gray-700 placeholder-gray-300 text-base leading-relaxed focus:outline-none bg-transparent"
-            style={{ resize: 'none' }}
-          />
-          {content.length > 0 && (
-            <p className="text-xs text-gray-300 text-right mt-2">{content.length} 字</p>
-          )}
-        </div>
-
-        {/* 日期 + 时间选择器（点击直接弹出原生面板） */}
-        <div className="flex gap-2 flex-wrap">
-          {/* 日期按钮 */}
-          <div className="relative">
-            <button
-              onClick={() => dateInputRef.current?.showPicker()}
-              className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
-            >
-              <span>📅</span>
-              <span>{formatDateLabel()}</span>
-            </button>
-            <input
-              ref={dateInputRef}
-              type="date"
-              value={entryDatetime.slice(0, 10)}
-              onChange={e => handleDatePartChange(e.target.value)}
-              className="absolute inset-0 opacity-0 pointer-events-none"
-            />
-          </div>
-
-          {/* 时间按钮 */}
-          <div className="relative">
-            <button
-              onClick={() => timeInputRef.current?.showPicker()}
-              className="flex items-center gap-1.5 text-xs text-gray-400 px-3 py-1.5 bg-white border border-gray-100 rounded-full"
-            >
-              <span>🕐</span>
-              <span>{formatTimeLabel()}</span>
-            </button>
-            <input
-              ref={timeInputRef}
-              type="time"
-              value={entryDatetime.slice(11, 16)}
-              onChange={e => handleTimePartChange(e.target.value)}
-              className="absolute inset-0 opacity-0 pointer-events-none"
-            />
-          </div>
-        </div>
-
-        {/* 操作栏：语音 + 下一步 */}
+      {/* ── 底部浮动栏 ── */}
+      <div
+        className="absolute bottom-0 left-0 right-0 flex items-center justify-between"
+        style={{
+          padding: '8px 18px 22px',
+          background: 'linear-gradient(transparent, #faf8f4 38%)',
+        }}
+      >
+        {/* 左：✦ 深入觉察 + 语音 */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleDeepAwareness}
+            disabled={!content.trim() || saving}
+            className="flex items-center gap-[5px] disabled:opacity-30 active:scale-95 transition-transform"
+          >
+            <span
+              className="flex items-center justify-center rounded-full"
+              style={{
+                width: '30px',
+                height: '30px',
+                background: '#f0ece4',
+                border: '1px solid #ddd8cf',
+                fontSize: '11px',
+                color: '#b8a88a',
+              }}
+            >
+              ✦
+            </span>
+            <span style={{ fontSize: '10px', color: '#ccc' }}>深入觉察</span>
+          </button>
+
           {isSupported && (
             <button
               onClick={handleVoiceToggle}
-              className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-200 select-none ${
-                isRecording
-                  ? 'bg-red-500 text-white recording-pulse'
-                  : 'bg-white border border-gray-200 text-gray-400 active:scale-95'
+              className={`flex items-center justify-center rounded-full active:scale-95 transition-all ${
+                isRecording ? 'recording-pulse' : ''
               }`}
-              title={isRecording ? '点击停止' : '点击说话'}
+              style={{
+                width: '30px',
+                height: '30px',
+                background: isRecording ? '#ef4444' : '#f0ece4',
+                border: `1px solid ${isRecording ? '#ef4444' : '#ddd8cf'}`,
+                color: isRecording ? '#fff' : '#b8a88a',
+              }}
             >
-              {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
+              {isRecording ? <MicOff size={13} /> : <Mic size={13} />}
             </button>
           )}
-
-          <button
-            onClick={handleNext}
-            disabled={!content.trim()}
-            className={`flex-1 h-14 rounded-2xl font-medium text-base flex items-center justify-center transition-all duration-200 active:scale-95 ${
-              content.trim()
-                ? 'bg-primary-500 text-white shadow-sm hover:bg-primary-600'
-                : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-            }`}
-          >
-            <ArrowRight size={22} />
-          </button>
         </div>
 
-        {error && <p className="text-center text-sm text-red-400 fade-in">{error}</p>}
-
-        {isRecording && (
-          <p className="text-center text-sm text-red-400 animate-pulse fade-in">
-            🎙️ 正在录音，再次点击停止…
-          </p>
-        )}
+        {/* 右：✓ 完成按钮 */}
+        <button
+          onClick={handleDone}
+          disabled={!content.trim() || saving}
+          className="flex items-center justify-center rounded-full active:scale-95 transition-all disabled:opacity-30"
+          style={{
+            width: '36px',
+            height: '36px',
+            background: saving ? '#999' : '#2d2928',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+            fontSize: '13px',
+            color: '#fff',
+          }}
+        >
+          {saving ? '…' : '✓'}
+        </button>
       </div>
     </div>
   )
