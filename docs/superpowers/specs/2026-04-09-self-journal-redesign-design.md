@@ -191,6 +191,26 @@ CREATE POLICY "user_conversations_policy"
 - `'entry'`：围绕某条日记的对话
 - `'letter'`：围绕某封回顾信的回应对话
 
+**UNIQUE 约束的行为规范：** `UNIQUE(entry_id, context_type)` 意味着每条 entry 只能有一行对话记录。**再次进入觉察流时必须用 UPSERT（不是 INSERT）**，将新消息追加到已有的 messages 数组里：
+
+```js
+// conversations 的保存逻辑：读取已有 messages → 合并新消息 → upsert
+// AwarenessFlow 组件在 state 里维护完整的 messages 数组（含历史+当次新增）
+// 每次保存时直接用完整数组覆盖，不需要在数据库层做数组合并
+await db.from('conversations').upsert(
+  {
+    user_id,
+    entry_id,
+    context_type: 'entry',
+    messages: fullMessagesArray,   // AwarenessFlow state 里的完整数组
+    updated_at: new Date().toISOString(),
+  },
+  { onConflict: 'entry_id,context_type' }   // 冲突时更新
+)
+```
+
+> **关键：** AwarenessFlow 初始化时，先从 conversations 表读取已有 messages 加载到 state，之后所有新问答追加到 state，保存时用 state 里的完整数组 upsert。这样数据库侧不需要做 JSON 数组合并，前端 state 就是唯一真相来源。
+
 ### 4.2 新建 review_letters 表
 
 > ⚠️ `conversations` 表里有 `letter_id` 引用 `review_letters(id)`，所以 `review_letters` 必须先于 `conversations` 建表，或者分两步：先建不含外键的 conversations，再建 review_letters，再 ALTER TABLE conversations ADD CONSTRAINT ... 。最简单的做法：下面两段 SQL 按顺序执行。
@@ -249,7 +269,7 @@ ALTER TABLE journal_entries
 ```
 
 > **字段分工说明：**
-> - `emotions`（已有）：基础层，49词标准词库的映射结果，用于统计聚合（情绪频率图表等）
+> - `emotions`（已有）：基础层，56词标准词库的映射结果，用于统计聚合（情绪频率图表等）
 > - `emotion_display`（新增）：描述层，AI 生成的更丰富自然表达，用于详情页展示
 > - `emotion_confidence`（新增）：`mapDisplayToBase()` 返回的 `minConfidence`，决定是否显示「待确认」提示
 
@@ -298,36 +318,50 @@ from: (table) => {
 
 ---
 
-## 五、情绪词库（基础层，固定 49 词）
+## 五、情绪词库（基础层，固定 56 词）
 
-这 49 个词是统计口径，不随用户输入自动扩展。保存在新文件 `src/lib/emotionMap.js` 里。
+这 56 个词是统计口径，不随用户输入自动扩展。保存在新文件 `src/lib/emotionMap.js` 里。
 
-词库依据 Ekman 基础情绪理论、Plutchik 情绪轮盘和 Cowen & Keltner（2017）27种情绪研究确定，覆盖自我觉察场景下出现频率最高的情绪类型。
+词库依据 Ekman 基础情绪理论（6+1种）、Plutchik 情绪轮盘（8种）和 Cowen & Keltner（2017）27种情绪研究确定，目标是覆盖自我觉察写作中可能出现的情感状态，**不以出现频率为取舍依据，以情感状态的独特性为判断标准**。
 
 ### 词库分组
 
-**负面情绪（25词）**
+**负面情绪（26词）**
 ```
 难过  愤怒  委屈  焦虑  羞愧  无力
 害怕  孤独  绝望  沮丧  厌烦  烦躁
 压抑  紧张  失落  嫉妒  内疚  抗拒
-疲惫  麻木  不甘  崩溃  厌恶  悲痛  羞耻
+疲惫  麻木  不甘  崩溃  厌恶  悲痛  羞耻  轻视
 ```
-- 新增：**厌恶**（Ekman 基础情绪，独立于厌烦）；**悲痛**（深度失去感，区别于难过的轻度哀伤）；**羞耻**（自我否定感，区别于羞愧的行为内疚）
+- **厌恶**（Ekman 基础情绪，独立于厌烦；厌烦是「烦了」，厌恶是「令我反感」）
+- **悲痛**（深度失去感，区别于难过的轻度哀伤）
+- **羞耻**（自我否定感，区别于羞愧的行为内疚）
+- **轻视**（Ekman contempt；「觉得对方不行/不如自己」的优越感，区别于愤怒和厌恶）
 
-**正面情绪（15词）**
+**正面情绪（18词）**
 ```
 轻松  满足  感激  开心  平静  期待
 温暖  喜悦  自豪  踏实  安心  充实
-兴奋  爱  敬畏
+兴奋  爱  敬畏  信任  被信任  悲悯
 ```
-- 新增：**兴奋**（高唤醒正向，从 SYNONYM_MAP 中原映射到"期待"的词独立出来）；**爱**（深度连结感，Plutchik 核心词）；**敬畏**（Cowen 27种之一，自我超越体验）
+- **兴奋**（高唤醒正向，从 SYNONYM_MAP 中原映射到「期待」的词独立出来）
+- **爱**（深度连结感，Plutchik 核心词）
+- **敬畏**（Cowen 27种之一，自我超越体验）
+- **信任**（对某人/某事物的安全感/依托感，主动向外的）
+- **被信任**（感受到他人信赖自己，带来被认可的荣幸感）
+- **悲悯**（Cowen sympathy 的升华；感受到他人的痛苦，并有主动的愿望希望他好；区别于同情的被动性）
 
-**混合/中性情绪（9词）**
+**混合/中性情绪（12词）**
 ```
-迷茫  矛盾  好奇  纠结  释然  依恋  敏感  复杂  惊讶  无聊
+迷茫  矛盾  好奇  纠结  释然  依恋  敏感  复杂  惊讶  无聊  尴尬  怀念  同情
 ```
-- 新增：**惊讶**（Ekman 基础情绪，可正可负）；**无聊**（低唤醒中性，自我觉察中频繁出现）
+- **惊讶**（Ekman 基础情绪，可正可负）
+- **无聊**（低唤醒中性）
+- **尴尬**（Cowen awkwardness；社交情境的窘迫感，区别于羞愧的道德性）
+- **怀念**（Cowen nostalgia；对过去的留恋/乡愁，区别于依恋的当下依附）
+- **同情**（Cowen sympathy；感受到他人的痛苦但偏被动，「真可怜」；**不映射到悲悯**，两者是独立情感状态）
+
+> ⚠️ 词库数量更新需同步修改 §17 的验收说明。
 
 ### 本地映射规则
 
@@ -336,23 +370,25 @@ from: (table) => {
 ```js
 // src/lib/emotionMap.js
 
-// 基础层词库（49词，完整列表）
+// 基础层词库（56词，完整列表）
 export const EMOTION_BASE = [
   // 负面（25词）
   '难过','愤怒','委屈','焦虑','羞愧','无力','害怕','孤独','绝望','沮丧',
   '厌烦','烦躁','压抑','紧张','失落','嫉妒','内疚','抗拒','疲惫','麻木',
-  '不甘','崩溃','厌恶','悲痛','羞耻',
-  // 正面（15词）
+  '不甘','崩溃','厌恶','悲痛','羞耻','轻视',
+  // 正面（18词）
   '轻松','满足','感激','开心','平静','期待','温暖','喜悦','自豪','踏实',
-  '安心','充实','兴奋','爱','敬畏',
-  // 混合（9词）
+  '安心','充实','兴奋','爱','敬畏','信任','被信任','悲悯',
+  // 混合（12词）
   '迷茫','矛盾','好奇','纠结','释然','依恋','敏感','复杂','惊讶','无聊',
+  '尴尬','怀念','同情',
 ]
 
 // 负面情绪子集（供 contentAnalysis.js 判断负面情绪使用，避免硬编码）
-export const EMOTION_NEGATIVE = EMOTION_BASE.slice(0, 25)
+export const EMOTION_NEGATIVE = EMOTION_BASE.slice(0, 26)
 
 // 近义词映射表（描述层词 → 基础层词）
+// 重要：同情 ≠ 悲悯，不相互映射；被信任 ≠ 温暖，独立统计
 const SYNONYM_MAP = {
   // ── 负面 ──
   '难受':   '难过',  '伤心':   '难过',  '悲伤':   '难过',  '心疼':   '难过',
@@ -378,6 +414,7 @@ const SYNONYM_MAP = {
   '恶心':   '厌恶',  '反感':   '厌恶',  '厌恶感': '厌恶',
   '哀痛':   '悲痛',  '极度悲伤':'悲痛', '痛失':   '悲痛',
   '羞耻感': '羞耻',  '丢脸':   '羞耻',  '无地自容':'羞耻',
+  '看不起': '轻视',  '鄙视':   '轻视',  '蔑视':   '轻视',  '不屑':   '轻视',
   // ── 正面 ──
   '快乐':   '开心',  '高兴':   '开心',
   '放松':   '轻松',
@@ -393,6 +430,9 @@ const SYNONYM_MAP = {
   '亢奋':   '兴奋',  '激动':   '兴奋',  '振奋':   '兴奋',  '好嗨':   '兴奋',
   '爱意':   '爱',    '心动':   '爱',    '珍惜':   '爱',
   '感动':   '敬畏',  '震撼':   '敬畏',  '被震到': '敬畏',  '崇敬':   '敬畏',
+  '信赖':   '信任',  '放心':   '信任',  '安心托付':'信任',
+  '被信赖': '被信任','被认可': '被信任','被托付': '被信任',
+  '慈悲':   '悲悯',  '悲悯感': '悲悯',  '慈心':   '悲悯',
   // ── 混合 ──
   '迷失':   '迷茫',  '找不到方向':'迷茫',
   '左右为难':'纠结',
@@ -400,6 +440,9 @@ const SYNONYM_MAP = {
   '感兴趣': '好奇',
   '吃惊':   '惊讶',  '没想到': '惊讶',  '意外':   '惊讶',  '惊喜':   '惊讶',
   '无聊透了':'无聊', '百无聊赖':'无聊', '提不起劲':'无聊',
+  '窘迫':   '尴尬',  '尬':     '尴尬',  '场面尴尬':'尴尬',
+  '想念':   '怀念',  '思念':   '怀念',  '乡愁':   '怀念',  '留恋':   '怀念',
+  '可怜':   '同情',  '心疼他': '同情',  '替他难过':'同情',  '哀怜':   '同情',
 }
 
 /**
@@ -474,35 +517,35 @@ export const TEMPLATES = [
     label: '觉察',
     color: '#c9a96e',           // 低饱和暖金，用于标签高亮、引导线、引导文字
     guide: '发生了什么 → 感受到什么 → 身体感觉',
-    awarenessStart: 'emotion',  // 点✓后觉察流从情绪层开始
+    awarenessStart: 'emotion',  // ⚠️ 预留字段，当前实现忽略；起点由 getAwarenessStartTier() 动态决定
   },
   {
     id: 'gratitude',
     label: '感恩',
     color: '#7cb9a8',
     guide: '今天 3 件值得感恩的事 → 为什么 → 谁让我感到温暖',
-    awarenessStart: 'gratitude', // 觉察流跳到感恩专属问题
+    awarenessStart: 'gratitude', // ⚠️ 预留字段，当前实现忽略；起点由 getAwarenessStartTier() 动态决定
   },
   {
     id: 'learning',
     label: '学习',
     color: '#8aabcc',
     guide: '学到了什么 → 为什么重要 → 想如何实践',
-    awarenessStart: 'learning',
+    awarenessStart: 'learning',  // ⚠️ 预留字段，当前实现忽略
   },
   {
     id: 'freewrite',
     label: '随记',
     color: '#aaa',
     guide: '随手记下来',
-    awarenessStart: null,        // 随记不进入觉察流，直接保存
+    awarenessStart: null,        // null 表示随记不进入觉察流，直接保存（唯一有实际行为的值）
   },
   {
     id: 'action',
     label: '行动',
     color: '#b8a88a',
     guide: '做了什么 → 感受如何 → 下次想怎么做',
-    awarenessStart: 'action',
+    awarenessStart: 'action',    // ⚠️ 预留字段，当前实现忽略
   },
 ]
 
@@ -858,7 +901,7 @@ export const AWARENESS_QUESTIONS = [
 
 ```js
 // 在 contentAnalysis.js 里新增
-import { EMOTION_NEGATIVE } from './emotionMap'  // 复用49词基础层的负面组，不要重复硬编码
+import { EMOTION_NEGATIVE } from './emotionMap'  // 复用56词基础层的负面组，不要重复硬编码
 
 /**
  * 根据文本复杂度，返回觉察流应该从哪一层开始
@@ -887,44 +930,101 @@ export function getAwarenessStartTier(text) {
 ```
 [进入AwarenessFlow]
   ↓
+  初始化：从 conversations 表读取已有 messages（若有），加载到 state
   计算 startTier = getAwarenessStartTier(rawContent)
   过滤问题列表：只保留 tier >= startTier 的问题
   如果内容无负面情绪词，过滤掉 showWhen === 'negative' 的问题
   ↓
   显示第一个问题（单屏）
   ↓
-  用户填写答案 → 点"继续"
+  用户填写答案 → 点「继续」
+  ↓
+  追加 Q&A 到 messages state → debounce 800ms → 自动 upsert 到 conversations
   ↓
   渐变过渡到下一个问题（opacity fade，300ms）
   ↓
   ...循环直到所有问题都问完
   ↓
-  最后一问答完 → 自动进入保存流程
+  最后一问答完 → 立即 upsert → 自动返回记录列表
 
-任意时刻：
-  - 点「保存并退出」→ **只保存用户实际已回答的 Q&A**（不包含尚未展示的问题），退出
-  - 点「✦ 深入觉察」 → AI 接手，进入 AI 模式（见第九章）
-  - 点「← 返回」 → 回到写作页（内容保留在 localStorage）
+任意时刻（右下角按钮）：
+  - mode='local'：右下角显示「✦ 深入觉察」→ 点击切换 mode='ai'，调用 AI 生成问题
+  - mode='ai'：右下角显示「× 暂停引导」→ 点击切换 mode='local'，回到本地问题流
+  - 切换 mode 不清空 messages，历史完整保留，下次再切回 ai 模式时 AI 能看到完整上下文
 
-> **messages 记录规范：** messages 数组里只包含「已展示的问题 + 用户已填写的回答」。
-> 用户在 tier 2 提前退出，tier 3-5 的问题不得出现在 messages 里（哪怕是空字符串）。
+左上角：
+  - 「← 返回写作」→ 当前进度自动保存（立即 upsert，不等 debounce），返回写作页（HomePage）
+    · 返回写作页后，用户继续补充写作内容
+    · 再次点 ✓ → 更新 journal_entries.content，然后重新进入 AwarenessFlow（带完整历史）
+    · AwarenessFlow 重新进入时继续 startTier=原来的位置，不重置
+
+「保存并退出」（底部）：
+  - 立即 upsert 当前 messages（不等 debounce），返回记录列表
+  - 只保存用户实际已回答的 Q&A（不包含尚未展示的问题）
 ```
+
+**自动保存机制（核心）：**
+
+```js
+// AwarenessFlow 里的自动保存 hook
+const saveRef = useRef(null)
+
+function scheduleAutoSave(messages) {
+  // 清掉上次的定时器
+  if (saveRef.current) clearTimeout(saveRef.current)
+  // 800ms 后保存
+  saveRef.current = setTimeout(() => doUpsert(messages), 800)
+}
+
+async function doUpsert(messages) {
+  await db.from('conversations').upsert(
+    { user_id, entry_id: entry.id, context_type: 'entry', messages, updated_at: new Date().toISOString() },
+    { onConflict: 'entry_id,context_type' }
+  )
+}
+
+// 用户主动离开时（组件卸载/返回写作/保存退出）立即保存，不等 debounce
+useEffect(() => {
+  return () => {
+    if (saveRef.current) clearTimeout(saveRef.current)
+    doUpsert(messagesRef.current)   // messagesRef 跟踪最新 messages
+  }
+}, [])
+```
+
+> **数据不丢保证：** 每答完一道题保存一次；用户关掉页面时 useEffect cleanup 立即保存；没有任何操作会导致已回答内容丢失。
+
+> **messages 记录规范：** messages 数组里只包含「已展示的问题 + 用户已填写的回答」。用户在 tier 2 提前退出，tier 3-5 的问题不得出现在 messages 里（哪怕是空字符串）。
 
 ### 8.6 AwarenessFlow 的 Props 和状态
 
 ```jsx
 // AwarenessFlow.jsx Props
-// entry: { id, content, template, user_id }  已插入DB的entry对象
-// onComplete: (conversationMessages) => void  全部完成时回调
-// onExit: () => void                          用户主动退出时回调
+// entry: { id, content, template, user_id }  已插入DB的entry对象（content可能被更新过）
+// onComplete: () => void                      全部完成时回调（返回记录列表）
+// onBackToWrite: () => void                   用户点「返回写作」时回调
 
 // 内部状态
 const [questions, setQuestions] = useState([])   // 过滤后的问题列表
 const [currentIdx, setCurrentIdx] = useState(0)  // 当前问题索引
 const [answers, setAnswers] = useState({})        // { questionId: answerText }
 const [mode, setMode] = useState('local')         // 'local' | 'ai'
-const [aiMessages, setAiMessages] = useState([])  // AI模式的消息历史
-const [isTransitioning, setIsTransitioning] = useState(false) // 渐变动画中
+const [messages, setMessages] = useState([])      // 完整消息列表（含历史+当次新增）
+const messagesRef = useRef(messages)              // 用于 cleanup 时立即保存
+const [isTransitioning, setIsTransitioning] = useState(false)
+
+// 初始化时从 conversations 表读取历史 messages
+useEffect(() => {
+  async function loadHistory() {
+    const { data } = await db.from('conversations')
+      .select('messages').eq('entry_id', entry.id).eq('context_type', 'entry').single()
+    if (data?.messages?.length) {
+      setMessages(data.messages)
+      messagesRef.current = data.messages
+    }
+  }
+  loadHistory()
+}, [entry.id])
 ```
 
 ---
@@ -1016,6 +1116,11 @@ AI 思考时，问题区域显示 loading 状态：
 }
 .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
 ```
 
 ---
@@ -1084,7 +1189,7 @@ async function handleDone() {
 }
 ```
 
-### 10.3 后台提取函数（conversationService.js 更新）
+### 10.4 后台提取函数（conversationService.js 更新）
 
 提取 prompt 需要新增对 `emotion_display` 的要求：
 
@@ -1112,7 +1217,7 @@ if (extraction.emotion_display?.length) {
 }
 ```
 
-### 10.4 崩溃恢复（localStorage）
+### 10.5 崩溃恢复（localStorage）
 
 写作过程中，每隔 3 秒自动把当前写作内容存 localStorage：
 
@@ -1412,19 +1517,26 @@ messages.forEach(msg => {
 // }
 ```
 
-**getUserLetterPrefs 实现：** 从 user_options 表或 localStorage 读取用户设置，不存在时返回默认值：
+**getUserLetterPrefs 实现：** 以 `user_memory.user_profile.letter_prefs` 为主存储（多端同步），localStorage 只作降级缓存：
 ```js
 async function getUserLetterPrefs(userId) {
-  // 先查 user_options（将来持久化到 DB）
-  // 目前 MVP 阶段用 localStorage 存偏好
-  const stored = localStorage.getItem(`letter_prefs_${userId}`)
-  if (stored) {
-    try { return JSON.parse(stored) } catch { /* fallback */ }
-  }
+  // 主存储：user_memory（多端同步，Supabase）
+  const memory = await getMemory(userId)
+  const prefs = memory?.user_profile?.letter_prefs
+  if (prefs) return prefs
+
+  // 降级：localStorage（Supabase 读取失败时用缓存）
+  try {
+    const stored = localStorage.getItem(`letter_prefs_${userId}`)
+    if (stored) return JSON.parse(stored)
+  } catch { /* ignore */ }
+
   // 默认：每写 10 条自动触发一次
   return { type: 'count', count_threshold: 10, day_interval: 7, require_new_entries: true }
 }
 ```
+
+> 设置页保存时同时写 user_memory（主）和 localStorage（缓存）。读取时优先用 user_memory，确保多端一致。
 
 ```js
 // src/lib/reviewLetterService.js
@@ -1568,6 +1680,12 @@ async function generateReviewLetter(userId, periodStart, prefs) {
                           [保存回应]
 ```
 
+**关联记录的显示和跳转逻辑：**
+- `review_letters.entry_ids` 是 uuid 数组，按时间顺序存储（oldest first）
+- 显示时按数组顺序编号为 `#1 / #2 / #3 …`（不显示 uuid，只显示序号）
+- 点击 `[#N ↗]` → 跳转到对应的 RecordDetail 页面，传入该 entry 的 uuid
+- 实现：`letter.entry_ids.map((entryId, idx) => <button onClick={() => navigate(\`/record/${entryId}\`)}>#${idx+1} ↗</button>)`
+
 用户写的回应保存在 `review_letters.user_response` 字段（text 类型）。
 回应也可以进入 AwarenessFlow（点 ✦ 深入觉察），此时 `context_type = 'letter'`。
 
@@ -1577,7 +1695,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 ```js
 useEffect(() => {
   if (letter && !letter.is_read) {
-    supabase.from('review_letters')
+    db.from('review_letters')
       .update({ is_read: true })
       .eq('id', letter.id)
   }
@@ -1617,8 +1735,7 @@ useEffect(() => {
 
 ```js
 // 心情曲线数据
-const { data: moodData } = await supabase
-  .from('journal_entries')
+const { data: moodData } = await db.from('journal_entries')
   .select('created_at, overall_state_score')
   .eq('user_id', user.id)
   .not('overall_state_score', 'is', null)
@@ -1626,8 +1743,7 @@ const { data: moodData } = await supabase
   .order('created_at', { ascending: true })
 
 // 情绪频率（基础层，用 emotions 字段统计）
-const { data: emotionData } = await supabase
-  .from('journal_entries')
+const { data: emotionData } = await db.from('journal_entries')
   .select('emotions')
   .eq('user_id', user.id)
   .gte('created_at', thirtyDaysAgo)
@@ -1635,11 +1751,11 @@ const { data: emotionData } = await supabase
 
 // 核心需求（合并 journal_entries + review_letters 的 insights）
 const [entryNeeds, letterInsights] = await Promise.all([
-  supabase.from('journal_entries')
+  db.from('journal_entries')
     .select('core_needs')
     .eq('user_id', user.id)
     .gte('created_at', thirtyDaysAgo),
-  supabase.from('review_letters')
+  db.from('review_letters')
     .select('insights')
     .eq('user_id', user.id)
     .gte('created_at', thirtyDaysAgo)
@@ -1876,7 +1992,7 @@ const [entryNeeds, letterInsights] = await Promise.all([
 |---|---|
 | 把回顾信的 insights 写回单条 entry | insights 留在 `review_letters.insights` JSONB 里 |
 | 用户编辑情绪词时调用 AI | 只用本地 `mapDisplayToBase()` 映射 |
-| 把任意描述词自动加入基础层词库 | 基础层 42 词固定，不自动扩展 |
+| 把任意描述词自动加入基础层词库 | 基础层 56 词固定，不自动扩展 |
 | 提取失败时用 alert 或 modal 打断用户 | 静默失败，console.error，可加底部 toast |
 | 在每次保存时都调 AI | 只在用户退出写作流后才触发后台提取 |
 
