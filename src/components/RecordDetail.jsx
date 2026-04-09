@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { updateEntry } from '../lib/journalService'
-import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
+import { resolveTemplate } from '../lib/templates'
 
 function formatDate(str) {
   return new Date(str).toLocaleString('zh-CN', {
@@ -94,7 +94,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
   const [menuOpen, setMenuOpen] = useState(false)
   const [localEntry, setLocalEntry] = useState(entry)
 
-  const template = TEMPLATE_BY_ID[localEntry.template_type] || DEFAULT_TEMPLATE
+  const template = resolveTemplate(localEntry.template_type)
 
   const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
 
@@ -172,8 +172,15 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
           <p className="text-xs text-gray-400 mb-2">{formatDate(localEntry.created_at)}</p>
           <div className="flex flex-wrap gap-1.5">
             {/* 模板 */}
-            <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
-              {template.emoji} {template.label}
+            <span
+              className="text-xs px-2.5 py-1 rounded-full border font-medium"
+              style={{
+                color: template.color,
+                borderColor: template.color + '66',
+                backgroundColor: template.color + '18',
+              }}
+            >
+              {template.label}
             </span>
             {/* 大类标签 */}
             {localEntry.category_tags?.map(tag => (

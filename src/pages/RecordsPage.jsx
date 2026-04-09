@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { fetchEntries, deleteEntry } from '../lib/journalService'
 import { Loader2, BookOpen, Pencil, Trash2 } from 'lucide-react'
 import RecordDetail from '../components/RecordDetail'
-import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
+import { resolveTemplate } from '../lib/templates'
 
 function formatDate(dateStr) {
   const date = new Date(dateStr)
@@ -76,7 +76,7 @@ function DeleteDialog({ entry, onConfirm, onCancel }) {
 
 // 单条记录卡片（支持长按触发操作菜单）
 function EntryCard({ entry, onOpen, onAction }) {
-  const template = TEMPLATE_BY_ID[entry.template_type] || DEFAULT_TEMPLATE
+  const template = resolveTemplate(entry.template_type)
   const hasAI = entry.emotions?.length > 0 || entry.reflection_insight
   const longPressTimer = useRef(null)
   const didLongPress = useRef(false)
@@ -111,8 +111,15 @@ function EntryCard({ entry, onOpen, onAction }) {
     >
       {/* 顶部：模板标签 + 时间 */}
       <div className="flex items-center justify-between mb-2.5">
-        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${template.color}`}>
-          {template.emoji} {template.label}
+        <span
+          className="text-xs px-2.5 py-1 rounded-full border font-medium"
+          style={{
+            color: template.color,
+            borderColor: template.color + '66',
+            backgroundColor: template.color + '18',
+          }}
+        >
+          {template.label}
         </span>
         <span className="text-xs text-gray-300">{formatDate(entry.created_at)}</span>
       </div>

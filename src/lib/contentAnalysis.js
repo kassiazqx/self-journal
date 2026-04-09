@@ -67,3 +67,34 @@ export function analyzeContent(text) {
     shouldSuggestChat: score >= 2,
   }
 }
+
+// ─── 觉察流起点计算 ───────────────────────────────────────────────
+// 引入情绪词库负面组，避免在这里硬编码第二套词表
+import { EMOTION_NEGATIVE } from './emotionMap'
+
+/**
+ * 根据写作内容的深度，决定觉察流从哪一层问题开始
+ *
+ * @param {string} text - 用户原始写作内容
+ * @returns {number} tier - 1/2/3/4/5，数字越大跳过的表层问题越多
+ *
+ * tier 1：从头开始（内容太短 / 没有情绪线索）
+ * tier 2：跳过情境描述，从情绪层开始（已有情绪词）
+ * tier 3：跳到身体/念头层（已写到身体感受或核心需求）
+ */
+export function getAwarenessStartTier(text) {
+  if (!text || text.trim().length < 30) return 1  // 太短，从头开始
+
+  const { score } = analyzeContent(text)
+
+  // 深层关键词：身体感受 / 核心需求类词语
+  const hasBodyWords = ['身体', '胸口', '肚子', '喉咙', '头疼', '心跳', '紧', '沉'].some(w => text.includes(w))
+  const hasNeedWords = ['需要', '想要', '希望', '重要', '被理解', '安全'].some(w => text.includes(w))
+
+  // 负面情绪词：直接复用 EMOTION_NEGATIVE，不重复维护
+  const hasNegativeEmotionWords = EMOTION_NEGATIVE.some(w => text.includes(w))
+
+  if (hasBodyWords || hasNeedWords) return 3      // 已写到深层，跳到 tier 3
+  if (hasNegativeEmotionWords || score >= 2) return 2  // 有负面情绪词，从 tier 2 开始
+  return 1                                         // 其他情况从头开始
+}

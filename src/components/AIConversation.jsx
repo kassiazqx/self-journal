@@ -5,7 +5,7 @@ import { getSystemPrompt, getInitialUserMessage } from '../lib/prompts'
 import { getMemory } from '../lib/memory'
 import { saveConversation } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
-import { TEMPLATE_BY_ID, DEFAULT_TEMPLATE } from '../lib/templates'
+import { resolveTemplate } from '../lib/templates'
 import { getChatSession, saveChatSession } from '../lib/storage'
 
 // 单条气泡
@@ -42,7 +42,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
   const initDoneRef = useRef(false)   // StrictMode double-run guard
-  const template = TEMPLATE_BY_ID[entry.template_type] || DEFAULT_TEMPLATE
+  const template = resolveTemplate(entry.template_type)
 
   const visibleMsgs = msgs.filter(m => !m.hidden)
 
@@ -201,8 +201,16 @@ export default function AIConversation({ entry, onClose, onSaved }) {
           </button>
           <div>
             <div className="flex items-center gap-1.5">
-              <span>{template.emoji}</span>
-              <span className="text-base font-semibold text-gray-800">{template.label}</span>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full border font-medium"
+                style={{
+                  color: template.color,
+                  borderColor: template.color + '66',
+                  backgroundColor: template.color + '18',
+                }}
+              >
+                {template.label}
+              </span>
             </div>
             <p className="text-xs text-gray-400">AI 陪你聊聊</p>
           </div>

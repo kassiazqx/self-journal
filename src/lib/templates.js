@@ -1,52 +1,80 @@
-// ─── 模板配置（唯一真相源）─────────────────────────────────────
-// 所有模板的 id、emoji、label、hint、color 统一在此维护。
-// 新增模板只需在此加一条，其他文件自动获取。
-//
-// 扩展点：
-// - color 目前硬编码 Tailwind 类，未来可改为 design token 或主题配置
-// - hint 目前硬编码中文，未来可接入 i18n
+/**
+ * 模板系统配置（唯一真相源）
+ *
+ * 阶段二改动：
+ *   - ID 变更：emotion → awareness，free → freewrite
+ *   - color 从 Tailwind 类改为十六进制色值（用于标签、引导竖线、引导文字）
+ *   - 新增 guide（引导词）、awarenessStart（觉察流入口层级）
+ *   - 移除 emoji、hint（由 guide 替代）
+ *
+ * 历史数据兼容：
+ *   旧 template_type 字段可能含 'emotion'/'free'，
+ *   读取时用 resolveTemplate(id) 代替直接查 TEMPLATE_BY_ID[id]
+ */
 
 export const TEMPLATES = [
   {
-    id: 'gratitude',
-    emoji: '🩷',
-    label: '感恩',
-    hint: '今天有什么值得感谢的？是谁、是什么事让你感到温暖或幸运？',
-    color: 'bg-pink-50 text-pink-600 border-pink-100',
-  },
-  {
-    id: 'emotion',
-    emoji: '🌷',
+    id: 'awareness',
     label: '觉察',
-    hint: '现在是什么感受？发生了什么？你注意到自己身体上有什么感觉吗？',
-    color: 'bg-purple-50 text-purple-600 border-purple-100',
+    color: '#c9a96e',           // 低饱和暖金
+    guide: '发生了什么 → 感受到什么 → 身体感觉',
+    awarenessStart: 'emotion',  // 点 ✓ 后觉察流从情绪层（tier 2）开始
   },
   {
-    id: 'free',
-    emoji: '✨',
-    label: '灵感',
-    hint: '一闪而过的念头、想法、观察——不用整理，直接写下来就好。',
-    color: 'bg-gray-50 text-gray-500 border-gray-100',
+    id: 'gratitude',
+    label: '感恩',
+    color: '#7cb9a8',           // 绿
+    guide: '今天 3 件值得感恩的事 → 为什么 → 谁让我感到温暖',
+    awarenessStart: 'gratitude',
   },
   {
     id: 'learning',
-    emoji: '📝',
     label: '学习',
-    hint: '今天学了什么？用自己的话说一遍，有什么让你印象深刻或有疑惑的地方？',
-    color: 'bg-blue-50 text-blue-600 border-blue-100',
+    color: '#8aabcc',           // 蓝
+    guide: '学到了什么 → 为什么重要 → 想如何实践',
+    awarenessStart: 'learning',
+  },
+  {
+    id: 'freewrite',
+    label: '随记',
+    color: '#aaa',              // 灰
+    guide: '随手记下来',
+    awarenessStart: null,       // 随记不进觉察流，直接保存
   },
   {
     id: 'action',
-    emoji: '💪🏻',
     label: '行动',
-    hint: '今天做了什么？运动、完成了一件事——时长、状态、身体感受如何？',
-    color: 'bg-green-50 text-green-600 border-green-100',
+    color: '#b8a88a',           // 暖棕
+    guide: '做了什么 → 感受如何 → 下次想怎么做',
+    awarenessStart: 'action',
   },
 ]
 
-// 快速查表（by id），替代各文件里的 TEMPLATE_MAP 对象
-// 用法：TEMPLATE_BY_ID['gratitude'] → { id, emoji, label, hint, color }
+// 快速查表（by id）
 export const TEMPLATE_BY_ID = Object.fromEntries(TEMPLATES.map(t => [t.id, t]))
 
 // 默认模板（id 未知时的兜底）
-export const DEFAULT_TEMPLATE = TEMPLATE_BY_ID.free
+export const DEFAULT_TEMPLATE = TEMPLATE_BY_ID['awareness']
+
+// ─── 历史数据兼容 ─────────────────────────────────────────────────
+// 阶段一/二写入的旧 template_type 值映射到新 ID
+const LEGACY_ID_MAP = {
+  'emotion':   'awareness',
+  'free':      'freewrite',
+  // 以下旧 ID 与新 ID 一致，显式列出避免歧义
+  'gratitude': 'gratitude',
+  'learning':  'learning',
+  'action':    'action',
+}
+
+/**
+ * 根据 template_type 字段值（可能是旧 ID）返回模板对象
+ * 所有读取模板的地方都应使用此函数，不直接查 TEMPLATE_BY_ID
+ *
+ * @param {string} id - entry.template_type 的值
+ * @returns {object} 模板对象，未知 ID 返回 DEFAULT_TEMPLATE
+ */
+export function resolveTemplate(id) {
+  const resolved = LEGACY_ID_MAP[id] ?? id
+  return TEMPLATE_BY_ID[resolved] ?? DEFAULT_TEMPLATE
+}
