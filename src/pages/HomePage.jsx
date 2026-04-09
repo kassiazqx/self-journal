@@ -168,31 +168,27 @@ export default function HomePage({ onDone, editEntry, onCancel }) {
       return
     }
 
-    // 新建模式：先 INSERT 拿到 id，再决定跳转
-    const { data: entry, error } = await insertEntry({
+    // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步 INSERT
+    const optimisticEntry = {
+      id: crypto.randomUUID(),
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
       created_at: new Date().toISOString(),
-    })
-
-    setSaving(false)
-
-    if (error || !entry) {
-      console.error('[insert]', error)
-      setSaving(false)
-      return
     }
 
     clearDraft()
-
-    // 随记模板不进觉察流
     const gotoAwareness = template.awarenessStart !== null
-    onDone?.(entry, gotoAwareness)
+    onDone?.(optimisticEntry, gotoAwareness)  // 立即跳转，不等 DB
 
-    // 重置写作区
+    // 重置写作区（不阻塞跳转）
     setContent('')
     setTemplate(DEFAULT_TEMPLATE)
+    setSaving(false)
+
+    // 后台写入 DB（fire-and-forget，用 optimisticEntry 里的 id）
+    insertEntry(optimisticEntry)
+      .then(({ error }) => { if (error) console.error('[insert]', error) })
   }, [content, saving, isEditMode, template, editEntry, user, onDone])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────

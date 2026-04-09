@@ -6,6 +6,7 @@ import RecordsPage from '../pages/RecordsPage'
 import SettingsPage from '../pages/SettingsPage'
 import TaggingPage from '../pages/TaggingPage'
 import AIConversation from './AIConversation'
+import AwarenessFlow from './AwarenessFlow'
 import ReflectionPage from '../pages/ReflectionPage'
 import { getCardsForEntry } from '../lib/reflectionQuestions'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
@@ -59,15 +60,49 @@ export default function MainLayout() {
 
   // ── HomePage 「✓完成」后 ──────────────────────────────────────
   // onDone(entry, gotoAwareness)
-  //   gotoAwareness=true  → 进 AI 对话（觉察模板）
+  //   gotoAwareness=true  → 进觉察流（AwarenessFlow）
   //   gotoAwareness=false → 直接跳列表（随记 / 编辑模式）
   const handleDone = (entry, gotoAwareness) => {
+    const editScreen     = currentScreen
+    const awarenessState = editScreen?.type === 'edit' ? editScreen.awarenessState : null
+
     reset(setScreens)
     setRecordsRefreshKey(k => k + 1)
-    if (gotoAwareness) {
-      push(setScreens, { type: 'ai', entry })
+
+    if (awarenessState) {
+      // 从写作页返回：跳回觉察流最后写过的那张卡片
+      push(setScreens, {
+        type: 'awareness',
+        entry,
+        initialAnswers:    awarenessState.answers,
+        initialAltIndices: awarenessState.altIndices,
+        initialTimestamps: awarenessState.timestamps,
+        initialIdx:        awarenessState.lastIdx ?? 0,
+      })
+    } else if (gotoAwareness) {
+      push(setScreens, { type: 'awareness', entry })
     } else {
       goTab('records')
+    }
+  }
+
+  // ── AwarenessFlow 完成后 ──────────────────────────────────────
+  const handleAwarenessComplete = () => {
+    reset(setScreens)
+    goTab('records')
+    setRecordsRefreshKey(k => k + 1)
+  }
+
+  // ── AwarenessFlow 中途退出 → 回写作页（带原始内容可编辑）──
+  const handleAwarenessExit = (awarenessState) => {
+    const entry = currentScreen?.entry
+    if (entry) {
+      setScreens([{ type: 'edit', entry, awarenessState }])
+      goTab('home')
+    } else {
+      reset(setScreens)
+      goTab('records')
+      setRecordsRefreshKey(k => k + 1)
     }
   }
 
@@ -138,6 +173,23 @@ export default function MainLayout() {
   // ─── 全屏覆盖渲染 ─────────────────────────────────────────────
   const WRAPPER = 'flex flex-col max-w-lg mx-auto w-full'
   const STYLE   = { height: '100dvh' }
+
+  if (currentScreen?.type === 'awareness') {
+    const s = currentScreen
+    return (
+      <div className={WRAPPER} style={STYLE}>
+        <AwarenessFlow
+          entry={s.entry}
+          onComplete={handleAwarenessComplete}
+          onExit={handleAwarenessExit}
+          initialAnswers={s.initialAnswers}
+          initialAltIndices={s.initialAltIndices}
+          initialTimestamps={s.initialTimestamps}
+          initialIdx={s.initialIdx}
+        />
+      </div>
+    )
+  }
 
   if (currentScreen?.type === 'ai') {
     return (
