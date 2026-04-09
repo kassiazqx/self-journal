@@ -146,27 +146,36 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [actionTarget, setActionTarget] = useState(null)
   const isFirstFetch = useRef(true)
-  // 用 ref 记录当前条数，避免 loadEntries 依赖 entries.length（每次变化都重建函数）
-  const entriesCountRef = useRef(0)
+  const entriesCountRef = useRef(0)   // 分页偏移（避免 loadEntries 依赖 entries.length）
+  const isResettingRef = useRef(false) // reset 进行中时屏蔽 observer，防止并发加载错误数据
+  const hasMoreRef = useRef(true)      // observer 回调里读 hasMore（避免 stale closure）
+  const loadingMoreRef = useRef(false) // observer 回调里读 loadingMore（避免 stale closure）
+  const sentinelRef = useRef(null)     // 列表底部哨兵，进入视口时触发加载更多
   const PAGE_SIZE = 20
 
   const loadEntries = useCallback(async (reset = false, silent = false) => {
     if (!user) return
 
-    const isReset = reset
-    if (isReset && !silent) setLoading(true)
-    else if (!isReset) setLoadingMore(true)
+    if (reset) isResettingRef.current = true  // 屏蔽 observer
+
+    if (reset && !silent) setLoading(true)
+    else if (!reset) {
+      setLoadingMore(true)
+      loadingMoreRef.current = true
+    }
 
     try {
-      const from = isReset ? 0 : entriesCountRef.current
+      const from = reset ? 0 : entriesCountRef.current
       const { data, error } = await fetchEntries({ userId: user.id, from, limit: PAGE_SIZE })
 
       if (error) throw error
 
-      setHasMore(data.length === PAGE_SIZE)
+      const more = data.length === PAGE_SIZE
+      hasMoreRef.current = more
+      setHasMore(more)
       setEntries(prev => {
-        const next = isReset ? data : [...prev, ...data]
-        entriesCountRef.current = next.length   // 同步 ref
+        const next = reset ? data : [...prev, ...data]
+        entriesCountRef.current = next.length
         return next
       })
     } catch (err) {
@@ -174,8 +183,31 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
     } finally {
       setLoading(false)
       setLoadingMore(false)
+      loadingMoreRef.current = false
+      isResettingRef.current = false  // 解除屏蔽
     }
-  }, [user])  // 不再依赖 entries.length，函数引用稳定
+  }, [user])  // 函数引用稳定，仅 user 变化时重建
+
+  // ── IntersectionObserver：哨兵进入视口时自动加载更多 ─────────
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (
+          entry.isIntersecting &&
+          hasMoreRef.current &&
+          !loadingMoreRef.current &&
+          !isResettingRef.current   // reset 中不触发，防止并发
+        ) {
+          loadEntries(false)
+        }
+      },
+      { rootMargin: '120px' }  // 距底部 120px 时提前触发，滚动更流畅
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loadEntries])  // loadEntries 稳定，仅 user 变化时重新绑定
 
   // 离开列表页时立刻清掉详情，回来时直接是列表
   useEffect(() => {
@@ -222,9 +254,8 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
   return (
     <div className="flex flex-col h-full">
       {/* 顶部标题 */}
-      <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+      <div className="px-5 pt-5 pb-3">
         <h1 className="text-xl font-bold text-gray-800">我的记录</h1>
-        <span className="text-sm text-gray-400">{entries.length} 条</span>
       </div>
 
       {/* 记录列表 */}
@@ -262,23 +293,20 @@ export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit })
               </div>
             ))}
 
-            {/* 加载更多 */}
-            {hasMore && (
-              <button
-                onClick={() => loadEntries(false)}
-                disabled={loadingMore}
-                className="w-full py-3 text-sm text-primary-500 flex items-center justify-center gap-2"
-              >
-                {loadingMore
-                  ? <><Loader2 size={14} className="animate-spin" /> 加载中…</>
-                  : '加载更多'
-                }
-              </button>
+            {/* 加载中指示器 */}
+            {loadingMore && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 size={18} className="animate-spin text-primary-300" />
+              </div>
             )}
 
+            {/* 到底提示 */}
             {!hasMore && entries.length > PAGE_SIZE && (
               <p className="text-center text-xs text-gray-300 py-4">已经到底啦～</p>
             )}
+
+            {/* 哨兵：进入视口时触发加载更多 */}
+            <div ref={sentinelRef} className="h-1" />
           </>
         )}
       </div>
