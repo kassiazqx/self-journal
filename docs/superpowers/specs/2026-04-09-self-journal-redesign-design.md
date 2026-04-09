@@ -238,16 +238,40 @@ ALTER TABLE journal_entries
 -- 基础层映射置信度（0.0-1.0，低于0.7时在详情页提示）
 ALTER TABLE journal_entries
   ADD COLUMN IF NOT EXISTS emotion_confidence float DEFAULT null;
+
+-- 附件预留（图片/音频等，现在不实现，字段先占位）
+-- 格式：[{ "type": "image", "url": "...", "thumb_url": "...", "size": 204800 }]
+ALTER TABLE journal_entries
+  ADD COLUMN IF NOT EXISTS attachments jsonb DEFAULT '[]';
 ```
 
 > 说明：`emotions` 字段继续存在，作为基础层（40词标准词库的映射结果）。新增 `emotion_display` 作为描述层（更丰富自然的表达）。两者都由 AI 提取，但用途不同：`emotion_display` 用于展示，`emotions` 用于统计聚合。
 
-### 4.4 执行顺序
+### 4.4 db.js 适配层（必须新建）
+
+在 `src/lib/db.js` 新建统一数据访问入口。**所有 lib 文件必须通过 db.js 访问数据库，不得直接 import supabase。** 这是为将来切换到本地 SQLite（Capacitor APK 路线）预留的接缝。
+
+```js
+// src/lib/db.js
+// 唯一知道"底下用什么存储"的文件。将来切换本地 SQLite 只改这里。
+import { supabase } from './supabase'
+
+export const db = {
+  from: (table) => supabase.from(table),   // 目前透传，未来可换实现
+  auth: supabase.auth,
+  rpc: (fn, args) => supabase.rpc(fn, args),
+}
+```
+
+> 第一阶段可以只做简单透传，关键是**建立规范**：其他文件改成 `import { db } from './db'`，不直接 import supabase。未来换 SQLite 只需替换 db.js 内部实现。
+
+### 4.5 执行顺序
 
 1. 执行 review_letters 建表 SQL
 2. 执行 conversations 建表 SQL（letter_id 外键依赖 review_letters）
-3. 执行 journal_entries 增列 SQL
-4. 在 Supabase Table Editor 里确认三个操作都成功（看到表/列出现了）
+3. 执行 journal_entries 增列 SQL（含 attachments）
+4. 新建 `src/lib/db.js`
+5. 在 Supabase Table Editor 里确认三个操作都成功（看到表/列出现了）
 
 ---
 
@@ -939,9 +963,22 @@ AI 思考时，问题区域显示 loading 状态：
 
 ---
 
-## 十、记录保存与后台处理
+## 十、记录保存与处理
 
-### 10.1 保存时机和流程
+### 10.1 AI 调用总策略（重要，不能偏离）
+
+| 场景 | 触发方式 | 是否自动 |
+|---|---|---|
+| 深入觉察对话 | 用户点 ✦ | 手动 |
+| 字段提取（emotion_display 等） | 详情页点「AI 分析」按钮 | 手动 |
+| 本地关键词检测 | 保存时自动 | 自动（零 token） |
+| 基础层情绪映射 | AI 分析完成后，本地运行 | 自动（零 token） |
+| 回顾信生成 | 按设置周期 或 手动点「立即生成」 | 可自动 / 可手动 |
+| 洞察汇总 | 用户在洞察页手动触发 | 手动（流程待设计） |
+
+**结论：除了回顾信有自动模式，其他一切 AI 调用都是用户手动触发。保存动作本身不调用任何 AI。**
+
+### 10.2 保存时机和流程
 
 ```
 用户在任意阶段决定退出（完成所有问题 / 点保存并退出 / 关掉页面）
@@ -958,19 +995,15 @@ Step 3：插入 conversations 表：
   - context_type = 'entry'
   - messages = 完整对话
   ↓
-Step 4（后台，不等待）：
-  调用 AI 静默提取字段
+Step 4（本地，不调 AI）：
+  keywordDetection 跑一遍，写入 category_tags、people_involved 基础字段
   ↓
-Step 5（后台，不等待）：
-  本地映射 emotion_display → emotions（基础层）+ emotion_confidence
-  写回 journal_entries
-  ↓
-返回记录列表页（Step 4、5 在后台继续跑）
+返回记录列表页
 ```
 
-### 10.2 写作页点 ✓ 时的处理
+> emotion_display、core_needs、reflection_insight 等 AI 提取字段**不在这里写入**，等用户在详情页手动点「AI 分析」才提取。
 
-写作页的 ✓ 按钮做两件事：
+### 10.3 写作页点 ✓ 时的处理
 
 ```js
 async function handleDone() {
@@ -985,9 +1018,7 @@ async function handleDone() {
 
   // 2. 随记模板：直接保存，不进觉察流
   if (currentTemplate.id === 'freewrite') {
-    // 不需要觉察，直接后台提取
-    _backgroundExtract(entry)
-    navigate to records
+    navigate to records   // 直接回列表，不提取，不进觉察
     return
   }
 
@@ -1208,6 +1239,45 @@ const combined = [
 - 字段为空时，整行隐藏（不显示空占位）
 - 字段内容可以点击进入编辑模式（inline 编辑，onBlur 自动保存）
 - **字段编辑只更新该字段，不触发任何 AI 调用**
+
+**所有字段都是空时（还没做过 AI 分析）**，核心字段区显示：
+
+```
+[✦ AI 分析]   ← 小按钮，灰色边框，点击触发字段提取
+暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
+```
+
+点击「AI 分析」按钮的流程：
+```js
+async function handleAIAnalyze() {
+  setAnalyzing(true)
+
+  // 读取该条记录的完整对话
+  const { data: convo } = await db.from('conversations')
+    .select('messages').eq('entry_id', entry.id).single()
+
+  // 组装文本（原始写作 + 对话）
+  const fullText = buildConversationText(entry.content, convo?.messages ?? [])
+
+  // 调用 AI 提取
+  const extraction = await extractFields(fullText)  // 见 conversationService.js
+
+  // 本地映射情绪基础层
+  const { baseWords, minConfidence } = mapDisplayToBase(extraction.emotion_display ?? [])
+
+  // 写回 DB
+  await updateEntry(entry.id, entry.user_id, {
+    ...extraction,
+    emotions: baseWords,
+    emotion_confidence: minConfidence,
+  })
+
+  setAnalyzing(false)
+  reload()  // 刷新详情页展示
+}
+```
+
+> 按钮状态：默认显示「✦ AI 分析」→ 点击后变「分析中…」→ 完成后消失（字段区展示提取结果）。
 
 ### 12.4 关联区（小标签）
 
@@ -1717,9 +1787,11 @@ const [entryNeeds, letterInsights] = await Promise.all([
 
 | 禁止行为 | 正确做法 |
 |---|---|
-| 在页面组件里直接调 supabase | 通过 journalService / conversationService 等 lib 层调用 |
+| 在页面/组件里直接 `import { supabase }` | 改用 `import { db } from '../lib/db'`，所有数据访问走 db.js |
+| 在页面/组件里直接 `import { supabase }` 调 supabase.auth | 通过 AuthContext 或 db.auth 访问 |
 | 在 UI 组件里写 AI prompt | prompt 统一在 prompts.js 维护 |
 | 把 AI 流程逻辑写在 JSX 文件里 | AI 调用逻辑放 lib 层，组件只传参调用 |
+| 保存记录时自动触发任何 AI 调用 | 保存只做本地 keyword 检测，AI 提取必须用户手动触发 |
 | 本次实现 threads/事件线系统 | 明确 Phase 2，本次不做 |
 | 本次实现复杂洞察图表动画 | 静态图表够用，不引入大型动画库 |
 
@@ -1775,10 +1847,34 @@ const [entryNeeds, letterInsights] = await Promise.all([
 - [ ] `conversations` 表里有完整 messages 数组
 - [ ] 回顾信生成后，`review_letters` 表里有对应记录，`entry_ids` 正确关联
 
-### 不该出现的事
+### 反向验收：以下情况一旦出现就是 bug
 
-- [ ] 写作过程中没有任何 AI 调用发生（写完才后台提取）
-- [ ] 编辑情绪词没有触发 AI 调用
-- [ ] 切换模板没有清空内容
-- [ ] 不存在 TaggingPage、ReflectionPage 的任何痕迹（代码和 UI）
+> 以下各条是**不应该发生的行为**。打开 Network 面板 / 实际操作，确认每条均未发生。
+
+- [ ] ❌ 用户写作途中（还没点 ✓）出现任何 AI 网络请求
+- [ ] ❌ 用户点击「编辑情绪词」后出现 AI 网络请求（编辑只用本地映射）
+- [ ] ❌ 切换模板标签后输入框内容消失
+- [ ] ❌ 代码或 UI 中存在 TaggingPage、ReflectionPage 的任何痕迹
+- [ ] ❌ 组件文件（pages/ 或 components/）中直接出现 `import { supabase }`
+
+---
+
+## 附录：待讨论议题
+
+### A. user_memory prompt 优化（重要，独立讨论）
+
+**背景**：user_memory 目前积累用户的 rolling_summary 和 user_profile，帮助 AI 在对话中记住用户。但有一个潜在问题：过于依赖历史印象，AI 可能会用"过去的你"来解读"现在的你"，无法看见变化和成长。
+
+**核心矛盾**：
+- 记忆有价值的是：语言表达偏好、长期重要关系、已建立的觉察模式
+- 记忆容易有害的是：对用户性格/情绪模式的固化判断、"你一直都是这样的人"式的预设
+
+**佛道视角补充**：空性和无常意味着每次当下都是新的当下，人是可以变化的。AI 的记忆不应该成为"你就是这样的人"的笼子。
+
+**待讨论的方向**：
+1. rolling_summary 的写法是否需要区分"相对稳定的信息"和"当下状态"？
+2. system prompt 里是否需要明确指令："不要用用户的历史模式来解读当下，把过去作为参考而非定论"？
+3. user_memory 是否需要设计"衰减"机制——久远的记忆自动降权？
+
+> 📌 **这个议题在本次实现前需要单独讨论和定案，然后更新 prompts.js 的 system prompt。**
 ```
