@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { updateEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
+import { db } from '../lib/db'
+import { normalizeConversationMessages } from '../lib/conversationMessages'
 
 function formatDate(str) {
   return new Date(str).toLocaleString('zh-CN', {
@@ -93,10 +95,40 @@ function EditableFieldRow({ label, value, onSave }) {
 export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [localEntry, setLocalEntry] = useState(entry)
+  const [conversationMessages, setConversationMessages] = useState(
+    Array.isArray(entry.full_conversation) ? entry.full_conversation : [],
+  )
+
+  useEffect(() => {
+    setLocalEntry(entry)
+    setConversationMessages(Array.isArray(entry.full_conversation) ? entry.full_conversation : [])
+  }, [entry])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadConversation() {
+      const { data, error } = await db.from('conversations')
+        .select('messages')
+        .eq('entry_id', entry.id)
+        .eq('context_type', 'entry')
+        .maybeSingle()
+
+      if (cancelled) return
+      if (error) return
+      if (Array.isArray(data?.messages) && data.messages.length > 0) {
+        setConversationMessages(data.messages)
+      }
+    }
+
+    loadConversation()
+    return () => { cancelled = true }
+  }, [entry.id])
 
   const template = resolveTemplate(localEntry.template_type)
 
-  const hasConversation = Array.isArray(localEntry.full_conversation) && localEntry.full_conversation.length > 0
+  const hasConversation = conversationMessages.length > 0
+  const displayConversationMessages = normalizeConversationMessages(conversationMessages)
 
   const hasExtraction = localEntry.reflection_insight || localEntry.cognitive_distortion_type ||
     localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
@@ -251,7 +283,7 @@ export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelet
             defaultOpen={false}
           >
             <div className="space-y-3 pt-1">
-              {localEntry.full_conversation.map((msg, i) => (
+              {displayConversationMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                     msg.role === 'user'

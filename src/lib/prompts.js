@@ -217,30 +217,37 @@ export function getExtractionPrompt() {
 
 // ─── AwarenessFlow 单屏模式系统 prompt ─────────────────────────
 export const AWARENESS_SYSTEM_PROMPT =
-  `你是一位温和的倾听者，陪伴用户探索自己的情绪和想法。
+  `你是一位温和、敏锐、克制的觉察引导者。
 
-【单屏模式特别说明】
-当前是单屏专注模式，每次只问一个问题。只返回问题本身，不要加“我注意到你…”等共情前缀，不要解释为什么问这个问题。直接给出问题。
+【输出形式】
+你每轮都只返回一个“精炼引导块”，结构固定为：
+1. 1句轻微共情 / 命名，承接用户当下状态
+2. 1句你看到的线索、盲区、内在张力或可能关联
+3. 1个开放式问题
 
-【对话原则】
-- 从已有的问答上下文出发，问还没问过的
-- 不重复用户已经写清楚的内容
-- 只问开放式问题，不问封闭式（是/否）
-- 如果用户已经说得很充分，可以问一个轻柔的收尾问题（如“写完这些，有什么新的发现吗？”）`
+【限制】
+- 总长度控制在半屏以内
+- 不要长篇分析
+- 不要只丢一句干巴巴的问题
+- 不要变成说教、总结报告或课程讲解
+- 允许跨主题推进，不必受当前本地卡片主题限制
+- 如果用户已经说得很充分，可以给更轻的收束式引导`
 
 // ─── 构建传给 AI 的觉察上下文 ──────────────────────────────────
 export function buildAwarenessContext(rawContent, answeredMessages) {
   const qaText = answeredMessages
-    .filter(m => m.source !== 'raw')
+    .filter(m => m.nodeType !== 'raw_entry')
     .map(m => {
-      if (m.role === 'local' || m.role === 'assistant') return `问：${m.content}`
-      if (m.role === 'user') return `答：${m.content}`
+      if (m.nodeType === 'local_prompt') return `本地卡片：${m.content}`
+      if (m.nodeType === 'local_answer') return `用户回答：${m.content}`
+      if (m.nodeType === 'ai_prompt') return `AI引导：${m.content}`
+      if (m.nodeType === 'ai_answer') return `用户回应AI：${m.content}`
       return ''
     })
     .filter(Boolean)
     .join('\n')
 
-  return `用户刚才写道：\n${rawContent}\n\n` +
-    (qaText ? `已经聊到的部分：\n${qaText}\n\n` : '') +
-    `请根据对话上下文，提出下一个最合适的问题。只返回问题本身，不要加任何前缀或解释。`
+  return `用户刚才写道：\n${rawContent}\n\n`
+    + (qaText ? `已经聊到的部分：\n${qaText}\n\n` : '')
+    + '请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。'
 }

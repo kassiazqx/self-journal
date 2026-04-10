@@ -57,6 +57,40 @@ begin
 end;
 $$ language plpgsql;
 
-create trigger set_updated_at
-  before update on public.journal_entries
+-- ============================================
+-- 觉察流对话表
+-- ============================================
+create table if not exists public.conversations (
+  id           uuid default uuid_generate_v4() primary key,
+  user_id      uuid references auth.users(id) on delete cascade not null,
+  entry_id     uuid references public.journal_entries(id) on delete cascade not null,
+  context_type text not null default 'entry',
+  messages     jsonb not null default '[]',
+  created_at   timestamptz default now() not null,
+  updated_at   timestamptz default now() not null,
+  unique (entry_id, context_type)
+);
+
+create index if not exists idx_conversations_entry_id on public.conversations(entry_id);
+
+alter table public.conversations enable row level security;
+
+create policy "用户只能查看自己的对话"
+  on public.conversations for select
+  using (auth.uid() = user_id);
+
+create policy "用户只能创建自己的对话"
+  on public.conversations for insert
+  with check (auth.uid() = user_id);
+
+create policy "用户只能更新自己的对话"
+  on public.conversations for update
+  using (auth.uid() = user_id);
+
+create policy "用户只能删除自己的对话"
+  on public.conversations for delete
+  using (auth.uid() = user_id);
+
+create trigger set_conversations_updated_at
+  before update on public.conversations
   for each row execute procedure public.handle_updated_at();

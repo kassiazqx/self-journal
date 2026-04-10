@@ -70,7 +70,7 @@ export function analyzeContent(text) {
 
 // ─── 觉察流起点计算 ───────────────────────────────────────────────
 // 引入情绪词库负面组，避免在这里硬编码第二套词表
-import { EMOTION_NEGATIVE } from './emotionMap'
+import { EMOTION_NEGATIVE } from './emotionMap.js'
 
 /**
  * 根据写作内容的深度，决定觉察流从哪一层问题开始
