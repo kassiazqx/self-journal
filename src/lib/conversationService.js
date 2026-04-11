@@ -130,3 +130,23 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
     console.error('[memory] 记忆更新失败:', e)
   }
 }
+
+// ─── 手动 AI 分析（RecordDetail 页面「✦ AI 分析」按钮触发）───────
+// fullText：原始写作 + 觉察对话内容拼接
+// 返回 extraction 对象（含 emotion_display 等字段）
+export async function extractFields(fullText) {
+  const extractPrompt = `以下是我们的对话记录：\n\n${fullText}\n\n${getExtractionPrompt()}`
+  const raw = await callAI(
+    [{ role: 'user', content: extractPrompt }],
+    '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
+    { maxTokens: 1200 }
+  )
+  const match = raw.match(/\{[\s\S]*\}/)
+  if (!match) return {}
+  try {
+    return JSON.parse(match[0])
+  } catch (e) {
+    console.error('[extractFields] JSON 解析失败:', e)
+    return {}
+  }
+}

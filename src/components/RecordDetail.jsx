@@ -1,324 +1,459 @@
+// src/components/RecordDetail.jsx
+// 记录详情页：三段式布局（核心字段卡 → 关联标签 → 统一记录流）
+// 情绪标签可点击内联编辑，使用本地 mapDisplayToBase，不调 AI
 import { useState, useEffect } from 'react'
-import { ArrowLeft, MessageCircle, Sparkles, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
-import { db } from '../lib/db'
-import { normalizeConversationMessages } from '../lib/conversationMessages'
+import { mapDisplayToBase } from '../lib/emotionMap'
+import { extractFields } from '../lib/conversationService'
 
-function formatDate(str) {
-  return new Date(str).toLocaleString('zh-CN', {
-    year: 'numeric', month: 'long', day: 'numeric',
-    weekday: 'long', hour: '2-digit', minute: '2-digit',
-  })
+function formatDateTime(isoStr) {
+  const d = new Date(isoStr)
+  return (
+    d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  )
 }
 
-// 状态分数可视化
-function ScoreBar({ score }) {
-  if (score === null || score === undefined) return null
-  const pct = ((score + 5) / 10) * 100
-  const color = score >= 2 ? 'bg-green-400' : score <= -2 ? 'bg-red-400' : 'bg-primary-400'
+// 情绪胶囊标签（只展示用）
+function EmotionTag({ word }) {
   return (
-    <div className="flex gap-3 py-2 items-center">
-      <span className="text-xs text-gray-400 w-16 flex-shrink-0">状态</span>
-      <div className="flex-1 flex items-center gap-2">
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-        </div>
-        <span className="text-xs font-medium text-gray-600 w-6 text-right">
-          {score > 0 ? `+${score}` : score}
-        </span>
-      </div>
+    <span style={{
+      fontSize: 12,
+      background: '#f0ece4',
+      color: '#8a7a6a',
+      padding: '3px 10px',
+      borderRadius: 20,
+      display: 'inline-block',
+    }}>
+      {word}
+    </span>
+  )
+}
+
+// 核心字段单行（空时不渲染）
+function FieldRow({ label, value }) {
+  if (!value || (Array.isArray(value) && value.length === 0)) return null
+  const display = Array.isArray(value) ? value.join('、') : value
+  return (
+    <div style={{ display: 'flex', gap: 12, paddingBottom: 6, alignItems: 'flex-start' }}>
+      <span style={{
+        fontSize: 10, color: '#aaa', flexShrink: 0,
+        minWidth: 44, paddingTop: 2,
+      }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 13, color: '#333', lineHeight: 1.6 }}>{display}</span>
     </div>
   )
 }
 
-// 可折叠区域
-function Collapsible({ title, icon, defaultOpen = false, children }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div className="card">
-      <button
-        onClick={() => setOpen(p => !p)}
-        className="w-full flex items-center justify-between"
-      >
-        <div className="flex items-center gap-1.5">
-          {icon}
-          <p className="text-xs font-medium text-gray-500">{title}</p>
-        </div>
-        {open ? <ChevronUp size={14} className="text-gray-300" /> : <ChevronDown size={14} className="text-gray-300" />}
-      </button>
-      {open && <div className="mt-3 space-y-1">{children}</div>}
-    </div>
-  )
-}
+export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness }) {
+  const [entry, setEntry] = useState(initialEntry)
+  const [messages, setMessages] = useState([])
+  const [analyzing, setAnalyzing] = useState(false)
+  const [toast, setToast] = useState('')
 
-// 可编辑字段行
-function EditableFieldRow({ label, value, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const display = Array.isArray(value) ? value.join('、') : (value ?? '')
-  const [draft, setDraft] = useState(display)
+  // 情绪内联编辑状态
+  const [editingEmotions, setEditingEmotions] = useState(false)
+  const [emotionDraft, setEmotionDraft] = useState('')
 
-  if (!display && !editing) return null
+  const tpl = resolveTemplate(entry.template_type)
 
-  const handleSave = () => {
-    setEditing(false)
-    onSave(draft)
-  }
-
-  return (
-    <div className="flex gap-3 py-2 border-b border-gray-50 last:border-0 group items-start">
-      <span className="text-xs text-gray-400 w-16 flex-shrink-0 pt-0.5">{label}</span>
-      {editing ? (
-        <textarea
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={handleSave}
-          autoFocus
-          rows={2}
-          className="flex-1 text-sm text-gray-700 border border-primary-300 rounded-lg px-2 py-1 focus:outline-none resize-none"
-        />
-      ) : (
-        <>
-          <span className="text-sm text-gray-700 flex-1 leading-relaxed">{display}</span>
-          <button
-            onClick={() => { setDraft(display); setEditing(true) }}
-            className="text-gray-300 opacity-0 group-hover:opacity-100 active:opacity-100 flex-shrink-0 mt-0.5"
-          >
-            <Pencil size={13} />
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
-export default function RecordDetail({ entry, onBack, onStartAI, onEdit, onDelete }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [localEntry, setLocalEntry] = useState(entry)
-  const [conversationMessages, setConversationMessages] = useState(
-    Array.isArray(entry.full_conversation) ? entry.full_conversation : [],
-  )
-
+  // 读取完整 entry 数据（列表页传来的对象可能是简化版）
   useEffect(() => {
-    setLocalEntry(entry)
-    setConversationMessages(Array.isArray(entry.full_conversation) ? entry.full_conversation : [])
-  }, [entry])
+    async function loadFull() {
+      const { data } = await db.from('journal_entries')
+        .select('*').eq('id', initialEntry.id).single()
+      if (data) setEntry(data)
+    }
+    loadFull()
+  }, [initialEntry.id])
 
+  // 读取对话记录（conversations 表）
   useEffect(() => {
-    let cancelled = false
-
-    async function loadConversation() {
-      const { data, error } = await db.from('conversations')
+    async function loadMessages() {
+      const { data } = await db.from('conversations')
         .select('messages')
-        .eq('entry_id', entry.id)
+        .eq('entry_id', initialEntry.id)
         .eq('context_type', 'entry')
         .maybeSingle()
-
-      if (cancelled) return
-      if (error) return
-      if (Array.isArray(data?.messages) && data.messages.length > 0) {
-        setConversationMessages(data.messages)
-      }
+      setMessages(data?.messages ?? [])
     }
+    loadMessages()
+  }, [initialEntry.id])
 
-    loadConversation()
-    return () => { cancelled = true }
-  }, [entry.id])
-
-  const template = resolveTemplate(localEntry.template_type)
-
-  const hasConversation = conversationMessages.length > 0
-  const displayConversationMessages = normalizeConversationMessages(conversationMessages)
-
-  const hasExtraction = localEntry.reflection_insight || localEntry.cognitive_distortion_type ||
-    localEntry.cognitive_analysis || localEntry.core_needs?.length > 0 ||
-    localEntry.body_sensations?.length > 0 || localEntry.current_thought ||
-    localEntry.current_behavior || localEntry.handling_rating ||
-    localEntry.emotions?.length > 0 ||
-    (localEntry.overall_state_score !== null && localEntry.overall_state_score !== undefined) ||
-    hasConversation
-  const hasAI = hasExtraction || hasConversation
-
-  const emotionList = Array.isArray(localEntry.emotions) ? localEntry.emotions : []
-
-  // 火-and-forget 单字段保存
-  const handleFieldSave = (field, value) => {
-    setLocalEntry(prev => ({ ...prev, [field]: value }))
-    updateEntry({ id: localEntry.id, userId: localEntry.user_id, fields: { [field]: value } })
-      .then(({ error: e }) => { if (e) console.error(`[field:${field}] 保存失败:`, e) })
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2000)
   }
 
+  // ── 单字段 inline 保存 ────────────────────────────────────────
+  async function handleFieldSave(field, value) {
+    const { error } = await updateEntry({
+      id: entry.id,
+      userId: entry.user_id,
+      fields: { [field]: value },
+    })
+    if (error) {
+      showToast('保存失败，请检查网络')
+      const { data } = await db.from('journal_entries')
+        .select('*').eq('id', entry.id).single()
+      if (data) setEntry(data)
+    }
+  }
+
+  // ── 情绪标签编辑保存 ──────────────────────────────────────────
+  async function handleEmotionSave() {
+    const words = emotionDraft
+      .split(/[、,，\s]+/)
+      .map(w => w.trim())
+      .filter(Boolean)
+    const { baseWords, minConfidence } = mapDisplayToBase(words)
+    const { error } = await updateEntry({
+      id: entry.id,
+      userId: entry.user_id,
+      fields: {
+        emotion_display: words,
+        emotions: baseWords,
+        emotion_confidence: minConfidence,
+      },
+    })
+    if (!error) {
+      setEntry(e => ({
+        ...e,
+        emotion_display: words,
+        emotions: baseWords,
+        emotion_confidence: minConfidence,
+      }))
+    } else {
+      showToast('保存失败，请检查网络')
+    }
+    setEditingEmotions(false)
+  }
+
+  // ── AI 分析（无 AI 字段时显示按钮）────────────────────────────
+  async function handleAIAnalyze() {
+    setAnalyzing(true)
+    try {
+      const msgText = messages
+        .filter(m => m.nodeType !== 'raw_entry')
+        .map(m => {
+          if (m.nodeType === 'local_prompt') return `问：${m.content}`
+          if (m.nodeType === 'local_answer') return `答：${m.content}`
+          if (m.nodeType === 'ai_prompt') return `AI：${m.content}`
+          if (m.nodeType === 'ai_answer') return `答：${m.content}`
+          return ''
+        })
+        .filter(Boolean)
+        .join('\n')
+
+      const fullText = `原始写作：\n${entry.content}${msgText ? `\n\n${msgText}` : ''}`
+      const extraction = await extractFields(fullText)
+
+      if (!extraction || Object.keys(extraction).length === 0) {
+        showToast('分析失败，请稍后重试')
+        return
+      }
+
+      // emotion_display 优先用 AI 返回值，降级用 emotions
+      const emotionDisplay = extraction.emotion_display?.length
+        ? extraction.emotion_display
+        : (extraction.emotions ?? [])
+      const { baseWords, minConfidence } = mapDisplayToBase(emotionDisplay)
+
+      // 只写入已知存在的列，避免 AI 返回未知字段导致 400
+      await updateEntry({
+        id: entry.id,
+        userId: entry.user_id,
+        fields: {
+          emotions:                  baseWords,
+          emotion_display:           emotionDisplay,
+          emotion_confidence:        minConfidence,
+          overall_state_score:       extraction.overall_state_score      ?? null,
+          body_sensations:           extraction.body_sensations          ?? null,
+          current_thought:           extraction.current_thought          ?? null,
+          core_needs:                extraction.core_needs               ?? [],
+          current_behavior:          extraction.current_behavior         ?? null,
+          handling_rating:           extraction.handling_rating          ?? null,
+          cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
+          cognitive_analysis:        extraction.cognitive_analysis       ?? null,
+          reflection_insight:        extraction.reflection_insight       ?? null,
+          category_tags:             extraction.category_tags            ?? [],
+          people_involved:           extraction.people_involved          ?? [],
+        },
+      })
+
+      const { data } = await db.from('journal_entries')
+        .select('*').eq('id', entry.id).single()
+      if (data) setEntry(data)
+    } catch (e) {
+      console.error('[RecordDetail] AI分析失败:', e)
+      showToast('分析失败，请稍后重试')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  // ── 派生数据 ──────────────────────────────────────────────────
+  const hasAIFields =
+    (entry.emotion_display?.length > 0) ||
+    (entry.emotions?.length > 0) ||
+    entry.reflection_insight ||
+    entry.core_needs?.length > 0 ||
+    entry.cognitive_analysis ||
+    entry.body_sensations
+
+  // 优先展示 emotion_display（描述层），否则 fallback 到 emotions（基础层）
+  const emotions = entry.emotion_display?.length
+    ? entry.emotion_display
+    : (entry.emotions ?? [])
+
   return (
-    <div className="flex flex-col h-full bg-[#fdfaf7]">
-      {/* 顶栏 */}
-      <div className="flex items-center gap-3 px-4 pt-5 pb-3 flex-shrink-0">
-        <button onClick={onBack} className="text-gray-400 active:scale-95 transition-transform p-2 -ml-2">
-          <ArrowLeft size={22} />
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: '#faf8f4',
+      overflowY: 'auto',
+      paddingBottom: 100,
+    }}>
+
+      {/* ── 顶部导航 ── */}
+      <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none', border: 'none',
+            color: '#bbb', cursor: 'pointer', fontSize: 14,
+          }}
+        >
+          ← 返回
         </button>
-        <div className="flex-1" />
-        {(onEdit || onDelete) && (
-          <button
-            onClick={() => setMenuOpen(true)}
-            className="text-gray-400 active:scale-95 transition-transform p-2 -mr-1"
-          >
-            <MoreHorizontal size={20} />
-          </button>
-        )}
       </div>
 
-      {/* "…" 底部菜单 */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setMenuOpen(false)}>
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-          <div
-            className="relative w-full max-w-sm bg-white rounded-t-3xl pb-8 fade-in safe-bottom"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-4 mb-4" />
-            {onEdit && (
-              <button
-                onClick={() => { setMenuOpen(false); onEdit(entry) }}
-                className="w-full flex items-center gap-3 px-6 py-4 text-gray-700 active:bg-gray-50"
-              >
-                <Pencil size={18} className="text-gray-400" />
-                <span className="text-base">编辑</span>
-              </button>
-            )}
-            {onDelete && (
-              <button
-                onClick={() => { setMenuOpen(false); onDelete(entry) }}
-                className="w-full flex items-center gap-3 px-6 py-4 text-red-500 active:bg-red-50"
-              >
-                <Trash2 size={18} />
-                <span className="text-base">删除</span>
-              </button>
-            )}
-          </div>
+      <div style={{ padding: '16px 18px 0' }}>
+
+        {/* ── 模板 + 时间 ── */}
+        <div style={{ fontSize: 12, color: '#aaa', marginBottom: 16 }}>
+          <span style={{ color: tpl.color, marginRight: 6 }}>{tpl.label}</span>
+          · {formatDateTime(entry.created_at)}
         </div>
-      )}
 
-      <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-3">
-
-        {/* ── 基本信息卡 ── */}
-        <div className="card">
-          <p className="text-xs text-gray-400 mb-2">{formatDate(localEntry.created_at)}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {/* 模板 */}
-            <span
-              className="text-xs px-2.5 py-1 rounded-full border font-medium"
-              style={{
-                color: template.color,
-                borderColor: template.color + '66',
-                backgroundColor: template.color + '18',
-              }}
-            >
-              {template.label}
-            </span>
-            {/* 大类标签 */}
-            {localEntry.category_tags?.map(tag => (
-              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-primary-50 text-primary-600 border border-primary-100">{tag}</span>
-            ))}
-            {/* 关联事件 */}
-            {localEntry.event_name && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100">📌 {localEntry.event_name}</span>
-            )}
-            {/* 涉及人员 */}
-            {localEntry.people_involved?.map(p => (
-              <span key={p} className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200">👤 {p}</span>
-            ))}
+        {/* ── 情绪标签区（点击可编辑）── */}
+        {emotions.length > 0 && !editingEmotions && (
+          <div
+            onClick={() => {
+              setEmotionDraft(emotions.join('、'))
+              setEditingEmotions(true)
+            }}
+            style={{
+              display: 'flex', gap: 6, flexWrap: 'wrap',
+              marginBottom: 4, cursor: 'pointer',
+            }}
+          >
+            {emotions.map(w => <EmotionTag key={w} word={w} />)}
           </div>
+        )}
 
-          {/* 情绪 + 状态分 */}
-          {(emotionList.length > 0 || localEntry.overall_state_score !== null) && (
-            <div className="mt-3 pt-3 border-t border-gray-50">
-              <ScoreBar score={localEntry.overall_state_score} />
-              {emotionList.length > 0 && (
-                <div className="flex gap-3 py-2 items-center">
-                  <span className="text-xs text-gray-400 w-16 flex-shrink-0">情绪</span>
-                  <div className="flex flex-wrap gap-1">
-                    {emotionList.map((e, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full border border-purple-100">{e}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {localEntry.handling_rating && (
-                <div className="flex gap-3 py-2 items-center">
-                  <span className="text-xs text-gray-400 w-16 flex-shrink-0">处理方式</span>
-                  <span className="text-sm text-gray-600">{localEntry.handling_rating}</span>
-                </div>
-              )}
+        {editingEmotions && (
+          <div style={{ marginBottom: 4 }}>
+            <input
+              value={emotionDraft}
+              onChange={e => setEmotionDraft(e.target.value)}
+              autoFocus
+              onBlur={handleEmotionSave}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEmotionSave() } }}
+              style={{
+                width: '100%', border: '1px solid #e0dbd4',
+                borderRadius: 8, padding: '6px 10px',
+                fontSize: 13, outline: 'none',
+                background: 'white', fontFamily: 'inherit',
+                boxSizing: 'border-box',
+              }}
+              placeholder="用逗号分隔，如：难受、委屈"
+            />
+            <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+              完成后点其他地方自动保存
+            </div>
+          </div>
+        )}
+
+        {entry.emotion_confidence != null && entry.emotion_confidence < 0.75 && (
+          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 12 }}>
+            基础标签待确认
+          </div>
+        )}
+
+        {/* ── 核心字段区 ── */}
+        <div style={{
+          marginTop: 14, marginBottom: 14,
+          borderTop: '1px solid #ede9e2', paddingTop: 12,
+        }}>
+          {hasAIFields ? (
+            <>
+              <FieldRow label="核心需求" value={entry.core_needs} />
+              <FieldRow label="认知"     value={entry.cognitive_analysis} />
+              <FieldRow label="身体感受" value={entry.body_sensations} />
+              <FieldRow label="洞见"     value={entry.reflection_insight} />
+            </>
+          ) : (
+            <div>
+              <div style={{ fontSize: 12, color: '#bbb', marginBottom: 10 }}>
+                暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
+              </div>
+              <button
+                onClick={handleAIAnalyze}
+                disabled={analyzing}
+                style={{
+                  fontSize: 12, color: '#888',
+                  border: '1px solid #e0dbd4',
+                  borderRadius: 8, padding: '6px 12px',
+                  background: 'none', cursor: 'pointer',
+                }}
+              >
+                {analyzing ? '分析中…' : '✦ AI 分析'}
+              </button>
             </div>
           )}
         </div>
 
-        {/* ── 原始记录 ── */}
-        <div className="card">
-          <p className="text-xs text-gray-400 mb-2">原始记录</p>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{localEntry.content}</p>
-        </div>
-
-        {/* ── 对话洞见（折叠）── */}
-        {hasExtraction && (
-          <Collapsible
-            title="对话洞见"
-            icon={<Sparkles size={13} className="text-primary-500" />}
-            defaultOpen={false}
-          >
-            <EditableFieldRow label="反思洞见" value={localEntry.reflection_insight} onSave={v => handleFieldSave('reflection_insight', v)} />
-            <EditableFieldRow label="核心需求" value={localEntry.core_needs} onSave={v => handleFieldSave('core_needs', v.split('、').map(s => s.trim()).filter(Boolean))} />
-            <EditableFieldRow label="认知扭曲" value={localEntry.cognitive_distortion_type} onSave={v => handleFieldSave('cognitive_distortion_type', v)} />
-            <EditableFieldRow label="认知分析" value={localEntry.cognitive_analysis} onSave={v => handleFieldSave('cognitive_analysis', v)} />
-            <EditableFieldRow label="身体感受" value={localEntry.body_sensations} onSave={v => handleFieldSave('body_sensations', v.split('、').map(s => s.trim()).filter(Boolean))} />
-            <EditableFieldRow label="当下念头" value={localEntry.current_thought} onSave={v => handleFieldSave('current_thought', v)} />
-            <EditableFieldRow label="当下行为" value={localEntry.current_behavior} onSave={v => handleFieldSave('current_behavior', v)} />
-          </Collapsible>
+        {/* ── 关联区（category_tags）── */}
+        {entry.category_tags?.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {entry.category_tags.map(tag => (
+              <span key={tag} style={{
+                fontSize: 10, color: '#888',
+                border: '1px solid #e0dbd4',
+                borderRadius: 4, padding: '2px 6px',
+              }}>
+                #{tag}
+              </span>
+            ))}
+          </div>
         )}
 
-        {/* ── 完整对话记录（折叠）── */}
-        {hasConversation && (
-          <Collapsible
-            title="完整对话记录"
-            icon={<MessageCircle size={13} className="text-gray-400" />}
-            defaultOpen={false}
-          >
-            <div className="space-y-3 pt-1">
-              {displayConversationMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'bg-primary-500 text-white rounded-tr-sm'
-                      : 'bg-gray-50 text-gray-700 rounded-tl-sm border border-gray-100'
-                  }`}>
+        {/* ── 统一记录流 ── */}
+        <div style={{ borderTop: '1px solid #ede9e2', paddingTop: 14 }}>
+          <div style={{
+            fontSize: 11, color: '#ccc', marginBottom: 14,
+            textAlign: 'center', letterSpacing: '0.5px',
+          }}>
+            ── 原始记录流 ──
+          </div>
+
+          {messages.length === 0 ? (
+            /* 没有觉察对话时，只展示原始日记文字 */
+            <div style={{ fontSize: 14, color: '#2d2d2d', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>
+              {entry.content}
+            </div>
+          ) : (
+            messages.map((msg, i) => {
+              // 原始日记
+              if (msg.nodeType === 'raw_entry') {
+                return (
+                  <div key={i} style={{
+                    fontSize: 14, color: '#2d2d2d',
+                    lineHeight: 1.85, marginBottom: 20,
+                    whiteSpace: 'pre-wrap',
+                  }}>
                     {msg.content}
                   </div>
-                </div>
-              ))}
-            </div>
-          </Collapsible>
-        )}
+                )
+              }
 
-        {/* 没有 AI 内容时 */}
-        {!hasAI && (
-          <div className="text-center py-8">
-            <Sparkles size={32} className="text-gray-200 mx-auto mb-3" strokeWidth={1} />
-            <p className="text-sm text-gray-400 mb-1">还没有 AI 分析记录</p>
-            <p className="text-xs text-gray-300 mb-5">保存后可以随时和 AI 深入聊聊</p>
-          </div>
-        )}
+              // 本地引导问题（12px #aaa）
+              if (msg.nodeType === 'local_prompt') {
+                return (
+                  <div key={i} style={{
+                    fontSize: 12, color: '#aaa',
+                    lineHeight: 1.65, marginBottom: 4,
+                  }}>
+                    {msg.content}
+                  </div>
+                )
+              }
 
-        {/* AI 入口按钮：始终显示 */}
-        {onStartAI && (
-          <div className="text-center pb-2">
-            <button
-              onClick={() => onStartAI(entry)}
-              className="px-5 py-2.5 bg-primary-500 text-white text-sm font-medium rounded-2xl active:scale-95 transition-transform"
-            >
-              {hasConversation ? '✦ 继续聊' : '✦ 和 AI 聊聊这篇'}
-            </button>
-          </div>
-        )}
+              // 用户对本地问题的回答（14px #2d2d2d，上方浅色分隔线）
+              if (msg.nodeType === 'local_answer') {
+                return (
+                  <div key={i} style={{
+                    fontSize: 14, color: '#2d2d2d',
+                    lineHeight: 1.85, marginBottom: 20,
+                    borderTop: '1px solid #f0ece4', paddingTop: 8,
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {msg.content}
+                  </div>
+                )
+              }
+
+              // AI 引导块（✦ 前缀，12px #aaa）
+              if (msg.nodeType === 'ai_prompt') {
+                return (
+                  <div key={i} style={{
+                    fontSize: 12, color: '#aaa',
+                    lineHeight: 1.65, marginBottom: 4,
+                  }}>
+                    <span style={{ fontSize: 10, marginRight: 4 }}>✦</span>
+                    {msg.content}
+                  </div>
+                )
+              }
+
+              // 用户对 AI 的回应（14px #2d2d2d，上方浅色分隔线）
+              if (msg.nodeType === 'ai_answer') {
+                return (
+                  <div key={i} style={{
+                    fontSize: 14, color: '#2d2d2d',
+                    lineHeight: 1.85, marginBottom: 20,
+                    borderTop: '1px solid #f0ece4', paddingTop: 8,
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {msg.content}
+                  </div>
+                )
+              }
+
+              // local_skip 不渲染
+              return null
+            })
+          )}
+        </div>
       </div>
+
+      {/* ── Toast 提示 ── */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 90, left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.7)', color: 'white',
+          padding: '8px 16px', borderRadius: 20,
+          fontSize: 13, zIndex: 100,
+          whiteSpace: 'nowrap',
+        }}>
+          {toast}
+        </div>
+      )}
+
+      {/* ── 浮动「✦ 深度觉察」按钮 ── */}
+      <button
+        onClick={() => onOpenAwareness(entry)}
+        style={{
+          position: 'fixed', bottom: 32, left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#2d2928', color: 'white',
+          borderRadius: 20, padding: '10px 20px',
+          fontSize: 13, border: 'none', cursor: 'pointer',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          whiteSpace: 'nowrap',
+          zIndex: 50,
+        }}
+      >
+        ✦ 深度觉察
+      </button>
     </div>
   )
 }

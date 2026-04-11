@@ -201,6 +201,7 @@ export function getExtractionPrompt() {
 {
   "event_summary": "事件一句话总结（如适用，否则 null）",
   "emotions": ["情绪词数组，如：焦虑、委屈、开心，没有则空数组"],
+  "emotion_display": ["用自然语言描述情绪，比单个词更丰富，如：克制后的难受、守住边界的坚定、隐隐的兴奋。最多3个，每个不超过8字，没有则空数组"],
   "overall_state_score": 整体状态评分整数（-5到5，-5极度低落，5极度喜悦，0平静）,
   "body_sensations": "身体感受描述，没有则 null",
   "current_thought": "当时最主要的想法或念头（一句话），没有则 null",
