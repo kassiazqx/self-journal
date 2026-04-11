@@ -4,6 +4,7 @@ import { db } from './db'
 import { callAI } from './aiClient'
 import { getReviewLetterPrompt } from './prompts'
 import { getMemory } from './memory'
+import { extractEntrySummaries } from './extractSummaryService'
 
 // ── 读取用户触发偏好 ───────────────────────────────────────────
 async function getUserLetterPrefs(userId) {
@@ -42,37 +43,64 @@ export async function saveUserLetterPrefs(userId, prefs, updateMemoryFn) {
 async function generateReviewLetter(userId, periodStart, prefs) {
   const periodEnd = new Date().toISOString()
 
+  // Step 1: 取最近 6~8 条 covered_by_letter_id IS NULL 的 entry（排除随手记）
   const { data: entries } = await db.from('journal_entries')
-    .select('id, content, emotions, emotion_display, core_needs, created_at')
+    .select('id, entry_summary, theme_hints, core_needs, created_at')
     .eq('user_id', userId)
+    .is('covered_by_letter_id', null)
+    .neq('template_type', 'freewrite')
     .gt('created_at', periodStart ?? '1970-01-01')
     .lte('created_at', periodEnd)
     .order('created_at', { ascending: true })
-    .limit(20)
+    .limit(8)
 
   if (!entries?.length) throw new Error('NO_ENTRIES')
 
-  const entriesText = entries.map((e, i) =>
-    `[第${i + 1}条，${e.created_at.slice(0, 10)}]\n${e.content}`
-  ).join('\n\n---\n\n')
+  // Step 2: 批量补提取缺失的 entry_summary / theme_hints
+  // （extractEntrySummaries 已在文件顶部静态 import，见 §4.14 注意事项）
+  const needExtract = entries.filter(e => !e.entry_summary)
+  if (needExtract.length > 0) {
+    await extractEntrySummaries(userId, needExtract.map(e => e.id))
 
-  const prompt = getReviewLetterPrompt(entriesText)
+    // 重新读取，拿到最新摘要
+    const { data: refreshed } = await db.from('journal_entries')
+      .select('id, entry_summary, theme_hints, core_needs, created_at')
+      .in('id', entries.map(e => e.id))
+      .order('created_at', { ascending: true })
+    if (refreshed) entries.splice(0, entries.length, ...refreshed)
+  }
+
+  // Step 3: 构建摘要数组传 AI（不传原始 content）
+  const entriesSummary = entries.map(e => ({
+    date: e.created_at.slice(0, 10),
+    entry_summary: e.entry_summary,
+    theme_hints: e.theme_hints,
+    core_needs: e.core_needs,
+  }))
+
+  const prompt = getReviewLetterPrompt(entriesSummary)
   const rawLetter = await callAI(
     [{ role: 'user', content: prompt }],
     '你是用户的内心陪伴者，写一封温和的回顾信，不评判，不说教，帮助用户看见自己。',
-    { maxTokens: 1000 }
+    { maxTokens: 1200 }
   )
 
-  // 提取末尾 JSON insights
+  // Step 4: 提取末尾 JSON
   const insightsMatch = rawLetter.match(/```json([\s\S]*?)```/)
-  let insights = {}
+  let insights = { suggested_threads: [] }
   if (insightsMatch) {
     try { insights = JSON.parse(insightsMatch[1]) }
-    catch (e) { console.warn('[reviewLetter] insights 解析失败:', e) }
+    catch (e) {
+      console.warn('[reviewLetter] insights JSON 解析失败:', e)
+      console.warn('[reviewLetter] 原始返回前 500 字符:', rawLetter.slice(0, 500))
+    }
+  } else {
+    console.warn('[reviewLetter] 未找到 JSON 块，rawLetter 前 300 字符:', rawLetter.slice(0, 300))
   }
   const letterContent = rawLetter.replace(/```json[\s\S]*?```/, '').trim()
 
-  const { error } = await db.from('review_letters').insert({
+  // Step 5: 保存 review_letter
+  const { data: letter, error } = await db.from('review_letters').insert({
     user_id: userId,
     entry_ids: entries.map(e => e.id),
     content: letterContent,
@@ -81,11 +109,21 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     period_start: periodStart ?? entries[0]?.created_at,
     period_end: periodEnd,
     is_read: false,
-  })
+  }).select('id').single()
 
   if (error) {
     console.error('[reviewLetter] 插入失败:', error.message)
     throw error
+  }
+
+  // Step 6: 回写 covered_by_letter_id（修复 §4.7）
+  const { error: updateError } = await db.from('journal_entries')
+    .update({ covered_by_letter_id: letter.id })
+    .in('id', entries.map(e => e.id))
+    .eq('user_id', userId)
+  if (updateError) {
+    // 不抛出：信已生成，回写失败只影响下次计数
+    console.error('[reviewLetter] covered_by_letter_id 回写失败:', updateError.message)
   }
 
   return true
@@ -111,8 +149,9 @@ export async function checkAndGenerateLetter(userId) {
   const { count: newEntryCount } = await db.from('journal_entries')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .is('covered_by_letter_id', null)
+    .neq('template_type', 'freewrite')
     .gt('created_at', lastLetter?.period_end ?? '1970-01-01')
-    .in('template_type', ['awareness', 'emotion', 'gratitude'])
 
   if (prefs.require_new_entries && newEntryCount === 0) return
 

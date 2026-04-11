@@ -50,15 +50,59 @@ function FieldRow({ label, value }) {
   )
 }
 
+// EditableFieldRow：可内联编辑的字段行（新建，spec §7.1）
+function EditableFieldRow({ label, value, displayValue, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  function startEdit() { setDraft(value ?? ''); setEditing(true) }
+  function handleSave() { setEditing(false); if (draft !== value) onSave(draft) }
+
+  return (
+    <div style={{ display: 'flex', gap: 8, paddingBottom: 6, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, minWidth: 44, paddingTop: 2 }}>
+        {label}
+      </span>
+      {editing ? (
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          autoFocus
+          onBlur={handleSave}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave() } }}
+          style={{
+            flex: 1, border: '1px solid #e0dbd4', borderRadius: 8,
+            padding: '4px 8px', fontSize: 13, outline: 'none',
+            background: 'white', fontFamily: 'inherit',
+          }}
+        />
+      ) : (
+        <span onClick={startEdit}
+          style={{ fontSize: 13, color: '#333', lineHeight: 1.6, flex: 1, cursor: 'pointer' }}>
+          {displayValue || <span style={{ color: '#ccc' }}>点击添加…</span>}
+        </span>
+      )}
+      <span onClick={startEdit}
+        style={{ fontSize: 10, color: '#d4c4b0', cursor: 'pointer', paddingTop: 2, flexShrink: 0 }}>
+        ✎
+      </span>
+    </div>
+  )
+}
+
 export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness }) {
   const [entry, setEntry] = useState(initialEntry)
   const [messages, setMessages] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
   const [toast, setToast] = useState('')
+  const [showConfidenceTip, setShowConfidenceTip] = useState(false)
 
   // 情绪内联编辑状态
   const [editingEmotions, setEditingEmotions] = useState(false)
   const [emotionDraft, setEmotionDraft] = useState('')
+
+  // 关联脉络
+  const [entryThreads, setEntryThreads] = useState([])
 
   const tpl = resolveTemplate(entry.template_type)
 
@@ -83,6 +127,17 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       setMessages(data?.messages ?? [])
     }
     loadMessages()
+  }, [initialEntry.id])
+
+  // 读取关联脉络
+  useEffect(() => {
+    async function loadThreads() {
+      const { data } = await db.from('thread_entries')
+        .select('thread_id, threads(id, name)')
+        .eq('entry_id', initialEntry.id)
+      setEntryThreads((data ?? []).map(r => r.threads).filter(Boolean))
+    }
+    loadThreads()
   }, [initialEntry.id])
 
   function showToast(msg) {
@@ -134,10 +189,24 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     setEditingEmotions(false)
   }
 
+  // ── 摘要索引保存 ──────────────────────────────────────────────
+  async function handleSummarySave(value) {
+    const trimmed = value?.trim() || null
+    setEntry(e => ({ ...e, entry_summary: trimmed }))
+    await handleFieldSave('entry_summary', trimmed)
+  }
+
+  async function handleThemeHintsSave(value) {
+    const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
+    setEntry(e => ({ ...e, theme_hints: arr }))
+    await handleFieldSave('theme_hints', arr)
+  }
+
   // ── AI 分析（无 AI 字段时显示按钮）────────────────────────────
   async function handleAIAnalyze() {
     setAnalyzing(true)
     try {
+      // 取 conversations 表的觉察对话记录
       const msgText = messages
         .filter(m => m.nodeType !== 'raw_entry')
         .map(m => {
@@ -150,8 +219,9 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         .filter(Boolean)
         .join('\n')
 
-      const fullText = `原始写作：\n${entry.content}${msgText ? `\n\n${msgText}` : ''}`
-      const extraction = await extractFields(fullText)
+      const hasConversation = !!msgText
+      const fullText = `原始写作：\n${entry.content}${msgText ? `\n\n对话记录：\n${msgText}` : ''}`
+      const extraction = await extractFields(fullText, hasConversation)
 
       if (!extraction || Object.keys(extraction).length === 0) {
         showToast('分析失败，请稍后重试')
@@ -169,20 +239,22 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         id: entry.id,
         userId: entry.user_id,
         fields: {
+          entry_summary:             extraction.entry_summary             ?? null,
+          theme_hints:               extraction.theme_hints               ?? [],
           emotions:                  baseWords,
           emotion_display:           emotionDisplay,
           emotion_confidence:        minConfidence,
-          overall_state_score:       extraction.overall_state_score      ?? null,
-          body_sensations:           extraction.body_sensations          ?? null,
-          current_thought:           extraction.current_thought          ?? null,
-          core_needs:                extraction.core_needs               ?? [],
-          current_behavior:          extraction.current_behavior         ?? null,
-          handling_rating:           extraction.handling_rating          ?? null,
+          overall_state_score:       extraction.overall_state_score       ?? null,
+          body_sensations:           extraction.body_sensations           ?? null,
+          current_thought:           extraction.current_thought           ?? null,
+          core_needs:                extraction.core_needs                ?? [],
+          current_behavior:          extraction.current_behavior          ?? null,
+          handling_rating:           extraction.handling_rating           ?? null,
           cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
-          cognitive_analysis:        extraction.cognitive_analysis       ?? null,
-          reflection_insight:        extraction.reflection_insight       ?? null,
-          category_tags:             extraction.category_tags            ?? [],
-          people_involved:           extraction.people_involved          ?? [],
+          cognitive_analysis:        extraction.cognitive_analysis        ?? null,
+          reflection_insight:        extraction.reflection_insight        ?? null,
+          category_tags:             extraction.category_tags             ?? [],
+          people_involved:           extraction.people_involved           ?? [],
         },
       })
 
@@ -198,13 +270,14 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   }
 
   // ── 派生数据 ──────────────────────────────────────────────────
-  const hasAIFields =
-    (entry.emotion_display?.length > 0) ||
-    (entry.emotions?.length > 0) ||
-    entry.reflection_insight ||
-    entry.core_needs?.length > 0 ||
-    entry.cognitive_analysis ||
-    entry.body_sensations
+  // 三个核心字段都有值才视为"已完整分析"；任意一个缺失就保留「✦ AI 分析」按钮
+  // cognitive_analysis / body_sensations / current_thought 视内容而定，不作必填
+  // （keyword detection 填的 emotions 不参与此判断）
+  const hasAIAnalysis = !!(
+    entry.entry_summary &&
+    entry.reflection_insight &&
+    entry.core_needs?.length > 0
+  )
 
   // 优先展示 emotion_display（描述层），否则 fallback 到 emotions（基础层）
   const emotions = entry.emotion_display?.length
@@ -282,28 +355,93 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         )}
 
         {entry.emotion_confidence != null && entry.emotion_confidence < 0.75 && (
-          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 12 }}>
-            基础标签待确认
+          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 12, position: 'relative' }}>
+            <span style={{ verticalAlign: 'middle' }}>基础标签待确认</span>
+            <span
+              onClick={() => setShowConfidenceTip(v => !v)}
+              style={{
+                marginLeft: 4, verticalAlign: 'middle', cursor: 'pointer',
+                color: '#c9a96e', fontSize: 9, width: 13, height: 13,
+                border: '1px solid #c9a96e', borderRadius: '50%',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >？</span>
+            {showConfidenceTip && (
+              <div style={{
+                position: 'absolute', top: 18, left: 0, right: 0,
+                background: 'white', border: '1px solid #e8e2d9', borderRadius: 10,
+                padding: '10px 12px', fontSize: 12, color: '#666', lineHeight: 1.65,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 10,
+              }}>
+                AI 提取的情绪词与基础词库匹配度偏低，可能存在偏差。
+                <br />点击上方情绪标签可手动编辑并确认。
+                <div style={{ marginTop: 6, textAlign: 'right' }}>
+                  <span
+                    onClick={() => setShowConfidenceTip(false)}
+                    style={{ fontSize: 11, color: '#c9a96e', cursor: 'pointer' }}
+                  >知道了</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ── 摘要索引区 ── */}
+        <div style={{
+          marginTop: 14, background: '#fdfcf9',
+          borderTop: '1px solid #ede9e2', borderBottom: '1px solid #ede9e2',
+          paddingTop: 10, paddingBottom: 4,
+          marginLeft: -18, marginRight: -18, paddingLeft: 18, paddingRight: 18,
+        }}>
+          <div style={{ fontSize: 9, color: '#c8c0b4', fontWeight: 600,
+            letterSpacing: '0.04em', marginBottom: 6 }}>
+            摘要索引
+            <span style={{ fontSize: 8, color: '#d4c8b8', fontWeight: 400, marginLeft: 4 }}>
+              · AI 提取，可手动调整
+            </span>
+          </div>
+          <EditableFieldRow
+            label="一句话"
+            value={entry.entry_summary ?? ''}
+            displayValue={entry.entry_summary}
+            onSave={handleSummarySave}
+          />
+          <EditableFieldRow
+            label="主题标签"
+            value={(entry.theme_hints ?? []).join('、')}
+            displayValue={
+              entry.theme_hints?.length > 0
+                ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                    {entry.theme_hints.map(h => (
+                      <span key={h} style={{
+                        fontSize: 10, padding: '1px 7px', borderRadius: 8,
+                        background: '#f5f0ff', color: '#7a50c0', border: '1px solid #e0d4f8',
+                      }}>{h}</span>
+                    ))}
+                  </div>
+                : null
+            }
+            onSave={handleThemeHintsSave}
+          />
+        </div>
 
         {/* ── 核心字段区 ── */}
         <div style={{
           marginTop: 14, marginBottom: 14,
           borderTop: '1px solid #ede9e2', paddingTop: 12,
         }}>
-          {hasAIFields ? (
-            <>
-              <FieldRow label="核心需求" value={entry.core_needs} />
-              <FieldRow label="认知"     value={entry.cognitive_analysis} />
-              <FieldRow label="身体感受" value={entry.body_sensations} />
-              <FieldRow label="洞见"     value={entry.reflection_insight} />
-            </>
-          ) : (
-            <div>
-              <div style={{ fontSize: 12, color: '#bbb', marginBottom: 10 }}>
-                暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
-              </div>
+          {/* 已填字段始终展示，分析不完整时在下方保留按钮 */}
+          <FieldRow label="核心需求" value={entry.core_needs} />
+          <FieldRow label="认知"     value={entry.cognitive_analysis} />
+          <FieldRow label="身体感受" value={entry.body_sensations} />
+          <FieldRow label="洞见"     value={entry.reflection_insight} />
+          {!hasAIAnalysis && (
+            <div style={{ marginTop: 6 }}>
+              {!entry.reflection_insight && !entry.core_needs?.length && (
+                <div style={{ fontSize: 12, color: '#bbb', marginBottom: 10 }}>
+                  暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
+                </div>
+              )}
               <button
                 onClick={handleAIAnalyze}
                 disabled={analyzing}
@@ -322,7 +460,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
         {/* ── 关联区（category_tags）── */}
         {entry.category_tags?.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {entry.category_tags.map(tag => (
               <span key={tag} style={{
                 fontSize: 10, color: '#888',
@@ -330,6 +468,20 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                 borderRadius: 4, padding: '2px 6px',
               }}>
                 #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ── 关联脉络 ── */}
+        {entryThreads.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {entryThreads.map(thread => (
+              <span key={thread.id} style={{
+                fontSize: 11, background: '#f5f0ff', color: '#7a50c0',
+                border: '1px solid #e0d4f8', borderRadius: 20, padding: '3px 10px',
+              }}>
+                🧵 {thread.name}
               </span>
             ))}
           </div>

@@ -47,12 +47,12 @@ export default function MainLayout() {
   }
 
   // ── HomePage 完成写作后 ─────────────────────────────────────
-  function handleHomeSaved(entry, isFreewrite) {
+  function handleHomeSaved(entry, gotoAwareness) {
     setRefreshKey(k => k + 1)
-    if (isFreewrite) {
-      goTab('records')
-    } else {
+    if (gotoAwareness) {
       push({ type: 'awareness', entry })
+    } else {
+      goTab('records')
     }
   }
 

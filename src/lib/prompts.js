@@ -199,9 +199,11 @@ export function getExtractionPrompt() {
   return `请根据我们刚才的完整对话（包括我最初的日记），提取以下信息，以纯 JSON 格式返回，不要有任何其他文字或 markdown 符号。如果某项信息在对话中没有提到，填 null。
 
 {
+  "entry_summary": "一句完整陈述句，20~45字，记录发生了什么+用户的核心反应，不做评价，不写时间地点细节。示例：独立完成了第一个大产品，过程充满挑战但心流体验让成就感格外强烈",
+  "theme_hints": ["2~4个短语，每个4~10字，写可复用的心理主题，三个月后还能帮助识别同类记录。示例：[\"独立完成挑战\", \"心流与成就感\", \"自我效能感\"]"],
   "event_summary": "事件一句话总结（如适用，否则 null）",
   "emotions": ["情绪词数组，如：焦虑、委屈、开心，没有则空数组"],
-  "emotion_display": ["用自然语言描述情绪，比单个词更丰富，如：克制后的难受、守住边界的坚定、隐隐的兴奋。最多3个，每个不超过8字，没有则空数组"],
+  "emotion_display": ["描述情绪感受的短语，必须是情绪词而非事件描述，比单个词更丰富，如：克制后的难受、守住边界的坚定、隐隐的兴奋、后悔不已。最多3个，每个不超过8字，没有则空数组。⚠️禁止填入事件或行为描述（如：错过早睡、吃了奶茶），只填情绪感受"],
   "overall_state_score": 整体状态评分整数（-5到5，-5极度低落，5极度喜悦，0平静）,
   "body_sensations": "身体感受描述，没有则 null",
   "current_thought": "当时最主要的想法或念头（一句话），没有则 null",
@@ -253,9 +255,16 @@ export function buildAwarenessContext(rawContent, answeredMessages) {
     + '请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。'
 }
 
-// ─── 回顾信生成 prompt ──────────────────────────────────────────
-export function getReviewLetterPrompt(entriesText) {
-  return `你会收到用户这段时间写的日记条目。请写一封温暖的回顾信，语气像一位长期陪伴的朋友。
+// ─── 回顾信生成 prompt（第二批版本）──────────────────────────────
+// 入参改为 entries 摘要数组，不传原始 content（省 token + 保护隐私）
+// JSON 结构改为 suggested_threads（spec §5.2）
+export function getReviewLetterPrompt(entriesSummary) {
+  // entriesSummary: [{ date, entry_summary, theme_hints, core_needs }]
+  const entriesText = entriesSummary.map((e, i) =>
+    `[第${i + 1}条，${e.date}]\n摘要：${e.entry_summary ?? '（无摘要）'}\n主题标签：${(e.theme_hints ?? []).join('、') || '无'}\n核心需求：${(e.core_needs ?? []).join('、') || '无'}`
+  ).join('\n\n---\n\n')
+
+  return `你会收到用户这段时间的日记摘要。请写一封温暖的回顾信，语气像一位长期陪伴的朋友。
 
 要求：
 - 不评判，不说教，不鼓励"你下次应该..."
@@ -267,15 +276,18 @@ export function getReviewLetterPrompt(entriesText) {
 写完信之后，在信的最后附上以下JSON（不要解释，直接输出）：
 \`\`\`json
 {
-  "recurring_emotions": [],
-  "recurring_people": [],
-  "core_needs": [],
-  "patterns": [],
-  "growth_notes": []
+  "suggested_threads": [
+    { "action": "link", "thread_id": "已有脉络的uuid或null", "thread_name": "脉络名称" },
+    { "action": "create", "thread_id": null, "thread_name": "建议新建的脉络名称" }
+  ]
 }
 \`\`\`
+action 说明：
+- "link" = 与已有脉络关联（thread_id 填已有脉络的 uuid）
+- "create" = 建议新建脉络候选（thread_id 填 null）
+如果没有可关联或建议新建的脉络，returned "suggested_threads": []
 
-以下是用户的日记条目：
+以下是用户的日记摘要：
 
 ${entriesText}`
 }

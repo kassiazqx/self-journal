@@ -1,15 +1,10 @@
 // src/pages/InsightsPage.jsx
 // 洞察页：心情曲线 + 情绪频率 + 核心需求 + 标签统计（手写 SVG，不引入图表库）
+// 数据层：insightsService.js（不直接写 db.from）
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { db } from '../lib/db'
-
-// 过去 30 天的 ISO 起始时间
-function thirtyDaysAgo() {
-  const d = new Date()
-  d.setDate(d.getDate() - 30)
-  return d.toISOString()
-}
+import { loadInsightsData } from '../lib/insightsService'
+// 扩展点：第二批功能加入回顾信列表页/脉络入口时，在此处引入路由跳转 handler
 
 // 简单条形图（手写 SVG）
 function BarChart({ data }) {
@@ -67,77 +62,28 @@ function MoodLine({ moodData }) {
   )
 }
 
-export default function InsightsPage() {
+export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenThread }) {
   const { user } = useAuth()
   const [moodData, setMoodData] = useState([])
   const [emotionCounts, setEmotionCounts] = useState([])
   const [needsCounts, setNeedsCounts] = useState([])
   const [tagCounts, setTagCounts] = useState([])
   const [latestLetter, setLatestLetter] = useState(null)
+  const [confirmedThreads, setConfirmedThreads] = useState([])
+  const [allLetters, setAllLetters] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
     async function load() {
-      const since = thirtyDaysAgo()
-
-      const [moodRes, emotionRes, needsRes, letterRes, tagsRes] = await Promise.all([
-        db.from('journal_entries')
-          .select('created_at, overall_state_score')
-          .eq('user_id', user.id)
-          .not('overall_state_score', 'is', null)
-          .gte('created_at', since)
-          .order('created_at', { ascending: true }),
-        db.from('journal_entries')
-          .select('emotions')
-          .eq('user_id', user.id)
-          .gte('created_at', since),
-        db.from('journal_entries')
-          .select('core_needs')
-          .eq('user_id', user.id)
-          .gte('created_at', since),
-        db.from('review_letters')
-          .select('id, content, period_start, period_end, is_read')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        db.from('journal_entries')
-          .select('category_tags')
-          .eq('user_id', user.id)
-          .gte('created_at', since),
-      ])
-
-      setMoodData(moodRes.data ?? [])
-      setLatestLetter(letterRes.data ?? null)
-
-      // 情绪频率：展开数组统计
-      const eCounts = {}
-      ;(emotionRes.data ?? []).forEach(row => {
-        ;(row.emotions ?? []).forEach(w => {
-          eCounts[w] = (eCounts[w] ?? 0) + 1
-        })
-      })
-      setEmotionCounts(Object.entries(eCounts).map(([label, count]) => ({ label, count })))
-
-      // 核心需求频率
-      const nCounts = {}
-      ;(needsRes.data ?? []).forEach(row => {
-        ;(row.core_needs ?? []).forEach(w => {
-          nCounts[w] = (nCounts[w] ?? 0) + 1
-        })
-      })
-      setNeedsCounts(Object.entries(nCounts).map(([label, count]) => ({ label, count })))
-
-      // 标签频率
-      const tCounts = {}
-      ;(tagsRes.data ?? []).forEach(row => {
-        ;(row.category_tags ?? []).forEach(t => {
-          tCounts[t] = (tCounts[t] ?? 0) + 1
-        })
-      })
-      setTagCounts(Object.entries(tCounts).map(([label, count]) => ({ label, count })))
-
+      const result = await loadInsightsData(user.id, { days: 30 })
+      setMoodData(result.moodData)
+      setEmotionCounts(result.emotionCounts)
+      setNeedsCounts(result.needsCounts)
+      setTagCounts(result.tagCounts)
+      setLatestLetter(result.latestLetter)
+      setConfirmedThreads(result.confirmedThreads)
+      setAllLetters(result.allLetters)
       setLoading(false)
     }
     load()
@@ -161,24 +107,72 @@ export default function InsightsPage() {
         洞察
       </div>
 
-      {/* 最新回顾信预览 */}
-      {latestLetter && (
-        <div style={{ background: '#fffdf8', border: '1px solid #f0e8d4',
-          borderRadius: 12, padding: '12px 14px', marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: '#c9a96e', marginBottom: 6 }}>
-            ✉ 最新回顾信
-            {!latestLetter.is_read && (
-              <span style={{ marginLeft: 6, width: 6, height: 6, borderRadius: '50%',
-                background: '#c9a96e', display: 'inline-block', verticalAlign: 'middle' }} />
+      {/* ── 回顾信入口区块 ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>回顾信</span>
+          {allLetters.length > 0 && (
+            <button
+              onClick={onOpenLetterList}
+              style={{ fontSize: 11, color: '#c9a96e', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              查看全部 →
+            </button>
+          )}
+        </div>
+        {latestLetter ? (
+          <div style={{ background: '#fffdf8', border: '1px solid #f0e8d4',
+            borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}
+            onClick={onOpenLetterList}>
+            <div style={{ fontSize: 11, color: '#c9a96e', marginBottom: 6 }}>
+              ✉ 最新回顾信
+              {!latestLetter.is_read && (
+                <span style={{ marginLeft: 6, width: 6, height: 6, borderRadius: '50%',
+                  background: '#c9a96e', display: 'inline-block', verticalAlign: 'middle' }} />
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: '#555', lineHeight: 1.65,
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {latestLetter.content}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: '#ccc', textAlign: 'center', padding: '10px 0' }}>
+            暂无回顾信（累积 6 条记录后生成）
+          </div>
+        )}
+      </div>
+
+      {/* ── 脉络入口区块 ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>脉络</span>
+          <button
+            onClick={onOpenThreads}
+            style={{ fontSize: 11, color: '#c9a96e', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            {confirmedThreads.length > 0 ? '查看全部 →' : '+ 新建脉络'}
+          </button>
+        </div>
+        {confirmedThreads.length > 0 ? confirmedThreads.map(thread => (
+          <div key={thread.id}
+            onClick={() => onOpenThread?.(thread)}
+            style={{ background: 'white', borderRadius: 10, padding: '10px 14px',
+              marginBottom: 8, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', cursor: 'pointer' }}>
+            <div style={{ fontSize: 13, color: '#333', fontWeight: 500, marginBottom: 4 }}>{thread.name}</div>
+            {thread.arc_summary && (
+              <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {thread.arc_summary}
+              </div>
             )}
           </div>
-          <div style={{ fontSize: 13, color: '#555', lineHeight: 1.65,
-            display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-            overflow: 'hidden' }}>
-            {latestLetter.content}
+        )) : (
+          <div style={{ fontSize: 13, color: '#ccc', textAlign: 'center', padding: '10px 0' }}>
+            暂无脉络，生成回顾信后 AI 会提议
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div style={{ fontSize: 11, color: '#aaa', marginBottom: 16,
         letterSpacing: '0.5px', textAlign: 'center' }}>

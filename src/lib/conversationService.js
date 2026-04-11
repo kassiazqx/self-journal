@@ -91,18 +91,20 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
       id: entry.id,
       userId: entry.user_id,
       fields: {
-        emotions:                  extraction.emotions                ?? [],
-        overall_state_score:       extraction.overall_state_score      ?? null,
-        body_sensations:           extraction.body_sensations          ?? null,
-        current_thought:           extraction.current_thought          ?? null,
-        core_needs:                extraction.core_needs               ?? [],
-        current_behavior:          extraction.current_behavior         ?? null,
-        handling_rating:           extraction.handling_rating          ?? null,
+        entry_summary:             extraction.entry_summary             ?? null,
+        theme_hints:               extraction.theme_hints               ?? [],
+        emotions:                  extraction.emotions                  ?? [],
+        overall_state_score:       extraction.overall_state_score       ?? null,
+        body_sensations:           extraction.body_sensations           ?? null,
+        current_thought:           extraction.current_thought           ?? null,
+        core_needs:                extraction.core_needs                ?? [],
+        current_behavior:          extraction.current_behavior          ?? null,
+        handling_rating:           extraction.handling_rating           ?? null,
         cognitive_distortion_type: extraction.cognitive_distortion_type ?? null,
-        cognitive_analysis:        extraction.cognitive_analysis       ?? null,
-        reflection_insight:        extraction.reflection_insight       ?? null,
-        category_tags:             extraction.category_tags            ?? [],
-        people_involved:           extraction.people_involved          ?? [],
+        cognitive_analysis:        extraction.cognitive_analysis        ?? null,
+        reflection_insight:        extraction.reflection_insight        ?? null,
+        category_tags:             extraction.category_tags             ?? [],
+        people_involved:           extraction.people_involved           ?? [],
       },
     }).then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
   }
@@ -133,9 +135,13 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
 
 // ─── 手动 AI 分析（RecordDetail 页面「✦ AI 分析」按钮触发）───────
 // fullText：原始写作 + 觉察对话内容拼接
+// hasConversation：true 表示有觉察对话，false 表示只有日记原文
 // 返回 extraction 对象（含 emotion_display 等字段）
-export async function extractFields(fullText) {
-  const extractPrompt = `以下是我们的对话记录：\n\n${fullText}\n\n${getExtractionPrompt()}`
+export async function extractFields(fullText, hasConversation = true) {
+  const intro = hasConversation
+    ? `以下是我们的对话记录：\n\n${fullText}\n\n`
+    : `以下是用户的一篇日记原文：\n\n${fullText}\n\n请根据日记内容进行推断和分析，即使某些信息没有明确说明，也请基于文字线索给出合理推断（仅当完全无法判断时才填 null）。\n\n`
+  const extractPrompt = intro + getExtractionPrompt()
   const raw = await callAI(
     [{ role: 'user', content: extractPrompt }],
     '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
