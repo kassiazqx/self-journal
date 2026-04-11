@@ -1,204 +1,212 @@
-import { useState } from 'react'
-import { Home, BookOpen, Settings } from 'lucide-react'
+// src/components/MainLayout.jsx
+// 4 Tab 导航：写 / 记录 / 洞察 / 我的
+// 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail）
+import { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
+import { getActiveTab, saveActiveTab } from '../lib/storage'
 import HomePage from '../pages/HomePage'
 import RecordsPage from '../pages/RecordsPage'
 import SettingsPage from '../pages/SettingsPage'
-import AIConversation from './AIConversation'
+import InsightsPage from '../pages/InsightsPage'
 import AwarenessFlow from './AwarenessFlow'
-import { getActiveTab, saveActiveTab } from '../lib/storage'
+import RecordDetail from './RecordDetail'
+import ReviewLetterDetail from './ReviewLetterDetail'
 
 const NAV_ITEMS = [
-  { id: 'home',     label: '写',   Icon: Home },
-  { id: 'records',  label: '记录', Icon: BookOpen },
-  { id: 'settings', label: '设置', Icon: Settings },
+  { id: 'write',    label: '写',   icon: null },
+  { id: 'records',  label: '记录', icon: null },
+  { id: 'insights', label: '洞察', icon: null },
+  { id: 'mine',     label: '我的', icon: null },
 ]
 
-// ─── 导航栈工具函数 ────────────────────────────────────────────
-// screens: [{ type, ...data }]
-// type 枚举：'edit' | 'awareness' | 'ai'
-// []（空栈）= 正常 Tab 布局
-//
-// 「edit」类型用于：
-//   1. 从记录列表发起的编辑
-//   2. 从 AwarenessFlow 退回写作页继续修改
-
-function push(setScreens, screen) {
-  setScreens(prev => [...prev, screen])
-}
-function pop(setScreens) {
-  setScreens(prev => prev.slice(0, -1))
-}
-function reset(setScreens) {
-  setScreens([])
-}
-
 export default function MainLayout() {
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
-    return NAV_ITEMS.some(n => n.id === saved) ? saved : 'home'
+    return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
   })
-  const [recordsRefreshKey, setRecordsRefreshKey] = useState(0)
-  const [screens, setScreens] = useState([])       // 导航栈
-  // 当前最顶层屏幕（null = 正常 Tab 布局）
+  const [screens, setScreens] = useState([])
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // 清理旧版导航栈 localStorage（一次性）
+  useEffect(() => {
+    localStorage.removeItem('nav_screens')
+    localStorage.removeItem('active_tab')
+  }, [])
+
   const currentScreen = screens[screens.length - 1] ?? null
 
-  // ── tab 切换时持久化 ──────────────────────────────────────────
-  const goTab = (id) => {
+  function push(screen) { setScreens(prev => [...prev, screen]) }
+  function pop()        { setScreens(prev => prev.slice(0, -1)) }
+  function reset()      { setScreens([]) }
+
+  function goTab(id) {
+    reset()
     setActiveTab(id)
     saveActiveTab(id)
   }
 
-  const routeAfterSave = ({ entry, gotoAwareness, awarenessState = null }) => {
-    reset(setScreens)
-    setRecordsRefreshKey(k => k + 1)
-
-    if (awarenessState) {
-      push(setScreens, {
-        type: 'awareness',
-        entry,
-        initialFlowState: awarenessState,
-      })
-      return
-    }
-
-    if (gotoAwareness) {
-      push(setScreens, { type: 'awareness', entry })
-      return
-    }
-
-    goTab('records')
-  }
-
-  // ── HomePage 「✓完成」后 ──────────────────────────────────────
-  // onDone(entry, gotoAwareness)
-  //   gotoAwareness=true  → 进觉察流（AwarenessFlow）
-  //   gotoAwareness=false → 进入保存成功后的导航层
-  const handleDone = (entry, gotoAwareness) => {
-    const editScreen     = currentScreen
-    const awarenessState = editScreen?.type === 'edit' ? editScreen.awarenessState : null
-    routeAfterSave({ entry, gotoAwareness, awarenessState })
-  }
-
-  // ── AwarenessFlow 完成后 ──────────────────────────────────────
-  const handleAwarenessComplete = () => {
-    reset(setScreens)
-    goTab('records')
-    setRecordsRefreshKey(k => k + 1)
-  }
-
-  // ── AwarenessFlow 中途退出 → 回写作页（带原始内容可编辑）──
-  const handleAwarenessExit = (awarenessState) => {
-    const entry = currentScreen?.entry
-    if (entry) {
-      setScreens([{ type: 'edit', entry, awarenessState }])
-      goTab('home')
-    } else {
-      reset(setScreens)
+  // ── HomePage 完成写作后 ─────────────────────────────────────
+  function handleHomeSaved(entry, isFreewrite) {
+    setRefreshKey(k => k + 1)
+    if (isFreewrite) {
       goTab('records')
-      setRecordsRefreshKey(k => k + 1)
+    } else {
+      push({ type: 'awareness', entry })
     }
   }
 
-  // ── AI 对话 ──────────────────────────────────────────────────
-  const handleAIClose = () => pop(setScreens)
-  const handleAISaved = () => {
-    reset(setScreens)
+  // ── AwarenessFlow 完成后 ────────────────────────────────────
+  function handleAwarenessComplete() {
+    setRefreshKey(k => k + 1)
     goTab('records')
-    setRecordsRefreshKey(k => k + 1)
   }
 
-  // ── 从记录列表发起 AI 或编辑 ────────────────────────────────
-  const handleStartAI  = (entry) => push(setScreens, { type: 'ai', entry })
-  const handleStartEdit = (entry) => {
-    reset(setScreens)
-    push(setScreens, { type: 'edit', entry })
-    goTab('home')
+  // ── AwarenessFlow 退出 ──────────────────────────────────────
+  function handleAwarenessExit(awarenessState) {
+    // 如果带 awarenessState（从 RecordDetail 进去的），直接 pop 回详情
+    // 否则回到写作页
+    pop()
   }
 
-  // ─── 全屏覆盖渲染 ─────────────────────────────────────────────
-  const WRAPPER = 'flex flex-col max-w-lg mx-auto w-full'
-  const STYLE   = { height: '100dvh' }
+  // ── RecordsPage 打开详情 ────────────────────────────────────
+  function handleOpenDetail(entry) {
+    push({ type: 'detail', entry })
+  }
 
-  if (currentScreen?.type === 'awareness') {
-    const s = currentScreen
-    return (
-      <div className={WRAPPER} style={STYLE}>
+  // ── RecordsPage 打开回顾信 ──────────────────────────────────
+  function handleOpenLetter(letter) {
+    push({ type: 'letter', letter })
+  }
+
+  // ── RecordDetail 打开 AwarenessFlow ────────────────────────
+  function handleOpenAwarenessFromDetail(entry) {
+    push({ type: 'awareness', entry })
+  }
+
+  // ── 渲染当前全屏覆盖页（screens 栈顶） ───────────────────────
+  function renderScreen(screen) {
+    if (!screen) return null
+
+    if (screen.type === 'awareness') {
+      return (
         <AwarenessFlow
-          entry={s.entry}
+          entry={screen.entry}
           onComplete={handleAwarenessComplete}
           onExit={handleAwarenessExit}
-          initialFlowState={s.initialFlowState}
+          initialFlowState={screen.initialFlowState ?? null}
         />
-      </div>
-    )
-  }
+      )
+    }
 
-  if (currentScreen?.type === 'ai') {
-    return (
-      <div className={WRAPPER} style={STYLE}>
-        <AIConversation
-          entry={currentScreen.entry}
-          onClose={handleAIClose}
-          onSaved={handleAISaved}
+    if (screen.type === 'detail') {
+      return (
+        <RecordDetail
+          entry={screen.entry}
+          onBack={pop}
+          onOpenAwareness={handleOpenAwarenessFromDetail}
         />
-      </div>
-    )
+      )
+    }
+
+    if (screen.type === 'letter') {
+      return (
+        <ReviewLetterDetail
+          letter={screen.letter}
+          onBack={pop}
+          onOpenEntry={entryId => push({ type: 'detail', entry: { id: entryId } })}
+        />
+      )
+    }
+
+    return null
   }
 
-  if (currentScreen?.type === 'edit') {
-    return (
-      <div className={WRAPPER} style={STYLE}>
-        <div className="flex-1 overflow-y-auto">
-          <HomePage
-            editEntry={currentScreen.entry}
-            onDone={handleDone}
-            onCancel={() => { reset(setScreens); goTab('records') }}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  // ─── 正常 Tab 布局 ────────────────────────────────────────────
-  return (
-    <div className={`${WRAPPER} relative`} style={STYLE}>
-      <div className="flex-1 overflow-hidden min-h-0">
-
-        <div className={`h-full overflow-y-auto ${activeTab === 'home' ? 'block' : 'hidden'}`}>
-          <HomePage onDone={handleDone} />
-        </div>
-
-        <div className={`h-full overflow-y-auto ${activeTab === 'records' ? 'block' : 'hidden'}`}>
+  // ── Tab 内容 ────────────────────────────────────────────────
+  function renderTab() {
+    switch (activeTab) {
+      case 'write':
+        return <HomePage onDone={handleHomeSaved} />
+      case 'records':
+        return (
           <RecordsPage
-            isActive={activeTab === 'records'}
-            refreshKey={recordsRefreshKey}
-            onStartAI={handleStartAI}
-            onEdit={handleStartEdit}
+            key={refreshKey}
+            onOpenDetail={handleOpenDetail}
+            onOpenLetter={handleOpenLetter}
           />
+        )
+      case 'insights':
+        return <InsightsPage />
+      case 'mine':
+        return <SettingsPage />
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      height: '100dvh', width: '100%', maxWidth: 480,
+      margin: '0 auto', background: '#faf8f4',
+      position: 'relative',
+    }}>
+
+      {/* 主内容区（Tab 或全屏覆盖） */}
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+
+        {/* Tab 内容（全屏覆盖时仍在 DOM，避免状态丢失） */}
+        <div style={{
+          height: '100%',
+          display: currentScreen ? 'none' : 'flex',
+          flexDirection: 'column',
+        }}>
+          {renderTab()}
         </div>
 
-        <div className={`h-full overflow-y-auto ${activeTab === 'settings' ? 'block' : 'hidden'}`}>
-          <SettingsPage />
-        </div>
+        {/* 全屏覆盖页 */}
+        {currentScreen && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: '#faf8f4',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            {renderScreen(currentScreen)}
+          </div>
+        )}
       </div>
 
-      {/* 底部导航 */}
-      <div className="bg-white border-t border-gray-100 shadow-sm safe-bottom">
-        <div className="flex">
-          {NAV_ITEMS.map(({ id, label, Icon }) => (
+      {/* 底部导航（全屏覆盖时隐藏） */}
+      {!currentScreen && (
+        <nav style={{
+          display: 'flex',
+          borderTop: '1px solid #ede9e2',
+          background: '#faf8f4',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}>
+          {NAV_ITEMS.map(item => (
             <button
-              key={id}
-              className={`nav-item ${activeTab === id ? 'active' : ''}`}
-              onClick={() => goTab(id)}
+              key={item.id}
+              onClick={() => goTab(item.id)}
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                padding: '10px 0', background: 'none', border: 'none',
+                cursor: 'pointer', gap: 3, minWidth: 0,
+              }}
             >
-              <Icon size={22} strokeWidth={activeTab === id ? 2.2 : 1.8} />
-              <span className={`text-xs font-medium ${activeTab === id ? 'text-primary-500' : 'text-gray-400'}`}>
-                {label}
+              {item.icon && <span style={{ fontSize: 18 }}>{item.icon}</span>}
+              <span style={{
+                fontSize: 10, letterSpacing: '0.5px',
+                color: activeTab === item.id ? '#2d2928' : '#ccc',
+                fontWeight: activeTab === item.id ? 600 : 400,
+              }}>
+                {item.label}
               </span>
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
+      )}
     </div>
   )
 }
