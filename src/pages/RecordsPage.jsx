@@ -1,361 +1,238 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+// src/pages/RecordsPage.jsx
+// 记录列表：journal_entries + review_letters 混合时间流，按日期分组
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { fetchEntries, deleteEntry } from '../lib/journalService'
-import { Loader2, BookOpen, Pencil, Trash2 } from 'lucide-react'
-import RecordDetail from '../components/RecordDetail'
+import { db } from '../lib/db'
+import { deleteEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
+import { checkAndGenerateLetter } from '../lib/reviewLetterService'
 
-function formatDate(dateStr) {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now - date
-  const diffMin = Math.floor(diffMs / 60000)
-  const diffHour = Math.floor(diffMs / 3600000)
-  const diffDay = Math.floor(diffMs / 86400000)
-
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return `${diffMin} 分钟前`
-  if (diffHour < 24) return `${diffHour} 小时前`
-  if (diffDay === 1) return '昨天'
-  if (diffDay < 7) return `${diffDay} 天前`
-
-  return date.toLocaleDateString('zh-CN', {
-    month: 'long',
-    day: 'numeric',
-  })
+// 把 ISO 字符串格式化成「4月9日 周三」
+function formatGroupDate(isoStr) {
+  const d = new Date(isoStr)
+  return d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 }
 
-function groupByDate(entries) {
-  const groups = {}
-  entries.forEach(entry => {
-    const date = new Date(entry.created_at)
-    const key = date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    })
-    if (!groups[key]) groups[key] = []
-    groups[key].push(entry)
-  })
-  return groups
+// 把 ISO 字符串格式化成「09:41」
+function formatTime(isoStr) {
+  const d = new Date(isoStr)
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-// 删除确认弹窗
-function DeleteDialog({ entry, onConfirm, onCancel }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onCancel}>
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-      <div
-        className="relative w-full max-w-sm bg-white rounded-t-3xl p-6 pb-8 fade-in safe-bottom"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-        <h3 className="text-lg font-semibold text-gray-800 mb-2">删除这条记录？</h3>
-        <p className="text-sm text-gray-400 mb-6 leading-relaxed line-clamp-3">
-          {entry.content}
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-medium"
-          >
-            取消
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-3.5 bg-red-500 text-white rounded-2xl font-medium"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 单条记录卡片（支持长按触发操作菜单）
-function EntryCard({ entry, onOpen, onAction }) {
-  const template = resolveTemplate(entry.template_type)
-  const hasAI = entry.emotions?.length > 0 || entry.reflection_insight
-  const longPressTimer = useRef(null)
-  const didLongPress = useRef(false)
-
-  const startLongPress = () => {
-    didLongPress.current = false
-    longPressTimer.current = setTimeout(() => {
-      didLongPress.current = true
-      onAction(entry)
-    }, 500)
-  }
-
-  const cancelLongPress = () => {
-    clearTimeout(longPressTimer.current)
-  }
-
-  const handleClick = () => {
-    if (didLongPress.current) return  // 长按触发了，忽略 click
-    onOpen(entry)
-  }
+// 单条记录卡片
+function EntryCard({ entry, onOpen }) {
+  const tpl = resolveTemplate(entry.template_type)
+  const emotions = entry.emotion_display?.length
+    ? entry.emotion_display
+    : (entry.emotions ?? [])
+  const preview = (entry.content ?? '').slice(0, 60)
 
   return (
     <div
-      className="card mb-3 fade-in cursor-pointer active:scale-[0.99] transition-transform select-none"
-      onClick={handleClick}
-      onTouchStart={startLongPress}
-      onTouchEnd={cancelLongPress}
-      onTouchMove={cancelLongPress}
-      onMouseDown={startLongPress}
-      onMouseUp={cancelLongPress}
-      onMouseLeave={cancelLongPress}
+      onClick={() => onOpen(entry)}
+      style={{
+        background: 'white', borderRadius: 12, padding: '12px 14px',
+        marginBottom: 8, cursor: 'pointer',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+      }}
     >
-      {/* 顶部：模板标签 + 时间 */}
-      <div className="flex items-center justify-between mb-2.5">
-        <span
-          className="text-xs px-2.5 py-1 rounded-full border font-medium"
-          style={{
-            color: template.color,
-            borderColor: template.color + '66',
-            backgroundColor: template.color + '18',
-          }}
-        >
-          {template.label}
+      <div style={{ display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', marginBottom: 4 }}>
+        <span style={{ fontSize: 10, color: tpl.color, fontWeight: 500 }}>
+          {tpl.label}
         </span>
-        <span className="text-xs text-gray-300">{formatDate(entry.created_at)}</span>
+        <span style={{ fontSize: 10, color: '#ccc' }}>{formatTime(entry.created_at)}</span>
       </div>
-
-      {/* 内容预览（固定 3 行） */}
-      <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">
-        {entry.content}
-      </p>
-
-      {/* 情绪/AI 标记 */}
-      {hasAI && (
-        <div className="flex items-center gap-1 mt-2 flex-wrap">
-          {[...new Set(entry.emotions ?? [])].slice(0, 3).map(e => (
-            <span key={e} className="text-xs px-2 py-0.5 bg-primary-50 text-primary-600 rounded-full border border-primary-100">
-              {e}
-            </span>
+      <div style={{
+        fontSize: 13, color: '#555', lineHeight: 1.6,
+        marginBottom: emotions.length ? 8 : 0,
+        display: '-webkit-box', WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical', overflow: 'hidden',
+      }}>
+        {preview}
+      </div>
+      {emotions.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {emotions.slice(0, 3).map(w => (
+            <span key={w} style={{
+              fontSize: 10, background: '#f0ece4', color: '#8a7a6a',
+              padding: '2px 7px', borderRadius: 10,
+            }}>{w}</span>
           ))}
+          {emotions.length > 3 && (
+            <span style={{ fontSize: 10, color: '#bbb' }}>…</span>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-export default function RecordsPage({ refreshKey, isActive, onStartAI, onEdit }) {
+// 回顾信卡片
+function LetterCard({ letter, onOpen }) {
+  const start = new Date(letter.period_start).toLocaleDateString('zh-CN',
+    { month: 'long', day: 'numeric' })
+  const end = new Date(letter.period_end).toLocaleDateString('zh-CN',
+    { month: 'long', day: 'numeric' })
+  const preview = (letter.content ?? '').slice(0, 50)
+
+  return (
+    <div
+      onClick={() => onOpen(letter)}
+      style={{
+        background: '#fffdf8', border: '1px solid #f0e8d4',
+        borderRadius: 12, padding: '12px 14px', marginBottom: 8,
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+        <span style={{ fontSize: 12 }}>✉</span>
+        <span style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500 }}>回顾信</span>
+        {!letter.is_read && (
+          <span style={{ width: 6, height: 6, borderRadius: '50%',
+            background: '#c9a96e', display: 'inline-block' }} />
+        )}
+      </div>
+      <div style={{
+        fontSize: 13, color: '#555', lineHeight: 1.6, marginBottom: 4,
+        display: '-webkit-box', WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical', overflow: 'hidden',
+      }}>
+        {preview}
+      </div>
+      <div style={{ fontSize: 10, color: '#bbb' }}>
+        {start} - {end} · {letter.entry_ids?.length ?? 0} 条记录
+      </div>
+    </div>
+  )
+}
+
+export default function RecordsPage({ onOpenDetail, onOpenLetter }) {
   const { user } = useAuth()
-  const [entries, setEntries] = useState([])
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [detailEntry, setDetailEntry] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [actionTarget, setActionTarget] = useState(null)
-  const isFirstFetch = useRef(true)
-  const entriesCountRef = useRef(0)   // 分页偏移（避免 loadEntries 依赖 entries.length）
-  const isResettingRef = useRef(false) // reset 进行中时屏蔽 observer，防止并发加载错误数据
-  const hasMoreRef = useRef(true)      // observer 回调里读 hasMore（避免 stale closure）
-  const loadingMoreRef = useRef(false) // observer 回调里读 loadingMore（避免 stale closure）
-  const sentinelRef = useRef(null)     // 列表底部哨兵，进入视口时触发加载更多
-  const PAGE_SIZE = 20
+  const [latestUnreadLetter, setLatestUnreadLetter] = useState(null)
 
-  const loadEntries = useCallback(async (reset = false, silent = false) => {
+  const load = useCallback(async () => {
     if (!user) return
+    setLoading(true)
 
-    if (reset) isResettingRef.current = true  // 屏蔽 observer
+    // 触发回顾信检查（异步，不阻塞列表加载）
+    checkAndGenerateLetter(user.id).catch(() => {})
 
-    if (reset && !silent) setLoading(true)
-    else if (!reset) {
-      setLoadingMore(true)
-      loadingMoreRef.current = true
+    const [entriesRes, lettersRes] = await Promise.all([
+      db.from('journal_entries')
+        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      db.from('review_letters')
+        .select('id, content, period_start, period_end, is_read, created_at, entry_ids')
+        .eq('user_id', user.id)
+        .order('period_end', { ascending: false })
+        .limit(20),
+    ])
+
+    const entries = entriesRes.data ?? []
+    const letters = lettersRes.data ?? []
+
+    // 找最新未读回顾信
+    const unread = letters.find(l => !l.is_read)
+    setLatestUnreadLetter(unread ?? null)
+
+    // 合并，按时间降序
+    const combined = [
+      ...entries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
+      ...letters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
+    ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
+
+    setItems(combined)
+    setLoading(false)
+  }, [user])
+
+  useEffect(() => { load() }, [load])
+
+  // 按日期分组
+  const groups = []
+  let currentDate = ''
+  items.forEach(item => {
+    const dateKey = formatGroupDate(item._sortKey)
+    if (dateKey !== currentDate) {
+      currentDate = dateKey
+      groups.push({ date: dateKey, items: [] })
     }
+    groups[groups.length - 1].items.push(item)
+  })
 
-    try {
-      const from = reset ? 0 : entriesCountRef.current
-      const { data, error } = await fetchEntries({ userId: user.id, from, limit: PAGE_SIZE })
-
-      if (error) throw error
-
-      const more = data.length === PAGE_SIZE
-      hasMoreRef.current = more
-      setHasMore(more)
-      setEntries(prev => {
-        const next = reset ? data : [...prev, ...data]
-        entriesCountRef.current = next.length
-        return next
-      })
-    } catch (err) {
-      console.error('加载记录失败:', err)
-    } finally {
-      setLoading(false)
-      setLoadingMore(false)
-      loadingMoreRef.current = false
-      isResettingRef.current = false  // 解除屏蔽
-    }
-  }, [user])  // 函数引用稳定，仅 user 变化时重建
-
-  // ── IntersectionObserver：哨兵进入视口时自动加载更多 ─────────
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (
-          entry.isIntersecting &&
-          hasMoreRef.current &&
-          !loadingMoreRef.current &&
-          !isResettingRef.current   // reset 中不触发，防止并发
-        ) {
-          loadEntries(false)
-        }
-      },
-      { rootMargin: '120px' }  // 距底部 120px 时提前触发，滚动更流畅
-    )
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [loadEntries])  // loadEntries 稳定，仅 user 变化时重新绑定
-
-  // 离开列表页时立刻清掉详情，回来时直接是列表
-  useEffect(() => {
-    if (!isActive) setDetailEntry(null)
-  }, [isActive])
-
-  // 初始加载 & refreshKey 变化时重新加载（首次显示 spinner，后续静默刷新）
-  useEffect(() => {
-    const silent = !isFirstFetch.current
-    isFirstFetch.current = false
-    loadEntries(true, silent)
-  }, [user, refreshKey]) // eslint-disable-line
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    try {
-      const { error } = await deleteEntry({ id: deleteTarget.id, userId: user.id })
-      if (error) throw error
-
-      setEntries(prev => prev.filter(e => e.id !== deleteTarget.id))
-    } catch (err) {
-      console.error('删除失败:', err)
-    } finally {
-      setDeleteTarget(null)
-    }
+  async function handleDelete(entry) {
+    await deleteEntry({ id: entry.id, userId: user.id })
+    load()
   }
 
-
-  const grouped = groupByDate(entries)
-
-  // 详情页覆盖
-  if (detailEntry) {
+  if (loading) {
     return (
-      <RecordDetail
-        entry={detailEntry}
-        onBack={() => setDetailEntry(null)}
-        onStartAI={onStartAI}
-        onEdit={onEdit ? (e) => { setDetailEntry(null); onEdit(e) } : undefined}
-        onDelete={(e) => { setDetailEntry(null); setDeleteTarget(e) }}
-      />
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center',
+        justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
+        加载中…
+      </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 顶部标题 */}
-      <div className="px-5 pt-5 pb-3">
-        <h1 className="text-xl font-bold text-gray-800">我的记录</h1>
-      </div>
+    <div style={{ flex: 1, overflowY: 'auto', background: '#f5f3ef' }}>
 
-      {/* 记录列表 */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {loading ? (
-          <div className="flex items-center justify-center pt-20">
-            <Loader2 size={28} className="animate-spin text-primary-400" />
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center pt-20 fade-in">
-            <BookOpen size={56} className="text-gray-200 mb-4" strokeWidth={1} />
-            <p className="text-gray-400 font-medium mb-1">还没有记录</p>
-            <p className="text-gray-300 text-sm">去首页写下今天的第一条记录吧</p>
-          </div>
-        ) : (
-          <>
-            {Object.entries(grouped).map(([dateLabel, dayEntries]) => (
-              <div key={dateLabel} className="mb-2">
-                {/* 日期分组标题 */}
-                <div className="flex items-center gap-2 mb-3 sticky top-0 py-2 bg-[#fdfaf7]">
-                  <div className="h-px flex-1 bg-gray-100" />
-                  <span className="text-xs text-gray-400 font-medium px-1">{dateLabel}</span>
-                  <div className="h-px flex-1 bg-gray-100" />
-                </div>
-
-                {/* 当天记录 */}
-                {dayEntries.map(entry => (
-                  <EntryCard
-                    key={entry.id}
-                    entry={entry}
-                    onOpen={setDetailEntry}
-                    onAction={setActionTarget}
-                  />
-                ))}
-              </div>
-            ))}
-
-            {/* 加载中指示器 */}
-            {loadingMore && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 size={18} className="animate-spin text-primary-300" />
-              </div>
-            )}
-
-            {/* 到底提示 */}
-            {!hasMore && entries.length > PAGE_SIZE && (
-              <p className="text-center text-xs text-gray-300 py-4">已经到底啦～</p>
-            )}
-
-            {/* 哨兵：进入视口时触发加载更多 */}
-            <div ref={sentinelRef} className="h-1" />
-          </>
-        )}
-      </div>
-
-      {/* 删除确认弹窗 */}
-      {deleteTarget && (
-        <DeleteDialog
-          entry={deleteTarget}
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-
-      {/* 长按操作菜单 */}
-      {actionTarget && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setActionTarget(null)}>
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-          <div
-            className="relative w-full max-w-sm bg-white rounded-t-3xl pb-8 fade-in safe-bottom"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-4 mb-2" />
-            <p className="text-xs text-gray-300 text-center mb-2 px-6 line-clamp-1">{actionTarget.content}</p>
-            {onEdit && (
-              <button
-                onClick={() => { setActionTarget(null); onEdit(actionTarget) }}
-                className="w-full flex items-center gap-3 px-6 py-4 text-gray-700 active:bg-gray-50"
-              >
-                <Pencil size={18} className="text-gray-400" />
-                <span className="text-base">编辑</span>
-              </button>
-            )}
-            <button
-              onClick={() => { setActionTarget(null); setDeleteTarget(actionTarget) }}
-              className="w-full flex items-center gap-3 px-6 py-4 text-red-500 active:bg-red-50"
-            >
-              <Trash2 size={18} />
-              <span className="text-base">删除</span>
-            </button>
-          </div>
+      {/* 未读回顾信横幅 */}
+      {latestUnreadLetter && (
+        <div
+          onClick={() => onOpenLetter(latestUnreadLetter)}
+          style={{
+            background: '#fffdf8', borderBottom: '1px solid #f0e8d4',
+            padding: '12px 18px', display: 'flex', alignItems: 'center',
+            gap: 8, cursor: 'pointer',
+          }}
+        >
+          <span style={{ fontSize: 14 }}>✉</span>
+          <span style={{ flex: 1, fontSize: 13, color: '#8a7a5a' }}>
+            你有一封新的回顾信
+          </span>
+          <span style={{ fontSize: 12, color: '#c9a96e' }}>查看 →</span>
         </div>
       )}
+
+      {/* 按日期分组的时间流 */}
+      <div style={{ padding: '12px 16px' }}>
+        {groups.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#ccc',
+            fontSize: 14, padding: '60px 0' }}>
+            还没有记录，去写第一条吧
+          </div>
+        ) : (
+          groups.map(group => (
+            <div key={group.date} style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: '#bbb', marginBottom: 8,
+                letterSpacing: '0.5px' }}>
+                {group.date}
+              </div>
+              {group.items.map(item => (
+                item._type === 'entry' ? (
+                  <EntryCard
+                    key={item.id}
+                    entry={item}
+                    onOpen={onOpenDetail}
+                    onDelete={handleDelete}
+                  />
+                ) : (
+                  <LetterCard
+                    key={item.id}
+                    letter={item}
+                    onOpen={onOpenLetter}
+                  />
+                )
+              ))}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   )
 }
