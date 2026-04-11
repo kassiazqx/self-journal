@@ -83,7 +83,12 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     is_read: false,
   })
 
-  if (error) console.error('[reviewLetter] 插入失败:', error.message)
+  if (error) {
+    console.error('[reviewLetter] 插入失败:', error.message)
+    throw error
+  }
+
+  return true
 }
 
 // ── 主入口：检查是否需要生成（应用启动 / 记录页加载时调用）──
