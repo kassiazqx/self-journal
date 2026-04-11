@@ -252,3 +252,30 @@ export function buildAwarenessContext(rawContent, answeredMessages) {
     + (qaText ? `已经聊到的部分：\n${qaText}\n\n` : '')
     + '请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。'
 }
+
+// ─── 回顾信生成 prompt ──────────────────────────────────────────
+export function getReviewLetterPrompt(entriesText) {
+  return `你会收到用户这段时间写的日记条目。请写一封温暖的回顾信，语气像一位长期陪伴的朋友。
+
+要求：
+- 不评判，不说教，不鼓励"你下次应该..."
+- 帮助用户看见反复出现的情绪和模式
+- 用具体细节（用户自己写的词和场景），而不是泛泛而谈
+- 结尾留一个轻柔的问题或邀请，用户可以选择回应也可以不回应
+- 长度：300-500字
+
+写完信之后，在信的最后附上以下JSON（不要解释，直接输出）：
+\`\`\`json
+{
+  "recurring_emotions": [],
+  "recurring_people": [],
+  "core_needs": [],
+  "patterns": [],
+  "growth_notes": []
+}
+\`\`\`
+
+以下是用户的日记条目：
+
+${entriesText}`
+}
