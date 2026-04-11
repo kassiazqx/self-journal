@@ -50,7 +50,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     .order('created_at', { ascending: true })
     .limit(20)
 
-  if (!entries?.length) return
+  if (!entries?.length) throw new Error('NO_ENTRIES')
 
   const entriesText = entries.map((e, i) =>
     `[第${i + 1}条，${e.created_at.slice(0, 10)}]\n${e.content}`

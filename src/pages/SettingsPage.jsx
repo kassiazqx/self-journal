@@ -382,7 +382,11 @@ export default function SettingsPage() {
                 await generateLetterNow(user.id)
                 setLetterMsg('✓ 已生成，去记录页查看')
               } catch (e) {
-                setLetterMsg('生成失败，请稍后重试')
+                if (e?.message === 'NO_ENTRIES') {
+                  setLetterMsg('上次生成后暂无新记录，无法生成')
+                } else {
+                  setLetterMsg('生成失败，请稍后重试')
+                }
               } finally {
                 setGeneratingLetter(false)
               }
