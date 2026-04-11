@@ -96,10 +96,18 @@ src/
 
 ## ⚠️ 工作规范（重要）
 - **改代码前必须先读 `docs/coding-lessons.md`**，对照 8 条规则检查方案
+- **改代码前必须先读 `docs/arch-context.md` §2**，确认架构决策不冲突
+- **有 spec 文档的功能模块，改代码前必须先读对应 spec 的相关章节**
 - **改代码前必须先讨论方案，不直接动手**
 - 流程：superpowers:brainstorming 讨论 → 用户确认 → 执行
 - 大改动用 Agent 后台跑，小修改直接用 Edit 工具
 - 写大文件用 Write 工具直接写，不要交给 Agent（会 504 超时）
+
+## 🔄 Multi-Session 协作规范
+- **完整规范**：见 `docs/session-protocol.md`
+- **架构上下文**：见 `docs/arch-context.md`（所有 session 冷启动必读）
+- **产品变更 → 同步卡 → 代码 Task 0 确认 → 继续**
+- 代码 session 发现偏差时：停下来报告，不自行修复，等用户确认
 
 ## 🚦 Git 提交强制流程（每个节点都必须走完）
 

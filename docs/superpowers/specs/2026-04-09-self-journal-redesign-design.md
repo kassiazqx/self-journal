@@ -227,7 +227,6 @@ CREATE TABLE IF NOT EXISTS review_letters (
   period_start timestamptz,
   period_end   timestamptz,
   is_read      boolean DEFAULT false,
-  user_response text,
   created_at   timestamptz DEFAULT now()
 );
 
@@ -269,7 +268,7 @@ ALTER TABLE journal_entries
 ```
 
 > **字段分工说明：**
-> - `emotions`（已有）：基础层，56词标准词库的映射结果，用于统计聚合（情绪频率图表等）
+> - `emotions`（已有）：基础层，57词标准词库的映射结果，用于统计聚合（情绪频率图表等）
 > - `emotion_display`（新增）：描述层，AI 生成的更丰富自然表达，用于详情页展示
 > - `emotion_confidence`（新增）：`mapDisplayToBase()` 返回的 `minConfidence`，决定是否显示「待确认」提示
 
@@ -318,7 +317,7 @@ from: (table) => {
 
 ---
 
-## 五、情绪词库（基础层，固定 56 词）
+## 五、情绪词库（基础层，固定 57 词）
 
 这 56 个词是统计口径，不随用户输入自动扩展。保存在新文件 `src/lib/emotionMap.js` 里。
 
@@ -351,7 +350,7 @@ from: (table) => {
 - **被信任**（感受到他人信赖自己，带来被认可的荣幸感）
 - **悲悯**（Cowen sympathy 的升华；感受到他人的痛苦，并有主动的愿望希望他好；区别于同情的被动性）
 
-**混合/中性情绪（12词）**
+**混合/中性情绪（13词）**
 ```
 迷茫  矛盾  好奇  纠结  释然  依恋  敏感  复杂  惊讶  无聊  尴尬  怀念  同情
 ```
@@ -370,7 +369,7 @@ from: (table) => {
 ```js
 // src/lib/emotionMap.js
 
-// 基础层词库（56词，完整列表）
+// 基础层词库（57词，完整列表）
 export const EMOTION_BASE = [
   // 负面（25词）
   '难过','愤怒','委屈','焦虑','羞愧','无力','害怕','孤独','绝望','沮丧',
@@ -379,7 +378,7 @@ export const EMOTION_BASE = [
   // 正面（18词）
   '轻松','满足','感激','开心','平静','期待','温暖','喜悦','自豪','踏实',
   '安心','充实','兴奋','爱','敬畏','信任','被信任','悲悯',
-  // 混合（12词）
+  // 混合（13词）
   '迷茫','矛盾','好奇','纠结','释然','依恋','敏感','复杂','惊讶','无聊',
   '尴尬','怀念','同情',
 ]
@@ -802,7 +801,7 @@ export function resolveTemplate(id) {
 
 ```
 ┌──────────────────────────────────┐
-│  ← 返回        保存并退出         │  ← 顶部小导航（12px，灰色）
+│  ← 退出         保存并退出        │  ← 顶部小导航（12px，灰色）
 ├──────────────────────────────────┤
 │                                  │
 │  [前一个问题和答案的淡色摘要]     │  ← 可选，仅显示上一轮的关键词（非必须）
@@ -824,6 +823,38 @@ export function resolveTemplate(id) {
 - 这个界面背景也是 `#faf8f4`，与写作页视觉连续，不要换成不同颜色或风格
 - 问题文字区域不要用气泡、卡片、彩色背景——就是普通文字，比正文稍重（font-weight 500）
 - 屏幕切换（从一个问题到下一个问题）用整屏渐变：`opacity 0 → 1`，时长约 300ms
+
+### 8.2A 统一节点流规则（这次必须写死）
+
+> 这是这轮需求里最容易误解的地方，必须明确：**AI 引导不是某张本地卡片的子对话，而是与本地卡片同级的觉察流节点。**
+
+觉察流里存在三类节点：
+
+1. **本地引导节点（local node）**：来自预设问题库，如情绪 / 身体 / 念头 / 需求 / 洞见
+2. **AI 引导节点（ai node）**：用户点击 `✦ 深入觉察` 后插入的动态节点
+3. **用户回答节点（user answer）**：对本地或 AI 引导的回答
+
+**关系规则：**
+- AI 节点与本地节点是**同级关系**，不是挂在某一张本地卡片下面的子流程
+- `上一张 / 下一张`（如果实现）按**统一节点流顺序**移动，不区分本地/AI
+- AI 节点一旦生成并保存，后续回到这条记录时必须还在，不允许“退出 AI 后那段消失”
+- AI 可以跨主题引导：从情绪聊到认知、关系、需求都允许，不受当前本地卡片主题限制
+
+**退出 AI 的规则（明确）：**
+- 用户从某张本地卡片点 `✦ 深入觉察` 进入 AI 后，退出 AI 时，**回到触发它的那张本地卡片**
+- 不做自动强跳到下一张卡片
+- 不做“AI 已覆盖该主题，自动跳过卡片”的提示 UI
+- 用户如果觉得该本地卡片已无需再写，可以手动点“继续”跳过
+
+**本地卡片跳过规则（明确）：**
+- 本地卡片允许空白直接跳过
+- 不要求用户必须写字后才能进入下一张
+- 只有首页写作页 `HomePage` 点 ✓ 时仍要求原始正文非空；进入 AwarenessFlow 后，每张本地卡片都可以空着继续
+
+**为什么这样定：**
+- 用户心智最稳定：退出 AI 就回到刚才那张卡
+- AI 保持自由探索能力，不被某个本地主题束缚
+- 不增加复杂提示 UI，先把统一流模型做稳
 
 ### 8.3 本地觉察问题定义
 
@@ -901,7 +932,7 @@ export const AWARENESS_QUESTIONS = [
 
 ```js
 // 在 contentAnalysis.js 里新增
-import { EMOTION_NEGATIVE } from './emotionMap'  // 复用56词基础层的负面组，不要重复硬编码
+import { EMOTION_NEGATIVE } from './emotionMap'  // 复用57词基础层的负面组，不要重复硬编码
 
 /**
  * 根据文本复杂度，返回觉察流应该从哪一层开始
@@ -925,7 +956,7 @@ export function getAwarenessStartTier(text) {
 }
 ```
 
-### 8.5 本地觉察流逻辑（状态机）
+### 8.5 统一觉察流逻辑（状态机）
 
 ```
 [进入AwarenessFlow]
@@ -935,32 +966,36 @@ export function getAwarenessStartTier(text) {
   过滤问题列表：只保留 tier >= startTier 的问题
   如果内容无负面情绪词，过滤掉 showWhen === 'negative' 的问题
   ↓
-  显示第一个问题（单屏）
+  显示当前本地节点（单屏）
   ↓
-  用户填写答案 → 点「继续」
+  用户有两种操作：
+    A. 写回答后点「继续」
+    B. 不写任何内容，直接点「继续」（允许空白跳过）
   ↓
-  追加 Q&A 到 messages state → debounce 800ms → 自动 upsert 到 conversations
+  若有回答：追加 Q&A 到 messages state → debounce 800ms → 自动 upsert
+  若为空白跳过：不追加 user answer，只把当前本地节点标记为已跨过（前端 state 即可，不必写空字符串）
   ↓
-  渐变过渡到下一个问题（opacity fade，300ms）
+  渐变过渡到下一个本地节点（opacity fade，300ms）
   ↓
-  ...循环直到所有问题都问完
+  ...循环直到所有本地节点都走完
   ↓
-  最后一问答完 → 立即 upsert → 自动返回记录列表
+  最后一节点处理完 → 立即 upsert → 自动返回记录列表
 
 任意时刻（右下角按钮）：
-  - mode='local'：右下角显示「✦ 深入觉察」→ 点击切换 mode='ai'，调用 AI 生成问题
-  - mode='ai'：右下角显示「× 暂停引导」→ 点击切换 mode='local'，回到本地问题流
-  - 切换 mode 不清空 messages，历史完整保留，下次再切回 ai 模式时 AI 能看到完整上下文
+  - mode='local'：右下角显示「✦ 深入觉察」→ 点击插入/切换到 AI 节点
+  - mode='ai'：右下角显示「× 暂停引导」→ 点击退出 AI，回到触发它的那张本地卡片
+  - 切换 mode 不清空 messages，历史完整保留
+  - AI 节点与本地节点同级保存；下次回来时 AI 节点仍在流里
 
-左上角：
-  - 「← 返回写作」→ 当前进度自动保存（立即 upsert，不等 debounce），返回写作页（HomePage）
-    · 返回写作页后，用户继续补充写作内容
-    · 再次点 ✓ → 更新 journal_entries.content，然后重新进入 AwarenessFlow（带完整历史）
-    · AwarenessFlow 重新进入时继续 startTier=原来的位置，不重置
+退出 AI（明确规则）：
+  - 先保存当前 AI 内容
+  - 回到“触发这次 AI 的那张本地卡片”
+  - 不自动跳到下一张本地卡片
+  - 用户如果觉得这张本地卡片已经不需要再写，可以手动点「继续」跳过
 
-「保存并退出」（底部）：
+「保存并退出」（顶部右侧）：
   - 立即 upsert 当前 messages（不等 debounce），返回记录列表
-  - 只保存用户实际已回答的 Q&A（不包含尚未展示的问题）
+  - 只保存用户实际已回答的 Q&A 和已生成的 AI 节点，不包含未来尚未展示的问题
 ```
 
 **自动保存机制（核心）：**
@@ -983,7 +1018,7 @@ async function doUpsert(messages) {
   )
 }
 
-// 用户主动离开时（组件卸载/返回写作/保存退出）立即保存，不等 debounce
+// 用户主动离开时（组件卸载/退出当前流/保存退出）立即保存，不等 debounce
 useEffect(() => {
   return () => {
     if (saveRef.current) clearTimeout(saveRef.current)
@@ -1002,7 +1037,7 @@ useEffect(() => {
 // AwarenessFlow.jsx Props
 // entry: { id, content, template, user_id }  已插入DB的entry对象（content可能被更新过）
 // onComplete: () => void                      全部完成时回调（返回记录列表）
-// onBackToWrite: () => void                   用户点「返回写作」时回调
+// onExit: () => void                          用户点「退出」时回调
 
 // 内部状态
 const [questions, setQuestions] = useState([])   // 过滤后的问题列表
@@ -1038,13 +1073,20 @@ useEffect(() => {
 **点击后做什么：**
 1. `mode` 从 `'local'` 切换到 `'ai'`
 2. 把已有的原始写作 + 已回答的问题和答案，组装成上下文传给 AI
-3. 调用 AI，让 AI 生成下一个问题
-4. 显示 AI 的问题（UI 和本地问题完全一样，只在问题文字前加极小的 ✦ 标记，灰色，不显眼）
+3. 调用 AI，让 AI 生成一个**平衡型引导块**（不是单纯一句问题）
+4. 显示 AI 引导块（UI 仍与本地问题区基本一致，只在开头加极小的 ✦ 标记，灰色，不显眼）
+
+**AI 引导块的形式（本轮定稿）：**
+- 1句轻微共情 / 命名，承接用户当下状态
+- 1句线索 / 盲区 / 可能的内在张力
+- 1个开放式问题
+- 总长度控制在**半屏以内**，不要长篇分析
 
 **不做什么：**
 - 不弹出选择框
 - 不切换成聊天气泡界面
 - 不用不同颜色的背景区分 AI 和本地问题
+- 不把 AI 限制成某一张本地卡片的附属提问（AI 可跨主题）
 
 ### 9.2 传给 AI 的上下文格式
 
@@ -1059,28 +1101,26 @@ function buildAIContext(rawContent, answers, previousAiMessages) {
 
   return `用户刚才写道：\n${rawContent}\n\n` +
     (answered ? `已经聊到的部分：\n${answered}\n\n` : '') +
-    `请从问题库中选择下一个最合适的问题，或者根据对话自然提问。只返回问题本身，不要加任何前缀或解释。`
+    `请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。`
 }
 ```
 
-**AI 返回内容处理：** AI 有时会返回带换行的多行文本。取第一个非空行作为展示问题：
-
-```js
-function extractQuestion(aiRawResponse) {
-  const lines = aiRawResponse.split('\n').map(l => l.trim()).filter(Boolean)
-  return lines[0] ?? ''  // 取第一个非空行；空字符串表示 AI 返回为空（需降级处理）
-}
-```
-
-> 如果 `extractQuestion` 返回空字符串，说明 AI 调用失败或返回异常，此时在 AwarenessFlow 里展示一个默认兜底问题（从 `AWARENESS_QUESTIONS` 里随机取一道 tier=3 的问题），不向用户展示错误信息。
+**AI 返回内容处理：** AI 返回的是一个短引导块（3句左右），前端按整段渲染，不再只取第一行。如果 AI 返回为空，降级展示 `AWARENESS_QUESTIONS` 里随机一道 tier=3 的问题，不向用户展示错误信息。
 
 ### 9.3 AI 模式下的系统 prompt
 
-AI 接手后使用与当前 `prompts.js` 基本一致的系统 prompt，但需要新增一条指令：
-
 ```
 【单屏模式特别说明】
-当前是单屏专注模式，每次只问一个问题。只返回问题本身，不要加"我注意到你..."等共情前缀，不要解释为什么问这个问题。直接给出问题。
+当前是单屏专注模式。你的输出是一个短引导块，不是长篇回复：
+1. 先用1句轻微共情或命名，承接用户当下状态
+2. 再给1句你看到的线索、盲区或可能的内在张力
+3. 最后给1个开放式问题
+
+限制：
+- 不要像聊天机器人一样寒暄
+- 不要超过半屏，不要长篇分析
+- 可以跨主题（情绪/身体/认知/关系/需求），不必受当前本地卡片限制
+- 语气精炼、温和，有一点被理解的感觉，但不过度夸赞
 ```
 
 ### 9.4 AI 返回后的处理
@@ -1661,6 +1701,8 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
 ### 13.4 回顾信详情页（ReviewLetterDetail.jsx）
 
+当前版本：**只读详情页**。
+
 结构：
 ```
 ← 返回
@@ -1673,11 +1715,8 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 关联记录：[#1 ↗] [#2 ↗] [#3 ↗]   ← 可点进对应详情页
 
 ──────────
-你的回应：
-
-[输入框，placeholder: 看完这封信，你有什么想说的……]
-
-                          [保存回应]
+相关 threads：
+[线程A ↗] [线程B ↗]   ← 当前版本可先占位，Phase 2 接真实数据
 ```
 
 **关联记录的显示和跳转逻辑：**
@@ -1686,8 +1725,21 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 - 点击 `[#N ↗]` → 跳转到对应的 RecordDetail 页面，传入该 entry 的 uuid
 - 实现：`letter.entry_ids.map((entryId, idx) => <button onClick={() => navigate(\`/record/${entryId}\`)}>#${idx+1} ↗</button>)`
 
-用户写的回应保存在 `review_letters.user_response` 字段（text 类型）。
-回应也可以进入 AwarenessFlow（点 ✦ 深入觉察），此时 `context_type = 'letter'`。
+**当前边界（写死）：**
+- 当前版本回顾信详情页不提供回复输入框
+- 当前版本回顾信详情页不接入 AI 对话
+- 当前版本回顾信只负责“阅读 + 跳转关联记录/threads”
+
+**未来扩展（先定方向，不在本期实现）：**
+- 如果用户从回顾信发起写作，不是写 `review_letters.user_response`，而是**创建一条新的正常 `journal_entry`**
+- 这条新 entry 的 `created_at` 为当下创建时间，后续完全按正常笔记处理（可进入觉察卡片/AI 觉察/回顾信/洞察）
+- 在数据上，这条新 entry 与回顾信是**引用关系**，建议后续用通用来源字段承接：
+  - `origin_context_type: 'letter' | 'thread' | null`
+  - `origin_context_id: uuid | null`
+- UI 上保留双向关联：
+  - 回顾信详情页能看到由该回顾信触发的新 entries
+  - 笔记详情页能看到其来源回顾信标签并可跳转回来
+- 后续 threads 上线后，优先把“延展思考 / 继续 AI 洞察 / 新增关联 entry”放到 threads 容器中承接；回顾信本身只作为触发入口之一
 
 ### 13.5 已读状态
 
@@ -1749,18 +1801,13 @@ const { data: emotionData } = await db.from('journal_entries')
   .gte('created_at', thirtyDaysAgo)
 // 前端展开数组并计数
 
-// 核心需求（合并 journal_entries + review_letters 的 insights）
-const [entryNeeds, letterInsights] = await Promise.all([
-  db.from('journal_entries')
-    .select('core_needs')
-    .eq('user_id', user.id)
-    .gte('created_at', thirtyDaysAgo),
-  db.from('review_letters')
-    .select('insights')
-    .eq('user_id', user.id)
-    .gte('created_at', thirtyDaysAgo)
-])
-// 合并两个来源的 core_needs，前端计数
+// 核心需求（第一阶段只统计 journal_entries.core_needs）
+const { data: entryNeeds } = await db.from('journal_entries')
+  .select('core_needs')
+  .eq('user_id', user.id)
+  .gte('created_at', thirtyDaysAgo)
+
+// 前端展开 core_needs 数组并计数
 ```
 
 ### 14.3 第一阶段不做的事
@@ -1966,7 +2013,7 @@ const [entryNeeds, letterInsights] = await Promise.all([
 **验收：**
 - [ ] 心情曲线有数据时正确显示折线（无数据时显示空状态提示）
 - [ ] 情绪频率柱状/条状展示，按频次排序
-- [ ] 核心需求合并了 entries 和 letters 两个来源的数据
+- [ ] 核心需求只统计 `journal_entries.core_needs`，不合并 `review_letters.insights`
 - [ ] 有未读回顾信时，页面顶部有预览卡片
 
 ---
@@ -1992,7 +2039,7 @@ const [entryNeeds, letterInsights] = await Promise.all([
 |---|---|
 | 把回顾信的 insights 写回单条 entry | insights 留在 `review_letters.insights` JSONB 里 |
 | 用户编辑情绪词时调用 AI | 只用本地 `mapDisplayToBase()` 映射 |
-| 把任意描述词自动加入基础层词库 | 基础层 56 词固定，不自动扩展 |
+| 把任意描述词自动加入基础层词库 | 基础层 57 词固定，不自动扩展 |
 | 提取失败时用 alert 或 modal 打断用户 | 静默失败，console.error，可加底部 toast |
 | 在每次保存时都调 AI | 只在用户退出写作流后才触发后台提取 |
 

@@ -162,6 +162,19 @@ test('moving forward at the current frontier stays put until a new node exists',
   assert.equal(forward.currentIdx, state.currentIdx)
 })
 
+test('createFlowState can build the first visible node immediately without waiting for DB messages', () => {
+  const state = createFlowState({
+    entryContent: makeEntry().content,
+    now: '2026-04-10T10:01:00.000Z',
+    messages: null,
+    snapshot: null,
+  })
+
+  assert.equal(state.currentNode.kind, 'local')
+  assert.equal(state.visibleNodes.length, 1)
+  assert.equal(state.currentIdx, 0)
+})
+
 test('restored snapshot keeps the exact current node instead of resetting to first unanswered local card', () => {
   const state = createFlowState({ entryContent: makeEntry().content, now: '2026-04-10T10:01:00.000Z' })
   const afterFirst = continueLocalNode(state, {

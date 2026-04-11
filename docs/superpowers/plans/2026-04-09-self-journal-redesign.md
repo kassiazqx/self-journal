@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS review_letters (
   period_start timestamptz,
   period_end   timestamptz,
   is_read      boolean DEFAULT false,
-  user_response text,
   created_at   timestamptz DEFAULT now()
 );
 
@@ -179,7 +178,7 @@ git commit -m "feat: 数据库建表(conversations, review_letters)，增列，d
 
 ```js
 // src/lib/emotionMap.js
-// 基础层词库（56词）+ 近义词映射 + mapDisplayToBase()
+// 基础层词库（57词）+ 近义词映射 + mapDisplayToBase()
 // 词库取舍原则：以情感状态独特性为标准，不以出现频率为依据
 
 export const EMOTION_BASE = [
@@ -190,7 +189,7 @@ export const EMOTION_BASE = [
   // 正面（18词）
   '轻松','满足','感激','开心','平静','期待','温暖','喜悦','自豪','踏实',
   '安心','充实','兴奋','爱','敬畏','信任','被信任','悲悯',
-  // 混合（12词）
+  // 混合（13词）
   '迷茫','矛盾','好奇','纠结','释然','依恋','敏感','复杂','惊讶','无聊',
   '尴尬','怀念','同情',
 ]
@@ -315,7 +314,7 @@ window._test(['同情'])
 
 ```bash
 git add src/lib/emotionMap.js
-git commit -m "feat: emotionMap.js 56词基础情绪层 + mapDisplayToBase"
+git commit -m "feat: emotionMap.js 57词基础情绪层 + mapDisplayToBase"
 ```
 
 ---
@@ -509,8 +508,8 @@ import { detectCategories, detectPeople } from '../lib/keywordDetection'
 
 const DRAFT_KEY = 'journal_draft'
 
-export default function HomePage({ onSaved }) {
-  // onSaved(entry, isFreewrite) — 由 MainLayout 传入：
+export default function HomePage({ onDone }) {
+  // onDone(entry, isFreewrite) — 由 MainLayout 传入：
   //   isFreewrite=true  → 直接回列表
   //   isFreewrite=false → 进入 AwarenessFlow
 
@@ -594,7 +593,7 @@ export default function HomePage({ onSaved }) {
     localStorage.removeItem(DRAFT_KEY)
     const entry = data[0]
     const isFreewrite = template.id === 'freewrite'
-    onSaved(entry, isFreewrite)
+    onDone(entry, isFreewrite)
   }
 
   return (
@@ -741,7 +740,7 @@ cd /Users/kassia1/Desktop/个人/noteapp/self-journal
 npm run build
 ```
 
-预期：可能报 `onSaved is not defined`（MainLayout 还没传），这是预期内的——先记录报错，Task 8 里修 MainLayout 时一起解决。如果报的是 import 路径错误，逐一修复。
+预期：可能报 `onDone is not defined`（MainLayout 还没传），这是预期内的——先记录报错，Task 8 里修 MainLayout 时一起解决。如果报的是 import 路径错误，逐一修复。
 
 - [ ] **Step 4：commit**
 
@@ -752,12 +751,12 @@ git commit -m "feat: HomePage 重写，模板横排标签+引导词细竖线+草
 
 ---
 
-## Task 6：AwarenessFlow.jsx（本地觉察流）
+## Task 6：AwarenessFlow.jsx（统一节点流骨架）
 
 **Files:**
 - Create: `src/components/AwarenessFlow.jsx`
 
-> 本 Task 只实现本地问题流（mode='local'）。AI 接手（mode='ai'）在 Task 7 里加。
+> 本 Task 先把统一节点流骨架搭起来：本地卡片允许空白跳过、消息结构能同时容纳本地节点/AI节点/用户回答节点、退出 AI 要回到触发它的本地卡片。AI 具体生成逻辑在 Task 7 里补。
 
 - [ ] **Step 1：写 AwarenessFlow.jsx**
 
@@ -765,19 +764,17 @@ git commit -m "feat: HomePage 重写，模板横排标签+引导词细竖线+草
 
 ```jsx
 // src/components/AwarenessFlow.jsx
-// 单屏专注觉察流。
+// 单屏统一觉察流。
 // Props:
 //   entry: { id, content, template_type, user_id }
-//   onComplete: () => void    全部问题答完后回调（返回记录列表）
-//   onBackToWrite: () => void 用户点「返回写作」时回调
+//   onComplete: () => void                 全部流程结束后回调（回到记录 Tab）
+//   onExit: () => void                     退出当前全屏流
 import { useState, useEffect, useRef } from 'react'
 import { db } from '../lib/db'
 import { getAwarenessStartTier } from '../lib/contentAnalysis'
 import { EMOTION_NEGATIVE } from '../lib/emotionMap'
-import { callAI } from '../lib/aiClient'
 
-// ── 本地觉察问题库 ─────────────────────────────────────────────
-const AWARENESS_QUESTIONS = [
+const LOCAL_NODES = [
   {
     id: 'context', tier: 1,
     text: '能多说一点当时的情况吗？',
@@ -816,7 +813,6 @@ const AWARENESS_QUESTIONS = [
   },
 ]
 
-// ── 保存到 conversations 表 ──────────────────────────────────
 async function upsertConversation(userId, entryId, messages) {
   const { error } = await db.from('conversations').upsert(
     {
@@ -831,56 +827,68 @@ async function upsertConversation(userId, entryId, messages) {
   if (error) console.error('[AwarenessFlow] upsert失败:', error.message)
 }
 
-export default function AwarenessFlow({ entry, onComplete, onBackToWrite }) {
-  const [questions, setQuestions] = useState([])
+function buildLocalNodeMessages(nodes) {
+  return nodes.map(node => ({
+    id: `local:${node.id}`,
+    role: 'local',
+    nodeType: 'local_prompt',
+    promptId: node.id,
+    content: node.text,
+  }))
+}
+
+export default function AwarenessFlow({ entry, onComplete, onExit }) {
+  const [localNodes, setLocalNodes] = useState([])
   const [currentIdx, setCurrentIdx] = useState(0)
   const [answer, setAnswer] = useState('')
-  const [mode, setMode] = useState('local')        // 'local' | 'ai'
-  const [aiQuestion, setAiQuestion] = useState('') // AI 生成的问题文字
+  const [messages, setMessages] = useState([])
+  const [triggerLocalNodeId, setTriggerLocalNodeId] = useState(null) // 进入 AI 时记录来源卡片
+  const [mode, setMode] = useState('local') // 'local' | 'ai'
   const [aiLoading, setAiLoading] = useState(false)
-  const [messages, setMessages] = useState([])     // 完整消息数组（持久化到 conversations）
+  const [aiBlock, setAiBlock] = useState('')
   const messagesRef = useRef([])
-  const [transitioning, setTransitioning] = useState(false)
-  const [opacity, setOpacity] = useState(1)
   const saveRef = useRef(null)
 
-  // 保持 messagesRef 与 state 同步
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  // ── 初始化：读取历史 + 过滤问题 ────────────────────────────
   useEffect(() => {
     async function init() {
-      // 读取已有对话历史
+      const startTier = getAwarenessStartTier(entry.content)
+      const hasNeg = EMOTION_NEGATIVE.some(w => entry.content.includes(w))
+      const filtered = LOCAL_NODES.filter(node => {
+        if (node.tier < startTier) return false
+        if (node.showWhen === 'negative' && !hasNeg) return false
+        return true
+      })
+      setLocalNodes(filtered)
+
       const { data } = await db.from('conversations')
         .select('messages')
         .eq('entry_id', entry.id)
         .eq('context_type', 'entry')
         .single()
+
       if (data?.messages?.length) {
         setMessages(data.messages)
         messagesRef.current = data.messages
       } else {
-        // 把原始写作内容作为第一条消息
-        const raw = [{ role: 'user', content: entry.content,
-          timestamp: new Date().toISOString(), source: 'raw' }]
-        setMessages(raw)
-        messagesRef.current = raw
+        const seed = [
+          {
+            id: 'raw:entry',
+            role: 'user',
+            nodeType: 'raw_entry',
+            content: entry.content,
+            timestamp: new Date().toISOString(),
+          },
+          ...buildLocalNodeMessages(filtered),
+        ]
+        setMessages(seed)
+        messagesRef.current = seed
       }
-
-      // 过滤问题：tier >= startTier，negative 只在有负面情绪词时显示
-      const startTier = getAwarenessStartTier(entry.content)
-      const hasNeg = EMOTION_NEGATIVE.some(w => entry.content.includes(w))
-      const filtered = AWARENESS_QUESTIONS.filter(q => {
-        if (q.tier < startTier) return false
-        if (q.showWhen === 'negative' && !hasNeg) return false
-        return true
-      })
-      setQuestions(filtered)
     }
     init()
   }, [entry.id, entry.content])
 
-  // ── useEffect cleanup：组件卸载时立即保存 ──────────────────
   useEffect(() => {
     return () => {
       if (saveRef.current) clearTimeout(saveRef.current)
@@ -888,182 +896,126 @@ export default function AwarenessFlow({ entry, onComplete, onBackToWrite }) {
     }
   }, [entry.id, entry.user_id])
 
-  // ── debounce 自动保存（800ms）──────────────────────────────
-  function scheduleAutoSave(msgs) {
+  function scheduleAutoSave(nextMessages) {
     if (saveRef.current) clearTimeout(saveRef.current)
     saveRef.current = setTimeout(() => {
-      upsertConversation(entry.user_id, entry.id, msgs)
+      upsertConversation(entry.user_id, entry.id, nextMessages)
     }, 800)
   }
 
-  // ── 当前问题文字 ──────────────────────────────────────────
-  const currentQ = mode === 'ai' ? aiQuestion : (questions[currentIdx]?.text ?? '')
+  const currentLocalNode = localNodes[currentIdx]
+  const currentPrompt = mode === 'ai' ? aiBlock : (currentLocalNode?.text ?? '')
 
-  // ── 点「继续」─────────────────────────────────────────────
-  async function handleNext() {
-    if (!answer.trim()) return
-
+  async function handleContinue() {
     const now = new Date().toISOString()
-    const qMsg = {
-      role: mode === 'ai' ? 'assistant' : 'local',
-      content: currentQ,
-      timestamp: now,
-      source: mode === 'ai' ? 'ai_question' : 'local_question',
-    }
-    const aMsg = {
-      role: 'user', content: answer.trim(),
-      timestamp: now,
-      source: mode === 'ai' ? 'ai_answer' : 'local_answer',
-    }
-    const newMsgs = [...messages, qMsg, aMsg]
-    setMessages(newMsgs)
-    scheduleAutoSave(newMsgs)
 
-    // 渐变过渡
-    setTransitioning(true)
-    setOpacity(0)
-    await new Promise(r => setTimeout(r, 300))
+    if (mode === 'local') {
+      const nextMessages = [...messages]
+      if (answer.trim()) {
+        nextMessages.push({
+          id: `answer:${currentLocalNode.id}:${now}`,
+          role: 'user',
+          nodeType: 'local_answer',
+          promptId: currentLocalNode.id,
+          content: answer.trim(),
+          timestamp: now,
+        })
+      } else {
+        nextMessages.push({
+          id: `skip:${currentLocalNode.id}:${now}`,
+          role: 'system',
+          nodeType: 'local_skip',
+          promptId: currentLocalNode.id,
+          content: '',
+          timestamp: now,
+        })
+      }
 
-    setAnswer('')
-    setMode('local')
+      setMessages(nextMessages)
+      scheduleAutoSave(nextMessages)
+      setAnswer('')
 
-    const nextIdx = currentIdx + 1
-    if (nextIdx >= questions.length) {
-      // 全部问完，立即保存后返回
-      if (saveRef.current) clearTimeout(saveRef.current)
-      await upsertConversation(entry.user_id, entry.id, newMsgs)
-      onComplete()
+      const nextIdx = currentIdx + 1
+      if (nextIdx >= localNodes.length) {
+        if (saveRef.current) clearTimeout(saveRef.current)
+        await upsertConversation(entry.user_id, entry.id, nextMessages)
+        onComplete()
+        return
+      }
+      setCurrentIdx(nextIdx)
       return
     }
-    setCurrentIdx(nextIdx)
-    setTransitioning(false)
-    setOpacity(1)
+
+    if (!answer.trim()) return
+
+    const nextMessages = [
+      ...messages,
+      {
+        id: `ai:${now}`,
+        role: 'assistant',
+        nodeType: 'ai_prompt',
+        promptId: triggerLocalNodeId,
+        content: aiBlock,
+        timestamp: now,
+      },
+      {
+        id: `ai-answer:${now}`,
+        role: 'user',
+        nodeType: 'ai_answer',
+        promptId: triggerLocalNodeId,
+        content: answer.trim(),
+        timestamp: now,
+      },
+    ]
+    setMessages(nextMessages)
+    scheduleAutoSave(nextMessages)
+    setAnswer('')
   }
 
-  // ── 保存并退出 ──────────────────────────────────────────
-  async function handleSaveExit() {
-    if (saveRef.current) clearTimeout(saveRef.current)
-    await upsertConversation(entry.user_id, entry.id, messagesRef.current)
-    onComplete()
+  function handleExit() {
+    onExit()
   }
 
-  // ── 返回写作 ────────────────────────────────────────────
-  function handleBackToWrite() {
-    // cleanup useEffect 会触发立即保存
-    onBackToWrite()
+  function handlePauseAI() {
+    setMode('local')
+    setAiBlock('')
+    const fallbackIdx = localNodes.findIndex(node => node.id === triggerLocalNodeId)
+    if (fallbackIdx >= 0) setCurrentIdx(fallbackIdx)
   }
 
-  if (questions.length === 0) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
-        加载中…
-      </div>
-    )
+  if (!localNodes.length) {
+    return <div>加载中…</div>
   }
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      height: '100%', background: '#faf8f4', position: 'relative',
-    }}>
-
-      {/* 顶部导航 */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between',
-        padding: '12px 18px 0', fontSize: 12, color: '#bbb',
-      }}>
-        <button onClick={handleBackToWrite}
-          style={{ background: 'none', border: 'none', color: '#bbb',
-            cursor: 'pointer', fontSize: 12 }}>
-          ← 返回写作
-        </button>
-        <button onClick={handleSaveExit}
-          style={{ background: 'none', border: 'none', color: '#bbb',
-            cursor: 'pointer', fontSize: 12 }}>
-          保存并退出
-        </button>
+    <div>
+      <div>
+        <button onClick={handleExit}>退出</button>
+        {mode === 'ai' && <button onClick={handlePauseAI}>返回本地卡片</button>}
       </div>
 
-      {/* 问题 + 答案区（渐变切换） */}
-      <div style={{
-        flex: 1, padding: '28px 24px 80px',
-        display: 'flex', flexDirection: 'column', gap: 20,
-        opacity, transition: 'opacity 0.3s ease',
-      }}>
-        {/* 问题文字 */}
-        <div style={{ fontSize: 15, fontWeight: 500, color: '#333', lineHeight: 1.65 }}>
-          {mode === 'ai' && (
-            <span style={{ fontSize: 10, color: '#ccc', marginRight: 4 }}>✦</span>
-          )}
-          {aiLoading ? (
-            <span className="loading-dots">
-              <span /><span /><span />
-            </span>
-          ) : currentQ}
-        </div>
-
-        {/* 回答输入区 */}
-        <textarea
-          value={answer}
-          onChange={e => setAnswer(e.target.value)}
-          placeholder="写下你的回答…"
-          autoFocus
-          style={{
-            flex: 1, border: 'none', outline: 'none',
-            background: 'transparent', resize: 'none',
-            fontSize: 15, lineHeight: 1.85, color: '#2d2d2d',
-            fontFamily: 'inherit', caretColor: '#aaa',
-            padding: 0,
-          }}
-        />
+      <div>
+        {mode === 'ai' && <span>✦</span>}
+        <div>{aiLoading ? '生成中…' : currentPrompt}</div>
       </div>
 
-      {/* 底部浮动栏 */}
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        padding: '8px 18px 22px',
-        background: 'linear-gradient(transparent, #faf8f4 38%)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        {/* 左：AI 切换按钮（本 Task 暂不实现 AI 调用，占位） */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: '50%',
-            background: '#f0ece4', border: '1px solid #ddd8cf',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, color: '#b8a88a',
-          }}>✦</div>
-          <span style={{ fontSize: 10, color: '#ccc' }}>深入觉察</span>
-        </div>
+      <textarea
+        value={answer}
+        onChange={e => setAnswer(e.target.value)}
+        placeholder={mode === 'ai' ? '继续回应这个引导…' : '写下你的回答，或直接点继续跳过…'}
+      />
 
-        {/* 右：继续按钮 */}
+      <div>
+        <button>
+          ✦ 深入觉察
+        </button>
         <button
-          onClick={handleNext}
-          disabled={!answer.trim() || transitioning}
-          style={{
-            padding: '10px 20px', borderRadius: 20,
-            background: answer.trim() ? '#2d2928' : '#e0dbd4',
-            color: answer.trim() ? 'white' : '#aaa',
-            fontSize: 13, border: 'none', cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
+          onClick={handleContinue}
+          disabled={mode === 'ai' ? !answer.trim() : false}
         >
-          继续 →
+          继续
         </button>
       </div>
-
-      {/* loading dots 动画 */}
-      <style>{`
-        .loading-dots span {
-          display: inline-block; width: 5px; height: 5px;
-          border-radius: 50%; background: #ccc; margin: 0 2px;
-          animation: af-blink 1.2s step-end infinite;
-        }
-        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes af-blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-      `}</style>
     </div>
   )
 }
@@ -1075,18 +1027,18 @@ export default function AwarenessFlow({ entry, onComplete, onBackToWrite }) {
 npm run build
 ```
 
-预期：无编译错误（AwarenessFlow 还没被任何页面 import，所以不会有 prop 类型报错）。
+预期：无编译错误（AwarenessFlow 还没被完整接进 AI prompt 逻辑，所以这里只验证骨架和 props 正常）。
 
 - [ ] **Step 3：commit**
 
 ```bash
 git add src/components/AwarenessFlow.jsx
-git commit -m "feat: AwarenessFlow 本地觉察流（问题过滤+渐变切换+debounce保存）"
+git commit -m "feat: AwarenessFlow 统一节点流骨架与空白跳过"
 ```
 
 ---
 
-## Task 7：AwarenessFlow AI 接手 + prompts.js 新增
+## Task 7：AwarenessFlow AI 引导块 + prompts.js 新增
 
 **Files:**
 - Modify: `src/components/AwarenessFlow.jsx`
@@ -1106,24 +1058,31 @@ tail -20 src/lib/prompts.js
 ```js
 // ─── AwarenessFlow 单屏模式系统 prompt ─────────────────────────
 export const AWARENESS_SYSTEM_PROMPT =
-  `你是一位温和的倾听者，陪伴用户探索自己的情绪和想法。
+  `你是一位温和、敏锐、克制的觉察引导者。
 
-【单屏模式特别说明】
-当前是单屏专注模式，每次只问一个问题。只返回问题本身，不要加"我注意到你…"等共情前缀，不要解释为什么问这个问题。直接给出问题。
+【输出形式】
+你每轮都只返回一个“精炼引导块”，结构固定为：
+1. 1句轻微共情 / 命名，承接用户当下状态
+2. 1句你看到的线索、盲区、内在张力或可能关联
+3. 1个开放式问题
 
-【对话原则】
-- 从已有的问答上下文出发，问还没问过的
-- 不重复用户已经写清楚的内容
-- 只问开放式问题，不问封闭式（是/否）
-- 如果用户已经说得很充分，可以问一个轻柔的收尾问题（如"写完这些，有什么新的发现吗？"）`
+【限制】
+- 总长度控制在半屏以内
+- 不要长篇分析
+- 不要只丢一句干巴巴的问题
+- 不要变成说教、总结报告或课程讲解
+- 允许跨主题推进，不必受当前本地卡片主题限制
+- 如果用户已经说得很充分，可以给更轻的收束式引导`
 
 // ─── 构建传给 AI 的上下文 ──────────────────────────────────────
 export function buildAwarenessContext(rawContent, answeredMessages) {
   const qaText = answeredMessages
-    .filter(m => m.source !== 'raw')
+    .filter(m => m.nodeType !== 'raw_entry' && m.nodeType !== 'local_skip')
     .map(m => {
-      if (m.role === 'local' || m.role === 'assistant') return `问：${m.content}`
-      if (m.role === 'user') return `答：${m.content}`
+      if (m.nodeType === 'local_prompt') return `本地卡片：${m.content}`
+      if (m.nodeType === 'local_answer') return `用户回答：${m.content}`
+      if (m.nodeType === 'ai_prompt') return `AI引导：${m.content}`
+      if (m.nodeType === 'ai_answer') return `用户回应AI：${m.content}`
       return ''
     })
     .filter(Boolean)
@@ -1131,7 +1090,7 @@ export function buildAwarenessContext(rawContent, answeredMessages) {
 
   return `用户刚才写道：\n${rawContent}\n\n` +
     (qaText ? `已经聊到的部分：\n${qaText}\n\n` : '') +
-    `请根据对话上下文，提出下一个最合适的问题。只返回问题本身，不要加任何前缀或解释。`
+    `请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。`
 }
 ```
 
@@ -1139,96 +1098,120 @@ export function buildAwarenessContext(rawContent, answeredMessages) {
 
 在 `src/components/AwarenessFlow.jsx` 里做以下修改：
 
-**2a：在文件顶部的 import 里加 prompts 导入**（找到现有 import callAI 那行，在它后面加）：
+**2a：在文件顶部 import 里加入 AI 依赖**：
 
 ```js
+import { callAI } from '../lib/aiClient'
 import { AWARENESS_SYSTEM_PROMPT, buildAwarenessContext } from '../lib/prompts'
 ```
 
-**2b：把底部「✦ 深入觉察」按钮的 `<div>` 改成可点击的 `<button>`**，找到这段：
+**2b：把底部「✦ 深入觉察」按钮改成可点击按钮，并把按钮行为定义清楚：**
+- 当前处于本地模式：点击后
+  - 记录 `triggerLocalNodeId = currentLocalNode.id`
+  - 调用 AI 生成一个新的引导块
+  - 切到 `mode='ai'`
+- 当前处于 AI 模式：按钮文案显示 `× 暂停引导`，点击后
+  - 不删除已生成的 AI 节点
+  - 只退出 AI 输入态
+  - 立刻回到触发它的那张本地卡片
+
+把底部按钮区替换成：
 
 ```jsx
-        {/* 左：AI 切换按钮（本 Task 暂不实现 AI 调用，占位） */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: '50%',
-            background: '#f0ece4', border: '1px solid #ddd8cf',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, color: '#b8a88a',
-          }}>✦</div>
-          <span style={{ fontSize: 10, color: '#ccc' }}>深入觉察</span>
-        </div>
+<div>
+  <button onClick={handleToggleAI} disabled={aiLoading}>
+    {mode === 'ai' ? '✦ × 暂停引导' : '✦ 深入觉察'}
+  </button>
+  <button
+    onClick={handleContinue}
+    disabled={mode === 'ai' ? !answer.trim() : false}
+  >
+    继续
+  </button>
+</div>
 ```
 
-替换为：
-
-```jsx
-        {/* 左：AI 切换按钮 */}
-        <button
-          onClick={handleToggleAI}
-          disabled={aiLoading}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          }}
-        >
-          <div style={{
-            width: 30, height: 30, borderRadius: '50%',
-            background: mode === 'ai' ? '#f0ece4' : '#f0ece4',
-            border: `1px solid ${mode === 'ai' ? '#c9a96e' : '#ddd8cf'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, color: '#b8a88a',
-          }}>✦</div>
-          <span style={{ fontSize: 10, color: '#ccc' }}>
-            {mode === 'ai' ? '× 暂停引导' : '深入觉察'}
-          </span>
-        </button>
-```
-
-**2c：在组件内部（`handleBackToWrite` 函数之后）加 `handleToggleAI` 函数**：
+**2c：在组件内部加入 `handleToggleAI`**：
 
 ```js
-  // ── 切换 AI 模式 ────────────────────────────────────────────
-  async function handleToggleAI() {
-    if (mode === 'ai') {
-      // 切回本地模式
-      setMode('local')
-      setAiQuestion('')
-      return
-    }
-
-    // 切入 AI 模式：调用 AI 生成下一个问题
-    setMode('ai')
-    setAiLoading(true)
-    try {
-      const ctx = buildAwarenessContext(entry.content, messagesRef.current)
-      const raw = await callAI(
-        [{ role: 'user', content: ctx }],
-        AWARENESS_SYSTEM_PROMPT,
-        { maxTokens: 150 }
-      )
-      // 取第一个非空行
-      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
-      const q = lines[0] ?? ''
-      if (q) {
-        setAiQuestion(q)
-      } else {
-        // AI 返回为空：降级到随机 tier=3 问题
-        const fallback = AWARENESS_QUESTIONS.find(q => q.tier === 3) ?? AWARENESS_QUESTIONS[0]
-        setAiQuestion(fallback.text)
-        setMode('local')
-      }
-    } catch (e) {
-      console.error('[AwarenessFlow] AI 调用失败:', e)
-      // 失败：降级到随机 tier=3 问题，保持 local 模式
-      const fallback = AWARENESS_QUESTIONS.find(q => q.tier === 3) ?? AWARENESS_QUESTIONS[0]
-      setAiQuestion(fallback.text)
-      setMode('local')
-    } finally {
-      setAiLoading(false)
-    }
+async function handleToggleAI() {
+  if (mode === 'ai') {
+    setMode('local')
+    setAiBlock('')
+    const fallbackIdx = localNodes.findIndex(node => node.id === triggerLocalNodeId)
+    if (fallbackIdx >= 0) setCurrentIdx(fallbackIdx)
+    return
   }
+
+  setTriggerLocalNodeId(currentLocalNode.id)
+  setAiLoading(true)
+  try {
+    const ctx = buildAwarenessContext(entry.content, messagesRef.current)
+    const raw = await callAI(
+      [{ role: 'user', content: ctx }],
+      AWARENESS_SYSTEM_PROMPT,
+      { maxTokens: 220 }
+    )
+    const block = raw.trim()
+    if (!block) throw new Error('empty awareness block')
+
+    const now = new Date().toISOString()
+    const nextMessages = [
+      ...messagesRef.current,
+      {
+        id: `ai:${now}`,
+        role: 'assistant',
+        nodeType: 'ai_prompt',
+        promptId: currentLocalNode.id,
+        content: block,
+        timestamp: now,
+      },
+    ]
+    setMessages(nextMessages)
+    messagesRef.current = nextMessages
+    scheduleAutoSave(nextMessages)
+    setAiBlock(block)
+    setMode('ai')
+  } catch (e) {
+    console.error('[AwarenessFlow] AI 调用失败:', e)
+    setMode('local')
+    setAiBlock('')
+  } finally {
+    setAiLoading(false)
+  }
+}
 ```
+
+**2d：把 `handleContinue` 的 AI 分支改成“只追加用户回答，不自动跳到下一张本地卡片”**：
+
+```js
+if (mode === 'ai') {
+  if (!answer.trim()) return
+
+  const now = new Date().toISOString()
+  const nextMessages = [
+    ...messages,
+    {
+      id: `ai-answer:${now}`,
+      role: 'user',
+      nodeType: 'ai_answer',
+      promptId: triggerLocalNodeId,
+      content: answer.trim(),
+      timestamp: now,
+    },
+  ]
+  setMessages(nextMessages)
+  scheduleAutoSave(nextMessages)
+  setAnswer('')
+  return
+}
+```
+
+这里要特别注明：
+- AI 节点与本地节点是统一流中的同级节点，不是“卡片子对话”
+- 退出 AI 时回到触发它的本地卡片
+- 不做“AI 已覆盖该方向，可以直接跳过”的提示 UI
+- 本地卡片是否跳过，仍由用户手动点「继续」决定
 
 - [ ] **Step 3：build 检查**
 
@@ -1242,7 +1225,7 @@ npm run build
 
 ```bash
 git add src/components/AwarenessFlow.jsx src/lib/prompts.js
-git commit -m "feat: AwarenessFlow AI 接手（✦按钮切换模式，降级处理）"
+git commit -m "feat: AwarenessFlow AI 引导块与统一节点切换"
 ```
 
 ---
@@ -1338,9 +1321,10 @@ export default function MainLayout() {
     goTab('records')
   }
 
-  // ── AwarenessFlow 返回写作 ──────────────────────────────────
-  function handleAwarenessBackToWrite() {
-    pop()   // 退出 AwarenessFlow，回到写作页
+  // ── AwarenessFlow 退出（onExit）──────────────────────────────
+  // 用户点退出时 pop 回上一层（写作页或记录详情）
+  function handleAwarenessExit() {
+    pop()
   }
 
   // ── RecordsPage 打开详情 ────────────────────────────────────
@@ -1366,7 +1350,7 @@ export default function MainLayout() {
         <AwarenessFlow
           entry={screen.entry}
           onComplete={handleAwarenessComplete}
-          onBackToWrite={handleAwarenessBackToWrite}
+          onExit={handleAwarenessExit}
         />
       )
     }
@@ -1395,7 +1379,7 @@ export default function MainLayout() {
   function renderTab() {
     switch (activeTab) {
       case 'write':
-        return <HomePage onSaved={handleHomeSaved} />
+        return <HomePage onDone={handleHomeSaved} />
       case 'records':
         return (
           <RecordsPage
@@ -1504,7 +1488,8 @@ npm run dev
 - 底部导航有 4 个 Tab（写/记录/洞察/设置）
 - 写作页正常显示模板标签栏和输入框
 - 写入内容点 ✓，非随记模板进入 AwarenessFlow 界面
-- 「返回写作」能回到写作页
+- AwarenessFlow 里点「退出」能回到上一层（写作页）
+- 本地卡片不写任何内容直接点「继续」也能跳过，不报错
 
 - [ ] **Step 6：commit**
 
@@ -2465,13 +2450,13 @@ export async function generateLetterNow(userId) {
 }
 ```
 
-- [ ] **Step 3：写 ReviewLetterDetail.jsx**
+- [ ] **Step 3：写只读版 ReviewLetterDetail.jsx**
 
 新建 `src/components/ReviewLetterDetail.jsx`：
 
 ```jsx
 // src/components/ReviewLetterDetail.jsx
-// 回顾信详情页：显示信的正文、关联记录跳转、用户回应输入
+// 回顾信详情页：只读展示信正文、关联记录跳转、预留 threads 入口
 import { useState, useEffect } from 'react'
 import { db } from '../lib/db'
 
@@ -2483,9 +2468,6 @@ function formatPeriod(start, end) {
 
 export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOpenEntry }) {
   const [letter, setLetter] = useState(initialLetter)
-  const [response, setResponse] = useState(initialLetter.user_response ?? '')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
 
   // 进入后标记已读
   useEffect(() => {
@@ -2496,18 +2478,6 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
         .then(() => setLetter(l => ({ ...l, is_read: true })))
     }
   }, [letter?.id])
-
-  async function handleSaveResponse() {
-    setSaving(true)
-    const { error } = await db.from('review_letters')
-      .update({ user_response: response })
-      .eq('id', letter.id)
-    setSaving(false)
-    if (!error) {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    }
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
@@ -2562,36 +2532,12 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
           </div>
         )}
 
-        {/* 分隔线 */}
-        <div style={{ borderTop: '1px solid #ede9e2', marginBottom: 16 }} />
-
-        {/* 用户回应 */}
-        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>你的回应</div>
-        <textarea
-          value={response}
-          onChange={e => setResponse(e.target.value)}
-          placeholder="看完这封信，你有什么想说的……"
-          style={{
-            width: '100%', minHeight: 100,
-            border: '1px solid #ede9e2', borderRadius: 10,
-            padding: 12, fontSize: 14, lineHeight: 1.7,
-            color: '#2d2d2d', fontFamily: 'inherit',
-            background: 'white', resize: 'none', outline: 'none',
-            boxSizing: 'border-box', caretColor: '#aaa',
-          }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-          <button
-            onClick={handleSaveResponse}
-            disabled={saving}
-            style={{
-              fontSize: 13, background: '#2d2928', color: 'white',
-              border: 'none', borderRadius: 10, padding: '8px 16px',
-              cursor: 'pointer',
-            }}
-          >
-            {saved ? '已保存 ✓' : (saving ? '保存中…' : '保存回应')}
-          </button>
+        {/* 相关 threads（当前先占位，后续接真实数据） */}
+        <div style={{ borderTop: '1px solid #ede9e2', paddingTop: 16 }}>
+          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>相关 threads</div>
+          <div style={{ fontSize: 12, color: '#bbb', lineHeight: 1.6 }}>
+            当前版本先不接回顾信回复和 AI 对话；后续 threads 系统上线后，从这里承接延展入口。
+          </div>
         </div>
       </div>
     </div>
@@ -3049,5 +2995,7 @@ git commit -m "chore: 删除废弃文件 TaggingPage、ReflectionPage、localDB.
 ```
 
 > **Phase 2 预留（本次不实现）：**
-> - 回顾信详情页的「✦ 深入觉察」按钮（进入 AwarenessFlow，`context_type='letter'`）——DB 结构已预留 `conversations.letter_id` 外键，等 Phase 2 再接。
+> - 回顾信详情页当前为只读：展示正文、关联记录、预留 threads 入口；不做回复输入框，不接入 `context_type='letter'` AI 对话。
+> - 未来若从回顾信发起写作，不是写 `review_letters.user_response`，而是创建新的正常 `journal_entry`，并通过通用来源字段（建议：`origin_context_type` / `origin_context_id`）与回顾信双向关联。
+> - 相关延展讨论优先放到 threads 系统承接；回顾信只作为触发入口之一。
 > - `journalService.js` 全量迁移到 `db.js`——本次新增代码已遵守规范，存量代码等专项重构。

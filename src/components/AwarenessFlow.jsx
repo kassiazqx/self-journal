@@ -73,22 +73,37 @@ export default function AwarenessFlow({
     if (initDoneRef.current) return
     initDoneRef.current = true
 
+    const immediateState = createFlowState({
+      entryContent: entry.content,
+      now: new Date().toISOString(),
+      snapshot: initialFlowState || null,
+      messages: null,
+    })
+    setFlowState(immediateState)
+    setCurrentAnswer(getDraftAnswer(immediateState))
+    setAiLoading(false)
+    setAiError('')
+
     async function init() {
+      if (initialFlowState) return
+
       const { data } = await db.from('conversations')
         .select('messages')
         .eq('entry_id', entry.id)
         .eq('context_type', 'entry')
         .maybeSingle()
 
-      const nextState = createFlowState({
+      if (!Array.isArray(data?.messages) || data.messages.length === 0) return
+
+      const restoredState = createFlowState({
         entryContent: entry.content,
         now: new Date().toISOString(),
-        snapshot: initialFlowState || null,
-        messages: initialFlowState ? null : (Array.isArray(data?.messages) ? data.messages : null),
+        snapshot: null,
+        messages: data.messages,
       })
 
-      setFlowState(nextState)
-      setCurrentAnswer(getDraftAnswer(nextState))
+      setFlowState(restoredState)
+      setCurrentAnswer(getDraftAnswer(restoredState))
       setAiLoading(false)
       setAiError('')
     }

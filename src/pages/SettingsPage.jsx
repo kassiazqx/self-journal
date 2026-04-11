@@ -4,6 +4,8 @@ import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { fetchAllEntries } from '../lib/journalService'
 import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
+import { generateLetterNow, saveUserLetterPrefs } from '../lib/reviewLetterService'
+import { updateMemory } from '../lib/memory'
 
 const PROVIDERS = [
   {
@@ -34,6 +36,11 @@ export default function SettingsPage() {
   const [exportError, setExportError] = useState('')
   const [updatingMemory, setUpdatingMemory] = useState(false)
   const [memoryUpdateMsg, setMemoryUpdateMsg] = useState('')
+  const [letterPrefs, setLetterPrefs] = useState({
+    type: 'count', count_threshold: 10, day_interval: 7, require_new_entries: true,
+  })
+  const [generatingLetter, setGeneratingLetter] = useState(false)
+  const [letterMsg, setLetterMsg] = useState('')
 
   // 触发浏览器下载
   function downloadFile(content, filename, mimeType) {
@@ -333,6 +340,67 @@ export default function SettingsPage() {
               }
             </button>
           </div>
+        </div>
+
+        {/* ─── 回顾信设置 ─── */}
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #ede9e2' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 14 }}>
+            回顾信设置
+          </div>
+
+          {/* 触发方式 */}
+          {[
+            { value: 'days',   label: `每隔 ${letterPrefs.day_interval} 天自动生成` },
+            { value: 'count',  label: `累积 ${letterPrefs.count_threshold} 条情感记录后生成` },
+            { value: 'manual', label: '手动生成' },
+          ].map(opt => (
+            <label key={opt.value} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              fontSize: 14, color: '#333', marginBottom: 12, cursor: 'pointer',
+            }}>
+              <input
+                type="radio"
+                name="letterTrigger"
+                value={opt.value}
+                checked={letterPrefs.type === opt.value}
+                onChange={() => {
+                  const updated = { ...letterPrefs, type: opt.value }
+                  setLetterPrefs(updated)
+                  saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(user.id, patch))
+                }}
+              />
+              {opt.label}
+            </label>
+          ))}
+
+          {/* 立即生成按钮 */}
+          <button
+            onClick={async () => {
+              setGeneratingLetter(true)
+              setLetterMsg('')
+              try {
+                await generateLetterNow(user.id)
+                setLetterMsg('✓ 已生成，去记录页查看')
+              } catch (e) {
+                setLetterMsg('生成失败，请稍后重试')
+              } finally {
+                setGeneratingLetter(false)
+              }
+            }}
+            disabled={generatingLetter}
+            style={{
+              marginTop: 4, fontSize: 13, color: '#888',
+              border: '1px solid #e0dbd4', borderRadius: 8,
+              padding: '8px 16px', background: 'none', cursor: 'pointer',
+            }}
+          >
+            {generatingLetter ? '生成中…' : '立即生成一封回顾信'}
+          </button>
+          {letterMsg && (
+            <div style={{ fontSize: 12, color: '#aaa', marginTop: 8 }}>
+              {letterMsg}
+            </div>
+          )}
         </div>
 
         {/* 分割线 */}
