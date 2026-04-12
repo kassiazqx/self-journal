@@ -184,8 +184,10 @@ src/
 │   ├── reviewLetterService.js  回顾信触发 + 生成
 │   ├── awarenessFlowState.js   觉察流状态机
 │   ├── awarenessFlowState.test.js
-│   ├── conversationMessages.js  消息格式处理（⚠️ 无生产代码依赖，仅 test 文件引用，待第二批确认后删除）
-│   └── conversationMessages.test.js
+│   ├── extractSummaryService.js     摘要索引批量提取服务（第二批新增）
+│   ├── extractSummaryService.test.js
+│   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary（第二批新增）
+│   └── threadService.test.js
 ├── components/
 │   ├── MainLayout.jsx          4-Tab导航（写/记录/洞察/我的）+ 全屏覆盖层管理
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
@@ -195,7 +197,11 @@ src/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+引导词+草稿恢复）
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
-    ├── InsightsPage.jsx        洞察页（图表+最新回顾信预览；第二批加 threads/回顾信列表入口）
+    ├── InsightsPage.jsx        洞察页（回顾信+脉络入口区块 + 图表；第二批完成）
+    ├── ThreadsPage.jsx         脉络列表页（第二批新增）
+    ├── ThreadDetailPage.jsx    脉络详情页（第二批新增）
+    ├── ReviewLetterListPage.jsx 回顾信列表页（第二批新增）
+    ├── EditEntryPage.jsx       统一编辑器（原文+觉察流，第二批新增）
     └── SettingsPage.jsx        我的页（AI配置/API Key/测试连接/AI记忆/数据导出/退出登录/回顾信设置）
 ```
 
@@ -229,6 +235,16 @@ review_letters：
   - id, user_id, entry_ids(uuid[]), content, insights(jsonb)
   - trigger_type: 'count' | 'days' | 'manual'
   - period_start, period_end, is_read
+  - insights v1: {recurring_emotions,...} / v2: {suggested_threads:[{action,thread_id,thread_name}]}
+
+threads：（第二批新增）
+  - id, user_id, name, status('candidate'|'confirmed'|'archived')
+  - arc_summary, arc_updated_at, created_at, updated_at
+
+thread_entries：（第二批新增，无 user_id，RLS 通过 threads 子查询）
+  - thread_id → threads, entry_id → journal_entries
+  - added_at, added_by('ai'|'user')
+  - PRIMARY KEY (thread_id, entry_id)
 
 user_memory：
   - 每用户一行，rolling_summary + user_profile(jsonb)
@@ -265,10 +281,10 @@ user_options：
 **已修复：** 已删除 localDB.js（代码 session 阶段二实现时）
 **优先级：** 已处理
 
-### 4.5 conversationMessages.js 无生产代码依赖
+### 4.5 conversationMessages.js 无生产代码依赖（已删除）
 **风险：** 文件存在但无任何生产代码 import（只有 conversationMessages.test.js 引用），造成维护混乱、可能被误认为是有效路径
-**当前处理：** 暂时保留，等阶段二 threads 功能确认后再决定是否删除；test 文件提供了消息格式的规格说明，有保留价值
-**优先级：** 低（但每次涉及消息格式时必须确认：生产路径走 AwarenessFlow 直接组装，不走此文件）
+**已修复：** 第二批功能确认完成后删除（2026-04-12）
+**优先级：** 已处理
 
 ### 4.6 reviewLetterService.generateReviewLetter 读全文传 AI（与新 spec 不符）
 **风险：** 现有实现读原始 content 字段传给 AI；新 spec §5.2 要求改为读 entry_summary + theme_hints + core_needs，不传原始 content
