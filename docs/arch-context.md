@@ -410,6 +410,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-12 · 代码session · 收尾补漏：suggested_threads→threads落库（candidate脉络生成闭环）；ThreadsPage长按删除菜单+归档占位；RecordsPage未读信左侧金线；MainLayout四Tab同时挂载消除来回切换加载
 - 2026-04-12 · 代码session · 完成第二批功能全量实现（Task 1-12）：DB建表+RLS；reviewLetterService重构（摘要索引/covered_by_letter_id回写/suggested_threads→threads落库）；extractSummaryService/threadService新建；ThreadsPage/ThreadDetailPage/ReviewLetterListPage新建；RecordDetail摘要索引区+EditableFieldRow+脉络标签；HomePage未读回顾信气泡；MainLayout连线所有新屏幕；额外新增EditEntryPage统一编辑器/RecordsPage长按编辑删除/ThreadsPage新建时选记录+已确认脉络长按删除
 - 2026-04-12 · 架构session · emotionMap.js 词库扩展完成：58词→61词（+渴望/敬佩/欣赏，完整覆盖 Cowen & Keltner 27种情绪）；崇敬从敬畏组移入敬佩组；§2.4 同步更新
 - 2026-04-11 · 架构session · 对 spec+plan 做联合架构兼容性终审：4.4标注已删除；新增4.14（动态import风险）、4.15（insights JSONB版本断层）；新增§5.8 insights字段兼容策略；确认所有§2约束无违反，Plan Task 1/2/3/4 架构正确
