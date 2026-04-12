@@ -113,7 +113,7 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
           <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>回顾信</span>
           {allLetters.length > 0 && (
             <button
-              onClick={onOpenLetterList}
+              onClick={() => onOpenLetterList?.(allLetters)}
               style={{ fontSize: 11, color: '#c9a96e', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               查看全部 →
@@ -123,7 +123,7 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
         {latestLetter ? (
           <div style={{ background: '#fffdf8', border: '1px solid #f0e8d4',
             borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}
-            onClick={onOpenLetterList}>
+            onClick={() => onOpenLetterList?.(allLetters)}>
             <div style={{ fontSize: 11, color: '#c9a96e', marginBottom: 6 }}>
               ✉ 最新回顾信
               {!latestLetter.is_read && (

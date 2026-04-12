@@ -1,6 +1,6 @@
 // src/components/MainLayout.jsx
 // 4 Tab 导航：写 / 记录 / 洞察 / 我的
-// 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail）
+// 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail 等）
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
@@ -11,6 +11,10 @@ import InsightsPage from '../pages/InsightsPage'
 import AwarenessFlow from './AwarenessFlow'
 import RecordDetail from './RecordDetail'
 import ReviewLetterDetail from './ReviewLetterDetail'
+import ReviewLetterListPage from '../pages/ReviewLetterListPage'
+import ThreadsPage from '../pages/ThreadsPage'
+import ThreadDetailPage from '../pages/ThreadDetailPage'
+import EditEntryPage from '../pages/EditEntryPage'
 
 const NAV_ITEMS = [
   { id: 'write',    label: '写',   icon: null },
@@ -27,6 +31,7 @@ export default function MainLayout() {
   })
   const [screens, setScreens] = useState([])
   const [refreshKey, setRefreshKey] = useState(0)
+  const [detailRefreshToken, setDetailRefreshToken] = useState(0)
 
   // 清理旧版导航栈 localStorage（一次性）
   useEffect(() => {
@@ -79,6 +84,33 @@ export default function MainLayout() {
     push({ type: 'letter', letter })
   }
 
+  // ── InsightsPage 打开回顾信列表 ─────────────────────────────
+  function handleOpenLetterList(letters) {
+    push({ type: 'letterList', letters: letters ?? [] })
+  }
+
+  // ── InsightsPage / ThreadsPage 打开脉络列表 ─────────────────
+  function handleOpenThreads() {
+    push({ type: 'threads' })
+  }
+
+  // ── InsightsPage / ThreadsPage 打开脉络详情 ─────────────────
+  function handleOpenThread(thread) {
+    push({ type: 'threadDetail', thread })
+  }
+
+  // ── 编辑记录入口（RecordsPage 长按 / RecordDetail 编辑按钮）──
+  function handleEditEntry(entry) {
+    push({ type: 'editEntry', entry })
+  }
+
+  // ── EditEntryPage 保存完成 ───────────────────────────────────
+  function handleEditSaved() {
+    setDetailRefreshToken(t => t + 1) // 让 RecordDetail 重新拉取数据
+    setRefreshKey(k => k + 1)         // 让 RecordsPage 刷新列表
+    pop()
+  }
+
   // ── RecordDetail 打开 AwarenessFlow ────────────────────────
   function handleOpenAwarenessFromDetail(entry) {
     push({ type: 'awareness', entry })
@@ -105,6 +137,8 @@ export default function MainLayout() {
           entry={screen.entry}
           onBack={pop}
           onOpenAwareness={handleOpenAwarenessFromDetail}
+          onEdit={handleEditEntry}
+          refreshToken={detailRefreshToken}
         />
       )
     }
@@ -119,6 +153,45 @@ export default function MainLayout() {
       )
     }
 
+    if (screen.type === 'letterList') {
+      return (
+        <ReviewLetterListPage
+          letters={screen.letters}
+          onBack={pop}
+          onOpenLetter={letter => push({ type: 'letter', letter })}
+        />
+      )
+    }
+
+    if (screen.type === 'threads') {
+      return (
+        <ThreadsPage
+          onBack={pop}
+          onOpenThread={handleOpenThread}
+        />
+      )
+    }
+
+    if (screen.type === 'threadDetail') {
+      return (
+        <ThreadDetailPage
+          thread={screen.thread}
+          onBack={pop}
+          onOpenEntry={entry => push({ type: 'detail', entry })}
+        />
+      )
+    }
+
+    if (screen.type === 'editEntry') {
+      return (
+        <EditEntryPage
+          entry={screen.entry}
+          onBack={pop}
+          onDone={handleEditSaved}
+        />
+      )
+    }
+
     return null
   }
 
@@ -126,17 +199,24 @@ export default function MainLayout() {
   function renderTab() {
     switch (activeTab) {
       case 'write':
-        return <HomePage onDone={handleHomeSaved} />
+        return <HomePage onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
       case 'records':
         return (
           <RecordsPage
             key={refreshKey}
             onOpenDetail={handleOpenDetail}
             onOpenLetter={handleOpenLetter}
+            onEdit={handleEditEntry}
           />
         )
       case 'insights':
-        return <InsightsPage />
+        return (
+          <InsightsPage
+            onOpenLetterList={handleOpenLetterList}
+            onOpenThreads={handleOpenThreads}
+            onOpenThread={handleOpenThread}
+          />
+        )
       case 'mine':
         return <SettingsPage />
       default:

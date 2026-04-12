@@ -90,7 +90,7 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
   )
 }
 
-export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness }) {
+export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness, onEdit, refreshToken }) {
   const [entry, setEntry] = useState(initialEntry)
   const [messages, setMessages] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
@@ -106,7 +106,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   const tpl = resolveTemplate(entry.template_type)
 
-  // 读取完整 entry 数据（列表页传来的对象可能是简化版）
+  // 读取完整 entry 数据（列表页传来的对象可能是简化版；refreshToken 变化时重新拉取）
   useEffect(() => {
     async function loadFull() {
       const { data } = await db.from('journal_entries')
@@ -114,9 +114,9 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       if (data) setEntry(data)
     }
     loadFull()
-  }, [initialEntry.id])
+  }, [initialEntry.id, refreshToken])
 
-  // 读取对话记录（conversations 表）
+  // 读取对话记录（conversations 表；refreshToken 变化时重新拉取）
   useEffect(() => {
     async function loadMessages() {
       const { data } = await db.from('conversations')
@@ -127,7 +127,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       setMessages(data?.messages ?? [])
     }
     loadMessages()
-  }, [initialEntry.id])
+  }, [initialEntry.id, refreshToken])
 
   // 读取关联脉络
   useEffect(() => {
@@ -200,6 +200,30 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
     setEntry(e => ({ ...e, theme_hints: arr }))
     await handleFieldSave('theme_hints', arr)
+  }
+
+  async function handleCoreNeedsSave(value) {
+    const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
+    setEntry(e => ({ ...e, core_needs: arr }))
+    await handleFieldSave('core_needs', arr)
+  }
+
+  async function handleBodySensationsSave(value) {
+    const trimmed = value?.trim() || null
+    setEntry(e => ({ ...e, body_sensations: trimmed }))
+    await handleFieldSave('body_sensations', trimmed)
+  }
+
+  async function handleReflectionInsightSave(value) {
+    const trimmed = value?.trim() || null
+    setEntry(e => ({ ...e, reflection_insight: trimmed }))
+    await handleFieldSave('reflection_insight', trimmed)
+  }
+
+  async function handleCognitiveAnalysisSave(value) {
+    const trimmed = value?.trim() || null
+    setEntry(e => ({ ...e, cognitive_analysis: trimmed }))
+    await handleFieldSave('cognitive_analysis', trimmed)
   }
 
   // ── AI 分析（无 AI 字段时显示按钮）────────────────────────────
@@ -295,7 +319,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     }}>
 
       {/* ── 顶部导航 ── */}
-      <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexShrink: 0 }}>
         <button
           onClick={onBack}
           style={{
@@ -305,6 +330,17 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         >
           ← 返回
         </button>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(entry)}
+            style={{
+              background: 'none', border: 'none',
+              color: '#c9a96e', cursor: 'pointer', fontSize: 13,
+            }}
+          >
+            编辑
+          </button>
+        )}
       </div>
 
       <div style={{ padding: '16px 18px 0' }}>
@@ -431,31 +467,56 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           borderTop: '1px solid #ede9e2', paddingTop: 12,
         }}>
           {/* 已填字段始终展示，分析不完整时在下方保留按钮 */}
-          <FieldRow label="核心需求" value={entry.core_needs} />
-          <FieldRow label="认知"     value={entry.cognitive_analysis} />
-          <FieldRow label="身体感受" value={entry.body_sensations} />
-          <FieldRow label="洞见"     value={entry.reflection_insight} />
+          <EditableFieldRow
+            label="核心需求"
+            value={(entry.core_needs ?? []).join('、')}
+            displayValue={
+              entry.core_needs?.length > 0
+                ? entry.core_needs.join('、')
+                : null
+            }
+            onSave={handleCoreNeedsSave}
+          />
+          <EditableFieldRow
+            label="认知"
+            value={entry.cognitive_analysis ?? ''}
+            displayValue={entry.cognitive_analysis}
+            onSave={handleCognitiveAnalysisSave}
+          />
+          <EditableFieldRow
+            label="身体感受"
+            value={entry.body_sensations ?? ''}
+            displayValue={entry.body_sensations}
+            onSave={handleBodySensationsSave}
+          />
+          <EditableFieldRow
+            label="洞见"
+            value={entry.reflection_insight ?? ''}
+            displayValue={entry.reflection_insight}
+            onSave={handleReflectionInsightSave}
+          />
           {!hasAIAnalysis && (
             <div style={{ marginTop: 6 }}>
-              {!entry.reflection_insight && !entry.core_needs?.length && (
-                <div style={{ fontSize: 12, color: '#bbb', marginBottom: 10 }}>
-                  暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
-                </div>
-              )}
-              <button
-                onClick={handleAIAnalyze}
-                disabled={analyzing}
-                style={{
-                  fontSize: 12, color: '#888',
-                  border: '1px solid #e0dbd4',
-                  borderRadius: 8, padding: '6px 12px',
-                  background: 'none', cursor: 'pointer',
-                }}
-              >
-                {analyzing ? '分析中…' : '✦ AI 分析'}
-              </button>
+              <div style={{ fontSize: 12, color: '#bbb', marginBottom: 10 }}>
+                暂无分析，点击按钮让 AI 帮你整理这条记录的核心内容
+              </div>
             </div>
           )}
+          {/* 始终显示：无字段时叫「AI 分析」，有字段时叫「重新生成」 */}
+          <div style={{ marginTop: hasAIAnalysis ? 10 : 0 }}>
+            <button
+              onClick={handleAIAnalyze}
+              disabled={analyzing}
+              style={{
+                fontSize: 12, color: '#888',
+                border: '1px solid #e0dbd4',
+                borderRadius: 8, padding: '6px 12px',
+                background: 'none', cursor: 'pointer',
+              }}
+            >
+              {analyzing ? '分析中…' : hasAIAnalysis ? '✦ 重新生成' : '✦ AI 分析'}
+            </button>
+          </div>
         </div>
 
         {/* ── 关联区（category_tags）── */}

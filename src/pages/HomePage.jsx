@@ -21,6 +21,7 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
 import { insertEntry, updateEntry } from '../lib/journalService'
 import { Mic, MicOff } from 'lucide-react'
+import { db } from '../lib/db'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
@@ -56,9 +57,39 @@ function clearDraft() {
 }
 
 // ─── 主组件 ──────────────────────────────────────────────────────
-export default function HomePage({ onDone, editEntry, onCancel }) {
+export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
+
+  // 未读回顾信
+  const [unreadLetter, setUnreadLetter] = useState(null)
+  const [letterReadTimer, setLetterReadTimer] = useState(null)
+
+  useEffect(() => {
+    if (!user) return
+    async function checkUnread() {
+      const { data } = await db.from('review_letters')
+        .select('id, content')
+        .eq('user_id', user.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      setUnreadLetter(data ?? null)
+    }
+    checkUnread()
+  }, [user])
+
+  // 停留 5 秒自动标记已读
+  function handleLetterCardView(letter) {
+    const timer = setTimeout(async () => {
+      await db.from('review_letters').update({ is_read: true }).eq('id', letter.id)
+      setUnreadLetter(null)
+    }, 5000)
+    setLetterReadTimer(timer)
+  }
+
+  useEffect(() => () => { if (letterReadTimer) clearTimeout(letterReadTimer) }, [letterReadTimer])
 
   // 当前激活模板
   const [template, setTemplate] = useState(() =>
@@ -237,6 +268,36 @@ export default function HomePage({ onDone, editEntry, onCancel }) {
               <button onClick={handleDiscardDraft} className="text-xs text-gray-400">
                 新建
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 未读回顾信气泡 ── */}
+      {unreadLetter && (
+        <div
+          className="px-4 pt-3 fade-in"
+          ref={el => { if (el && !letterReadTimer) handleLetterCardView(unreadLetter) }}
+        >
+          <div
+            style={{
+              background: '#fffdf8', border: '1px solid #f0e8d4',
+              borderRadius: 12, padding: '10px 14px', cursor: 'pointer',
+            }}
+            onClick={() => onOpenLetter?.(unreadLetter)}
+          >
+            <div style={{ fontSize: 11, color: '#c9a96e', marginBottom: 4 }}>
+              📬 你有一封新的回顾信
+            </div>
+            <div style={{
+              fontSize: 12, color: '#555', lineHeight: 1.65,
+              display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>
+              {unreadLetter.content}
+            </div>
+            <div style={{ fontSize: 11, color: '#c9a96e', marginTop: 6, textAlign: 'right' }}>
+              查看 →
             </div>
           </div>
         </div>

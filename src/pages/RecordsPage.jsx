@@ -1,6 +1,6 @@
 // src/pages/RecordsPage.jsx
 // 记录列表：journal_entries + review_letters 混合时间流，按日期分组
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { deleteEntry } from '../lib/journalService'
@@ -20,20 +20,45 @@ function formatTime(isoStr) {
 }
 
 // 单条记录卡片
-function EntryCard({ entry, onOpen }) {
+function EntryCard({ entry, onOpen, onLongPress }) {
   const tpl = resolveTemplate(entry.template_type)
   const emotions = entry.emotion_display?.length
     ? entry.emotion_display
     : (entry.emotions ?? [])
   const preview = (entry.content ?? '').slice(0, 60)
 
+  const pressTimer = useRef(null)
+  const didLongPress = useRef(false)  // 防止长按后 onClick 也触发
+
+  function startPress() {
+    didLongPress.current = false
+    pressTimer.current = setTimeout(() => {
+      didLongPress.current = true
+      onLongPress?.(entry)
+    }, 600)
+  }
+  function cancelPress() {
+    clearTimeout(pressTimer.current)
+  }
+  function handleClick() {
+    if (didLongPress.current) { didLongPress.current = false; return }
+    onOpen(entry)
+  }
+
   return (
     <div
-      onClick={() => onOpen(entry)}
+      onClick={handleClick}
+      onMouseDown={startPress}
+      onMouseUp={cancelPress}
+      onMouseLeave={cancelPress}
+      onTouchStart={startPress}
+      onTouchEnd={cancelPress}
+      onTouchMove={cancelPress}
       style={{
         background: 'white', borderRadius: 12, padding: '12px 14px',
         marginBottom: 8, cursor: 'pointer',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+        WebkitUserSelect: 'none', userSelect: 'none',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between',
@@ -107,11 +132,13 @@ function LetterCard({ letter, onOpen }) {
   )
 }
 
-export default function RecordsPage({ onOpenDetail, onOpenLetter }) {
+export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const { user } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [latestUnreadLetter, setLatestUnreadLetter] = useState(null)
+  const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const load = useCallback(async () => {
     if (!user) return
@@ -166,6 +193,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter }) {
 
   async function handleDelete(entry) {
     await deleteEntry({ id: entry.id, userId: user.id })
+    setActionEntry(null)
+    setConfirmDelete(false)
     load()
   }
 
@@ -219,7 +248,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter }) {
                     key={item.id}
                     entry={item}
                     onOpen={onOpenDetail}
-                    onDelete={handleDelete}
+                    onLongPress={e => { setActionEntry(e); setConfirmDelete(false) }}
                   />
                 ) : (
                   <LetterCard
@@ -233,6 +262,100 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter }) {
           ))
         )}
       </div>
+
+      {/* 长按动作菜单 */}
+      {actionEntry && (
+        <div
+          onClick={() => { setActionEntry(null); setConfirmDelete(false) }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', background: 'white',
+              borderRadius: '16px 16px 0 0',
+              padding: '8px 0 env(safe-area-inset-bottom)',
+            }}
+          >
+            {/* 预览条目 */}
+            <div style={{
+              padding: '12px 20px 10px',
+              fontSize: 13, color: '#888', lineHeight: 1.5,
+              borderBottom: '1px solid #f0ece4',
+            }}>
+              {(actionEntry.content ?? '').slice(0, 50)}{actionEntry.content?.length > 50 ? '…' : ''}
+            </div>
+
+            {!confirmDelete ? (
+              <>
+                <button
+                  onClick={() => { onEdit?.(actionEntry); setActionEntry(null) }}
+                  style={{
+                    width: '100%', padding: '16px 20px', background: 'none',
+                    border: 'none', textAlign: 'left', fontSize: 15,
+                    color: '#333', cursor: 'pointer',
+                    borderBottom: '1px solid #f5f3ef',
+                  }}
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  style={{
+                    width: '100%', padding: '16px 20px', background: 'none',
+                    border: 'none', textAlign: 'left', fontSize: 15,
+                    color: '#e05252', cursor: 'pointer',
+                    borderBottom: '1px solid #f5f3ef',
+                  }}
+                >
+                  删除
+                </button>
+                <button
+                  onClick={() => setActionEntry(null)}
+                  style={{
+                    width: '100%', padding: '16px 20px', background: 'none',
+                    border: 'none', textAlign: 'left', fontSize: 15,
+                    color: '#bbb', cursor: 'pointer',
+                  }}
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: '14px 20px', fontSize: 13, color: '#888' }}>
+                  删除后无法恢复，确认吗？
+                </div>
+                <button
+                  onClick={() => handleDelete(actionEntry)}
+                  style={{
+                    width: '100%', padding: '14px 20px', background: 'none',
+                    border: 'none', textAlign: 'left', fontSize: 15,
+                    color: '#e05252', cursor: 'pointer', fontWeight: 500,
+                    borderBottom: '1px solid #f5f3ef',
+                  }}
+                >
+                  确认删除
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  style={{
+                    width: '100%', padding: '14px 20px', background: 'none',
+                    border: 'none', textAlign: 'left', fontSize: 15,
+                    color: '#bbb', cursor: 'pointer',
+                  }}
+                >
+                  取消
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -101,7 +101,7 @@ UNIQUE(entry_id, context_type) → 每条 entry 只有一行对话记录
 
 ```
 emotion_display  （text[]）← AI 提取的描述层，自然语言，用于展示
-emotions         （text[]）← 本地映射后的基础层 57 词，用于统计
+emotions         （text[]）← 本地映射后的基础层 61 词，用于统计
 emotion_confidence（float）← mapDisplayToBase() 返回的 minConfidence
 
 映射函数：mapDisplayToBase() 在 emotionMap.js，本地运行，零 token
@@ -110,7 +110,7 @@ emotion_confidence（float）← mapDisplayToBase() 返回的 minConfidence
 **不要改成什么：**
 - 不要把 emotions 和 emotion_display 互换使用
 - 不要在用户编辑情绪词时调 AI（只用本地映射）
-- 不要自动扩展基础层 57 词词库
+- 不要自动扩展基础层 61 词词库
 
 ### 2.5 AI 调用策略
 
@@ -410,6 +410,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-12 · 架构session · emotionMap.js 词库扩展完成：58词→61词（+渴望/敬佩/欣赏，完整覆盖 Cowen & Keltner 27种情绪）；崇敬从敬畏组移入敬佩组；§2.4 同步更新
 - 2026-04-11 · 架构session · 对 spec+plan 做联合架构兼容性终审：4.4标注已删除；新增4.14（动态import风险）、4.15（insights JSONB版本断层）；新增§5.8 insights字段兼容策略；确认所有§2约束无违反，Plan Task 1/2/3/4 架构正确
 - 2026-04-11 · 架构session · 预开工整备：删除孤儿文件 reflectionQuestions.js；新建 insightsService.js（InsightsPage 服务层）；修复 reviewLetterService JSON 解析调试可见性；prompts.js 添加第二批迁移注释；§3 更新为真实代码状态；§4 新增 4.11-4.13 条目
 - 2026-04-11 · 架构session · 对 threads-insights spec 做架构兼容性审查：新增 §4.6-4.10 五条风险（核心：covered_by_letter_id 回写缺失/generateReviewLetter 读全文需重构/InsightsPage 无服务层）；新增 §5.6 conversations 表 thread 扩展点 / §5.7 thread_entries RLS 约束规范
