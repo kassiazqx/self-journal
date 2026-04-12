@@ -126,6 +126,21 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     console.error('[reviewLetter] covered_by_letter_id 回写失败:', updateError.message)
   }
 
+  // Step 7: 把 suggested_threads 写入 threads 表（创建 candidate 脉络）
+  const toCreate = (insights.suggested_threads ?? [])
+    .filter(t => t.action === 'create' && t.thread_name?.trim())
+  if (toCreate.length > 0) {
+    await Promise.all(
+      toCreate.map(t =>
+        db.from('threads').insert({
+          user_id: userId,
+          name: t.thread_name.trim(),
+          status: 'candidate',
+        })
+      )
+    )
+  }
+
   return true
 }
 

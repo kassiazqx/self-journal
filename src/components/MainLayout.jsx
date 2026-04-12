@@ -235,13 +235,27 @@ export default function MainLayout() {
       {/* 主内容区（Tab 或全屏覆盖） */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
 
-        {/* Tab 内容（全屏覆盖时仍在 DOM，避免状态丢失） */}
-        <div style={{
-          height: '100%',
-          display: currentScreen ? 'none' : 'flex',
-          flexDirection: 'column',
-        }}>
-          {renderTab()}
+      {/* 所有 Tab 同时挂载，切换时只改 display，避免重复拉取数据 */}
+        <div style={{ height: '100%', display: !currentScreen && activeTab === 'write' ? 'flex' : 'none', flexDirection: 'column' }}>
+          <HomePage onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
+        </div>
+        <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
+          <RecordsPage
+            key={refreshKey}
+            onOpenDetail={handleOpenDetail}
+            onOpenLetter={handleOpenLetter}
+            onEdit={handleEditEntry}
+          />
+        </div>
+        <div style={{ height: '100%', display: !currentScreen && activeTab === 'insights' ? 'flex' : 'none', flexDirection: 'column' }}>
+          <InsightsPage
+            onOpenLetterList={handleOpenLetterList}
+            onOpenThreads={handleOpenThreads}
+            onOpenThread={handleOpenThread}
+          />
+        </div>
+        <div style={{ height: '100%', display: !currentScreen && activeTab === 'mine' ? 'flex' : 'none', flexDirection: 'column' }}>
+          <SettingsPage />
         </div>
 
         {/* 全屏覆盖页 */}

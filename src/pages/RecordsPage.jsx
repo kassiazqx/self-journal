@@ -105,7 +105,9 @@ function LetterCard({ letter, onOpen }) {
     <div
       onClick={() => onOpen(letter)}
       style={{
-        background: '#fffdf8', border: '1px solid #f0e8d4',
+        background: '#fffdf8',
+        border: '1px solid #f0e8d4',
+        borderLeft: letter.is_read ? '1px solid #f0e8d4' : '3px solid #c9a96e',
         borderRadius: 12, padding: '12px 14px', marginBottom: 8,
         cursor: 'pointer',
       }}
@@ -198,15 +200,6 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     load()
   }
 
-  if (loading) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
-        加载中…
-      </div>
-    )
-  }
-
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: '#f5f3ef' }}>
 
@@ -230,7 +223,12 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
 
       {/* 按日期分组的时间流 */}
       <div style={{ padding: '12px 16px' }}>
-        {groups.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign: 'center', color: '#ccc',
+            fontSize: 14, padding: '60px 0' }}>
+            加载中…
+          </div>
+        ) : groups.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#ccc',
             fontSize: 14, padding: '60px 0' }}>
             还没有记录，去写第一条吧
