@@ -206,21 +206,20 @@
 
 ### E.2 展示位置
 
-笔记详情页（RecordDetail）顶部信息卡（`d-header-card`）内，位于 emotion chips 行**下方**，单独一行。
+笔记详情页（RecordDetail）顶部信息卡（`d-header-card`）内，位于 state chip 下方，单独一行。
 
 显示：`#人际` `#情绪` 等小 chip，末尾有 `✎` 图标触发编辑。
 
 ### E.3 编辑交互
 
-点击 category chips 区域（或末尾 `✎`）→ **在 chips 正下方弹出小下拉框**（非底部 sheet）：
+点击 category chips 区域（或末尾 `✎`）→ **从底部弹出 sheet**：
 
-- 样式：白色圆角小框，宽约 180px，对齐 chips 左侧
-- 内容：预设标签列表（每行一个），已选的左侧显示 ✓ 复选标记
-- 点击某行切换选中/取消
-- 底部「完成」按钮 → 关闭下拉框并写回 `journal_entries.category_tags`（array）
-- 点框外空白区域也可关闭（取消修改）
+- 标题：「选择内容大类标签」
+- 内容：预设标签 chip 网格（多选，已选高亮橙色）
+- 底部说明：「在「我的」页面可以自定义这些标签」
+- 按钮：`[ 取消 ]  [ 保存 ]`
 
-> ⚠️ 原设计（底部 sheet）已废弃，改为小下拉框以与 state_score、template_type 的交互风格统一。
+点「保存」→ 写回 `journal_entries.category_tags`（array）。点「取消」→ 关闭不保存。
 
 ### E.4 标签数据来源
 
@@ -330,7 +329,16 @@ rejected   →  删除 → 行删除（灰色卡片右侧触发）
 | `template_type` | 点击 badge → 下拉框（单选，5 选项） |
 | `emotion_display` | 点击任意 chip → 所有 chips 变为单个文字输入框 |
 | `state_score` | 点击 chip → 下拉框（单选，7 选项，-3 to +3） |
-| `category_tags` | 点击 chips 区 → 下拉框（多选，复选款式） |
+| `category_tags` | 点击 chips / ✎ → 底部 sheet（chip 网格多选） |
+
+### I.2 顶部标签区布局顺序
+
+```
+[ 觉察 ▾ ]                        ← template_type badge
+[ 烦躁 ] [ 克制后的疲惫 ]          ← emotion_display chips（可点击编辑）
+[ 状态 −1 ▾ ]                      ← state_score chip（emotion 后面）
+[ #人际 ] [ #情绪 ] ✎              ← category_tags（最后一行）
+```
 
 ### I.2 template_type 点击切换
 

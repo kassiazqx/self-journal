@@ -61,12 +61,11 @@ rejected  → 删除 → 行删除（灰色卡片右侧按钮触发）
 - 分析中：入口按钮变 spinner，页面可继续使用
 - 完成后：底部 toast「发现 N 个候选，已加入待确认 · 去查看 ›」
 
-### 8. category_tags 编辑（已修订）
+### 8. category_tags 编辑
 
-- 位置：RecordDetail 顶部 header card，emotion chips 下方单独一行
-- **交互：点击 chips 区 → 弹出小下拉框（多选复选框样式），宽约 180px，对齐左侧**
-- ~~原设计（底部 sheet）已废弃~~，改为下拉框，与 state_score / template_type 交互风格一致
-- 点「完成」保存 → 写回 `journal_entries.category_tags`（array）；点外部关闭 = 取消
+- 位置：顶部 header card，state chip 下方单独一行，末尾 ✎ 图标
+- **交互：点击 chips 区或 ✎ → 底部 sheet 弹出**（chip 网格多选，已选高亮橙色）
+- 按钮：`[ 取消 ]  [ 保存 ]`；点「保存」写回 `journal_entries.category_tags`（array）
 - 标签数据来源：`user_options` 表（`category = 'content_category'`）
 
 ### 9. RecordDetail 顶部标签区：四个字段可直接编辑
