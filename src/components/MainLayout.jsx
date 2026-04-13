@@ -14,6 +14,7 @@ import ReviewLetterDetail from './ReviewLetterDetail'
 import ReviewLetterListPage from '../pages/ReviewLetterListPage'
 import ThreadsPage from '../pages/ThreadsPage'
 import ThreadDetailPage from '../pages/ThreadDetailPage'
+import CandidateDetailPage from '../pages/CandidateDetailPage'
 import EditEntryPage from '../pages/EditEntryPage'
 
 const NAV_ITEMS = [
@@ -95,8 +96,13 @@ export default function MainLayout() {
   }
 
   // ── InsightsPage / ThreadsPage 打开脉络详情 ─────────────────
-  function handleOpenThread(thread) {
-    push({ type: 'threadDetail', thread })
+  function handleOpenThread(thread, mode) {
+    push({ type: 'threadDetail', thread, mode: mode ?? 'confirmed' })
+  }
+
+  // ── 候选脉络详情 ─────────────────────────────────────────────
+  function handleOpenCandidate(thread) {
+    push({ type: 'candidateDetail', thread })
   }
 
   // ── 编辑记录入口（RecordsPage 长按 / RecordDetail 编辑按钮）──
@@ -167,7 +173,9 @@ export default function MainLayout() {
       return (
         <ThreadsPage
           onBack={pop}
-          onOpenThread={handleOpenThread}
+          onOpenThread={(thread, mode) => push({ type: 'threadDetail', thread, mode: mode ?? 'confirmed' })}
+          onOpenCandidate={handleOpenCandidate}
+          defaultTab={screen.defaultTab}
         />
       )
     }
@@ -176,7 +184,23 @@ export default function MainLayout() {
       return (
         <ThreadDetailPage
           thread={screen.thread}
+          mode={screen.mode ?? 'confirmed'}
           onBack={pop}
+          onOpenEntry={entry => push({ type: 'detail', entry })}
+          onArchived={() => pop()}
+          onRestored={() => pop()}
+          onDeleted={() => pop()}
+        />
+      )
+    }
+
+    if (screen.type === 'candidateDetail') {
+      return (
+        <CandidateDetailPage
+          thread={screen.thread}
+          onBack={pop}
+          onAccepted={() => pop()}
+          onIgnored={() => pop()}
           onOpenEntry={entry => push({ type: 'detail', entry })}
         />
       )
