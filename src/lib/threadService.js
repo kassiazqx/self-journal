@@ -128,3 +128,120 @@ export async function refreshArcSummary(threadId, userId) {
     .eq('id', threadId)
     .eq('user_id', userId)
 }
+
+// ── 重新分析单条脉络（⚠️ 4.19：必须过滤 removed_by_user=true）──
+// 只扫描从未被此脉络评估过的新 entry（不在 thread_entries 中）
+// 已被 removed_by_user=true 标记的记录也跳过（用户排除意愿被尊重）
+// 必须带入脉络名称 + arc_summary 作为上下文
+export async function reAnalyzeThread(threadId, userId) {
+  // Step 1：拉取该脉络已有的所有 thread_entries（含 removed_by_user=true 的）
+  const { data: existing, error: existErr } = await db.from('thread_entries')
+    .select('entry_id, removed_by_user')
+    .eq('thread_id', threadId)
+
+  if (existErr) {
+    console.error('[reAnalyze] 读取已有 entries 失败:', existErr.message)
+    return { newCount: 0, error: existErr }
+  }
+
+  // ⚠️ 4.19：排除所有已在 thread_entries 中的 entry_id
+  // 不论 removed_by_user 是 true 还是 false，均排除
+  const excludedIds = new Set((existing ?? []).map(e => e.entry_id))
+
+  // Step 2：拉取脉络信息（需要 name + arc_summary 作为 AI 上下文）
+  const { data: thread, error: threadErr } = await db.from('threads')
+    .select('id, name, arc_summary')
+    .eq('id', threadId)
+    .eq('user_id', userId)
+    .single()
+
+  if (threadErr || !thread) {
+    console.error('[reAnalyze] 读取脉络失败:', threadErr?.message)
+    return { newCount: 0, error: threadErr }
+  }
+
+  // Step 3：拉取用户所有 entry 的摘要字段（候选池），排除已评估过的
+  const { data: allEntries, error: allErr } = await db.from('journal_entries')
+    .select('id, entry_summary, theme_hints, core_needs, emotions, category_tags, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (allErr) {
+    console.error('[reAnalyze] 读取 entries 候选池失败:', allErr.message)
+    return { newCount: 0, error: allErr }
+  }
+
+  // ⚠️ 4.19：过滤掉已评估过的（含 removed_by_user=true 的）
+  const candidates = (allEntries ?? []).filter(e => !excludedIds.has(e.id))
+
+  if (candidates.length === 0) {
+    return { newCount: 0, error: null }
+  }
+
+  // Step 4：本地加权粗召回（零 token），取得高相关候选
+  const existingFull = (allEntries ?? []).filter(e => excludedIds.has(e.id))
+  const representativeNeeds = [...new Set(existingFull.flatMap(e => e.core_needs ?? []))]
+  const representativeHints = [...new Set(existingFull.flatMap(e => e.theme_hints ?? []))]
+  const representativeEmotions = [...new Set(existingFull.flatMap(e => e.emotions ?? []))]
+  const representativeTags = [...new Set(existingFull.flatMap(e => e.category_tags ?? []))]
+
+  const threadProfile = { representativeNeeds, representativeHints, representativeEmotions, representativeTags }
+  const topCandidates = recallCandidateEntries(candidates, threadProfile, 15)
+
+  if (topCandidates.length === 0) {
+    return { newCount: 0, error: null }
+  }
+
+  // Step 5：AI 精筛（带入脉络名称 + arc_summary 作为上下文）
+  const candidatesText = topCandidates.map((e, i) =>
+    `[候选${i + 1}，id:${e.id}]\n摘要：${e.entry_summary ?? '无'}\n主题：${(e.theme_hints ?? []).join('、') || '无'}`
+  ).join('\n\n---\n\n')
+
+  const prompt = `这是用户正在追踪的脉络：「${thread.name}」
+${thread.arc_summary ? `\n脉络当前轨迹：${thread.arc_summary}\n` : ''}
+以下是从用户日记中初步筛选出的候选记录，请判断哪些与这条脉络相关。
+
+${candidatesText}
+
+请以 JSON 数组返回相关候选的 id 列表（不相关的不要包含）：
+["id1", "id2", ...]
+只返回 JSON 数组，不要解释。`
+
+  let rawResponse
+  try {
+    rawResponse = await callAI(
+      [{ role: 'user', content: prompt }],
+      '你是一个精准的内容分析助手，只返回 JSON，不附加任何解释。',
+      { maxTokens: 300 }
+    )
+  } catch (e) {
+    console.error('[reAnalyze] AI 调用失败:', e.message)
+    return { newCount: 0, error: e }
+  }
+
+  let matchedIds
+  try {
+    const cleaned = rawResponse.replace(/```json|```/g, '').trim()
+    matchedIds = JSON.parse(cleaned)
+    if (!Array.isArray(matchedIds)) throw new Error('不是数组')
+  } catch (e) {
+    console.error('[reAnalyze] JSON 解析失败:', e.message, rawResponse.slice(0, 200))
+    return { newCount: 0, error: e }
+  }
+
+  // Step 6：写入 thread_entries（仅写入合法 id，跳过已存在的）
+  const validIds = matchedIds.filter(id => candidates.some(e => e.id === id))
+  if (validIds.length === 0) return { newCount: 0, error: null }
+
+  await Promise.all(validIds.map(entryId =>
+    db.from('thread_entries').upsert({
+      thread_id: threadId,
+      entry_id: entryId,
+      added_by: 'ai',
+      removed_by_user: false,
+    })
+  ))
+
+  return { newCount: validIds.length, error: null }
+}

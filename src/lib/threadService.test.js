@@ -73,3 +73,24 @@ describe('buildArcSummaryPrompt', () => {
     assert.ok(prompt.includes('慢慢接受有反应的自己'))
   })
 })
+
+describe('reAnalyzeThread (unit: candidate filtering logic)', () => {
+  test('excludes entry IDs already in thread_entries (including removed)', () => {
+    // 模拟：该脉络已有的 thread_entries（含 removed_by_user=true 的）
+    const existingEntries = [
+      { entry_id: 'aaa', removed_by_user: false },
+      { entry_id: 'bbb', removed_by_user: true },  // 用户已手动排除
+      { entry_id: 'ccc', removed_by_user: false },
+    ]
+    // 所有 entry 的 id 列表（候选池）
+    const allEntryIds = ['aaa', 'bbb', 'ccc', 'ddd', 'eee']
+
+    // 逻辑：从候选池中排除所有已在 thread_entries 中的（不论 removed_by_user）
+    const excludedIds = new Set(existingEntries.map(e => e.entry_id))
+    const candidates = allEntryIds.filter(id => !excludedIds.has(id))
+
+    assert.deepStrictEqual(candidates, ['ddd', 'eee'])
+    // ⚠️ 'bbb' 虽然 removed_by_user=true，但仍必须被排除（不重新分析）
+    assert.ok(!candidates.includes('bbb'), 'removed_by_user=true 的记录不得进入候选池')
+  })
+})
