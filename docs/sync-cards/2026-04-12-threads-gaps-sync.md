@@ -61,14 +61,29 @@ rejected  → 删除 → 行删除（灰色卡片右侧按钮触发）
 - 分析中：入口按钮变 spinner，页面可继续使用
 - 完成后：底部 toast「发现 N 个候选，已加入待确认 · 去查看 ›」
 
-### 8. category_tags 编辑
+### 8. category_tags 编辑（已修订）
 
 - 位置：RecordDetail 顶部 header card，emotion chips 下方单独一行
-- 布局：`chips-area（flex:1）+ ✎（flex-shrink:0）`，与摘要索引区 ✎ 对齐
-- 点 ✎ → 底部 sheet 多选，标签从 user_options 读取
-- 保存 → 写回 `journal_entries.category_tags`（array）
+- **交互：点击 chips 区 → 弹出小下拉框（多选复选框样式），宽约 180px，对齐左侧**
+- ~~原设计（底部 sheet）已废弃~~，改为下拉框，与 state_score / template_type 交互风格一致
+- 点「完成」保存 → 写回 `journal_entries.category_tags`（array）；点外部关闭 = 取消
+- 标签数据来源：`user_options` 表（`category = 'content_category'`）
 
-### 9. 洞察页脉络区块
+### 9. RecordDetail 顶部标签区：四个字段可直接编辑
+
+新增交互设计（详见 spec §I）：
+
+| 字段 | 交互 |
+|---|---|
+| `template_type` | badge 右侧有 ▾，点击弹出 5 选项下拉（觉察/感恩/学习/行动/随手记） |
+| `emotion_display` | 点任意 chip → 所有词合并为单个输入框（顿号分隔），确认后拆分保存 + mapDisplayToBase → 同步更新 `emotions` |
+| `state_score` | chip 有 ▾，点击弹出 7 选项下拉（-3 深红 → +3 深绿），带颜色标注 |
+| `category_tags` | 见第 8 条，小下拉多选框 |
+
+- **core_needs 移出顶部标签区**，改为展示在主体字段区域（认知觉察 / 行为洞察 区块内）
+- emotion_display 编辑逻辑：现有 RecordDetail.jsx 已有 `editingEmotions` + `mapDisplayToBase()`，对齐已有代码，无需大改
+
+### 10. 洞察页脉络区块
 
 - 有候选时：header 右侧橙色角标「N 个待确认」+ 区块底部橙色提示条「去确认 ›」
 - 无候选时：不渲染提示条
@@ -93,3 +108,6 @@ ALTER TABLE thread_entries
 - [ ] threads.status 的 CHECK 约束修改方式（Supabase migration）
 - [ ] thread_entries.removed_by_user 字段添加
 - [ ] 候选详情页是新建页面（CandidateDetailPage.jsx）还是复用 ThreadDetailPage.jsx 带参数？
+- [ ] state_score 字段是否已存在于 journal_entries 表？范围是否已经是 -3~+3？
+- [ ] user_options 表是否已有 sort_order 字段？（用于 category_tags 排序）
+- [ ] core_needs 字段在 RecordDetail.jsx 现在展示在哪一区块？需确认移动位置
