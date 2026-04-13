@@ -178,7 +178,7 @@ src/
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
 │   ├── keywordDetection.js     本地关键词检测
-│   ├── emotionMap.js           57词情绪词库 + mapDisplayToBase()
+│   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
 │   ├── templates.js            模板配置（含新旧ID兼容）
 │   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
 │   ├── reviewLetterService.js  回顾信触发 + 生成
@@ -238,12 +238,15 @@ review_letters：
   - insights v1: {recurring_emotions,...} / v2: {suggested_threads:[{action,thread_id,thread_name}]}
 
 threads：（第二批新增）
-  - id, user_id, name, status('candidate'|'confirmed'|'archived')
+  - id, user_id, name, status('candidate'|'confirmed'|'archived'|'rejected')
+    ⚠️ 新增 'rejected' 状态（候选被忽略，灰色保留，AI 不重复提议）
   - arc_summary, arc_updated_at, created_at, updated_at
+  - CHECK 约束需更新：加入 'rejected'
 
 thread_entries：（第二批新增，无 user_id，RLS 通过 threads 子查询）
   - thread_id → threads, entry_id → journal_entries
   - added_at, added_by('ai'|'user')
+  - removed_by_user: boolean DEFAULT false  ⚠️ 新增字段（用户手动移除标记，AI 不重复添加）
   - PRIMARY KEY (thread_id, entry_id)
 
 user_memory：
@@ -426,6 +429,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-13 · 产品session · 脉络交互细节补充设计完成：threads.status 新增 rejected；thread_entries 新增 removed_by_user 字段；候选三态（candidate/rejected/deleted）流程；脉络编辑模式/重新分析/归档/手动分析 UI；RecordDetail Header 四字段可编辑（template_type下拉/emotion_display内联/state_score-3~+3/category_tags底部sheet）；spec: 2026-04-12-threads-interaction-gaps.md
 - 2026-04-12 · 代码session · 收尾补漏：suggested_threads→threads落库（candidate脉络生成闭环）；ThreadsPage长按删除菜单+归档占位；RecordsPage未读信左侧金线；MainLayout四Tab同时挂载消除来回切换加载
 - 2026-04-12 · 代码session · 完成第二批功能全量实现（Task 1-12）：DB建表+RLS；reviewLetterService重构（摘要索引/covered_by_letter_id回写/suggested_threads→threads落库）；extractSummaryService/threadService新建；ThreadsPage/ThreadDetailPage/ReviewLetterListPage新建；RecordDetail摘要索引区+EditableFieldRow+脉络标签；HomePage未读回顾信气泡；MainLayout连线所有新屏幕；额外新增EditEntryPage统一编辑器/RecordsPage长按编辑删除/ThreadsPage新建时选记录+已确认脉络长按删除
 - 2026-04-12 · 架构session · emotionMap.js 词库扩展完成：58词→61词（+渴望/敬佩/欣赏，完整覆盖 Cowen & Keltner 27种情绪）；崇敬从敬畏组移入敬佩组；§2.4 同步更新
