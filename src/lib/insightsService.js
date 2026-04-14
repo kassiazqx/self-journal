@@ -27,7 +27,7 @@ function daysAgo(n) {
 export async function loadInsightsData(userId, { days = 30 } = {}) {
   const since = daysAgo(days)
 
-  const [moodRes, emotionRes, needsRes, letterRes, tagsRes, threadsRes, lettersRes] = await Promise.all([
+  const [moodRes, emotionRes, needsRes, letterRes, tagsRes, threadsRes, lettersRes, candidateRes] = await Promise.all([
     // 心情曲线：按时间排，只取有 overall_state_score 的条目
     db.from('journal_entries')
       .select('created_at, overall_state_score')
@@ -75,6 +75,12 @@ export async function loadInsightsData(userId, { days = 30 } = {}) {
       .select('id, content, period_start, period_end, is_read, created_at, entry_ids')
       .eq('user_id', userId)
       .order('created_at', { ascending: false }),
+
+    // 候选脉络数（洞察页角标，只计 status='candidate'，不计 rejected）
+    db.from('threads')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'candidate'),
   ])
 
   // 检查是否有致命错误（心情数据或情绪数据缺失则上报）
@@ -114,6 +120,7 @@ export async function loadInsightsData(userId, { days = 30 } = {}) {
     latestLetter:     letterRes.data ?? null,
     confirmedThreads: threadsRes.data ?? [],
     allLetters:       lettersRes.data ?? [],
+    candidateCount:   candidateRes.count ?? 0,
     error: moodRes.error ?? null,
   }
 }

@@ -239,6 +239,7 @@ export default function MainLayout() {
             onOpenLetterList={handleOpenLetterList}
             onOpenThreads={handleOpenThreads}
             onOpenThread={handleOpenThread}
+            onOpenPendingThreads={() => push({ type: 'threads', defaultTab: 'pending' })}
           />
         )
       case 'mine':
@@ -276,6 +277,7 @@ export default function MainLayout() {
             onOpenLetterList={handleOpenLetterList}
             onOpenThreads={handleOpenThreads}
             onOpenThread={handleOpenThread}
+            onOpenPendingThreads={() => push({ type: 'threads', defaultTab: 'pending' })}
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'mine' ? 'flex' : 'none', flexDirection: 'column' }}>

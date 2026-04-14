@@ -62,7 +62,7 @@ function MoodLine({ moodData }) {
   )
 }
 
-export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenThread }) {
+export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenThread, onOpenPendingThreads }) {
   const { user } = useAuth()
   const [moodData, setMoodData] = useState([])
   const [emotionCounts, setEmotionCounts] = useState([])
@@ -70,6 +70,7 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
   const [tagCounts, setTagCounts] = useState([])
   const [latestLetter, setLatestLetter] = useState(null)
   const [confirmedThreads, setConfirmedThreads] = useState([])
+  const [candidateCount, setCandidateCount] = useState(0)
   const [allLetters, setAllLetters] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -83,6 +84,7 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
       setTagCounts(result.tagCounts)
       setLatestLetter(result.latestLetter)
       setConfirmedThreads(result.confirmedThreads)
+      setCandidateCount(result.candidateCount ?? 0)
       setAllLetters(result.allLetters)
       setLoading(false)
     }
@@ -146,7 +148,17 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
       {/* ── 脉络入口区块 ── */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>脉络</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>脉络</span>
+            {candidateCount > 0 && (
+              <span
+                onClick={onOpenPendingThreads}
+                style={{ fontSize: 10, color: 'white', background: '#c9a96e',
+                  borderRadius: 10, padding: '1px 7px', cursor: 'pointer', fontWeight: 500 }}>
+                {candidateCount} 个待确认
+              </span>
+            )}
+          </div>
           <button
             onClick={onOpenThreads}
             style={{ fontSize: 11, color: '#c9a96e', background: 'none', border: 'none', cursor: 'pointer' }}
@@ -170,6 +182,21 @@ export default function InsightsPage({ onOpenLetterList, onOpenThreads, onOpenTh
         )) : (
           <div style={{ fontSize: 13, color: '#ccc', textAlign: 'center', padding: '10px 0' }}>
             暂无脉络，生成回顾信后 AI 会提议
+          </div>
+        )}
+        {/* 候选提示条（有候选时显示，无候选不渲染） */}
+        {candidateCount > 0 && (
+          <div
+            onClick={onOpenPendingThreads}
+            style={{ marginTop: 10, padding: '10px 14px', background: '#fff8f0',
+              border: '1px solid #f0dfc0', borderRadius: 10, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 12, color: '#c9a96e', lineHeight: 1.5 }}>
+              回顾信生成时发现了 {candidateCount} 个新脉络候选
+            </span>
+            <span style={{ fontSize: 12, color: '#c9a96e', flexShrink: 0, marginLeft: 8 }}>
+              去确认 ›
+            </span>
           </div>
         )}
       </div>
