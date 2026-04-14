@@ -101,6 +101,17 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [editingEmotions, setEditingEmotions] = useState(false)
   const [emotionDraft, setEmotionDraft] = useState('')
 
+  // template_type 下拉
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+
+  // overall_state_score 下拉
+  const [showScorePicker, setShowScorePicker] = useState(false)
+
+  // category_tags 底部 sheet
+  const [showCategorySheet, setShowCategorySheet] = useState(false)
+  const [categoryOptions, setCategoryOptions] = useState([])   // 从 user_options 读
+  const [categoryDraft, setCategoryDraft] = useState([])       // sheet 内暂存选择
+
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
 
@@ -139,6 +150,19 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     }
     loadThreads()
   }, [initialEntry.id])
+
+  // 读取用户自定义内容大类标签（⚠️ 实际列名：field_name / option_value）
+  useEffect(() => {
+    async function loadCategoryOptions() {
+      const { data } = await db.from('user_options')
+        .select('id, option_value, sort_order')
+        .eq('user_id', initialEntry.user_id)
+        .eq('field_name', 'content_category')
+        .order('sort_order', { ascending: true })
+      setCategoryOptions((data ?? []).map(r => r.option_value))
+    }
+    loadCategoryOptions()
+  }, [initialEntry.user_id])
 
   function showToast(msg) {
     setToast(msg)
@@ -194,6 +218,24 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     const trimmed = value?.trim() || null
     setEntry(e => ({ ...e, entry_summary: trimmed }))
     await handleFieldSave('entry_summary', trimmed)
+  }
+
+  async function handleTemplateSave(newType) {
+    setShowTemplatePicker(false)
+    setEntry(e => ({ ...e, template_type: newType }))
+    await handleFieldSave('template_type', newType)
+  }
+
+  async function handleScoreSave(score) {
+    setShowScorePicker(false)
+    setEntry(e => ({ ...e, overall_state_score: score }))
+    await handleFieldSave('overall_state_score', score)
+  }
+
+  async function handleCategoryTagsSave() {
+    setShowCategorySheet(false)
+    setEntry(e => ({ ...e, category_tags: categoryDraft }))
+    await handleFieldSave('category_tags', categoryDraft)
   }
 
   async function handleThemeHintsSave(value) {
@@ -308,6 +350,35 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     ? entry.emotion_display
     : (entry.emotions ?? [])
 
+  const TEMPLATE_OPTIONS = [
+    { id: 'awareness', label: '觉察' },
+    { id: 'gratitude', label: '感恩' },
+    { id: 'learning',  label: '学习' },
+    { id: 'action',    label: '行动' },
+    { id: 'freewrite', label: '随手记' },
+  ]
+
+  const SCORE_OPTIONS = [
+    { value: 3,  label: '+3 非常好', color: '#2e7d32' },
+    { value: 2,  label: '+2 比较好', color: '#388e3c' },
+    { value: 1,  label: '+1 还不错', color: '#66bb6a' },
+    { value: 0,  label: '0 中性',   color: '#9e9e9e' },
+    { value: -1, label: '−1 有点难', color: '#ef9a9a' },
+    { value: -2, label: '−2 比较难', color: '#e57373' },
+    { value: -3, label: '−3 非常难', color: '#c62828' },
+  ]
+
+  // overall_state_score 历史数据兼容（±4/±5 clamp 显示，不强制回写）
+  const clampedScore = entry.overall_state_score != null
+    ? Math.max(-3, Math.min(3, entry.overall_state_score))
+    : null
+  const scoreOption = SCORE_OPTIONS.find(o => o.value === clampedScore)
+  const scoreLabel = entry.overall_state_score != null
+    ? (Math.abs(entry.overall_state_score) > 3
+        ? `${entry.overall_state_score > 0 ? '+' : ''}${entry.overall_state_score}（超范围）`
+        : `状态 ${entry.overall_state_score > 0 ? '+' : ''}${entry.overall_state_score}`)
+    : null
+
   return (
     <div style={{
       display: 'flex',
@@ -345,51 +416,92 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
       <div style={{ padding: '16px 18px 0' }}>
 
-        {/* ── 模板 + 时间 ── */}
-        <div style={{ fontSize: 12, color: '#aaa', marginBottom: 16 }}>
-          <span style={{ color: tpl.color, marginRight: 6 }}>{tpl.label}</span>
-          · {formatDateTime(entry.created_at)}
-        </div>
+        {/* ── 顶部标签区（四字段可编辑）── */}
+        <div style={{ marginBottom: 12 }}>
 
-        {/* ── 情绪标签区（点击可编辑）── */}
-        {emotions.length > 0 && !editingEmotions && (
-          <div
-            onClick={() => {
-              setEmotionDraft(emotions.join('、'))
-              setEditingEmotions(true)
-            }}
-            style={{
-              display: 'flex', gap: 6, flexWrap: 'wrap',
-              marginBottom: 4, cursor: 'pointer',
-            }}
-          >
-            {emotions.map(w => <EmotionTag key={w} word={w} />)}
-          </div>
-        )}
-
-        {editingEmotions && (
-          <div style={{ marginBottom: 4 }}>
-            <input
-              value={emotionDraft}
-              onChange={e => setEmotionDraft(e.target.value)}
-              autoFocus
-              onBlur={handleEmotionSave}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEmotionSave() } }}
-              style={{
-                width: '100%', border: '1px solid #e0dbd4',
-                borderRadius: 8, padding: '6px 10px',
-                fontSize: 13, outline: 'none',
-                background: 'white', fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
-              placeholder="用逗号分隔，如：难受、委屈"
-            />
-            <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-              完成后点其他地方自动保存
+          {/* 第一行：时间 + template_type 下拉 */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: '#bbb' }}>{formatDateTime(entry.created_at)}</span>
+            {/* template_type badge */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => { setShowTemplatePicker(v => !v); setShowScorePicker(false) }}
+                style={{ fontSize: 12, color: tpl.color, background: tpl.color + '18', border: `1px solid ${tpl.color}40`, borderRadius: 8, padding: '3px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {tpl.label} <span style={{ fontSize: 10 }}>▾</span>
+              </button>
+              {showTemplatePicker && (
+                <>
+                  <div onClick={() => setShowTemplatePicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+                  <div style={{ position: 'absolute', right: 0, top: '130%', zIndex: 100, background: 'white', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: 140, overflow: 'hidden' }}>
+                    {TEMPLATE_OPTIONS.map(opt => (
+                      <button key={opt.id} onClick={() => handleTemplateSave(opt.id)}
+                        style={{ display: 'block', width: '100%', padding: '11px 14px', background: entry.template_type === opt.id ? '#faf8f4' : 'none', border: 'none', textAlign: 'left', fontSize: 13, color: entry.template_type === opt.id ? '#c9a96e' : '#555', cursor: 'pointer' }}>
+                        {entry.template_type === opt.id ? '✓ ' : '　'}{opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        )}
 
+          {/* 第二行：emotion_display chips（点击可编辑） */}
+          {emotions.length > 0 && !editingEmotions && (
+            <div onClick={() => { setEmotionDraft(emotions.join('、')); setEditingEmotions(true) }}
+              style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6, cursor: 'pointer' }}>
+              {emotions.map(w => <EmotionTag key={w} word={w} />)}
+            </div>
+          )}
+          {editingEmotions && (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input value={emotionDraft} onChange={e => setEmotionDraft(e.target.value)} autoFocus
+                  onBlur={handleEmotionSave}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEmotionSave() } }}
+                  style={{ flex: 1, border: '1px solid #e0dbd4', borderRadius: 8, padding: '6px 10px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                  placeholder="用顿号分隔，如：烦躁、克制后的疲惫" />
+                <button onClick={handleEmotionSave}
+                  style={{ flexShrink: 0, padding: '6px 10px', background: '#c9a96e', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, cursor: 'pointer' }}>✓</button>
+              </div>
+            </div>
+          )}
+
+          {/* 第三行：overall_state_score 下拉 */}
+          {scoreLabel && (
+            <div style={{ position: 'relative', display: 'inline-block', marginBottom: 6 }}>
+              <button onClick={() => { setShowScorePicker(v => !v); setShowTemplatePicker(false) }}
+                style={{ fontSize: 12, color: scoreOption?.color ?? '#888', background: (scoreOption?.color ?? '#888') + '15', border: `1px solid ${scoreOption?.color ?? '#888'}40`, borderRadius: 8, padding: '3px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {scoreLabel} <span style={{ fontSize: 10 }}>▾</span>
+              </button>
+              {showScorePicker && (
+                <>
+                  <div onClick={() => setShowScorePicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+                  <div style={{ position: 'absolute', left: 0, top: '130%', zIndex: 100, background: 'white', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: 160, overflow: 'hidden' }}>
+                    {SCORE_OPTIONS.map(opt => (
+                      <button key={opt.value} onClick={() => handleScoreSave(opt.value)}
+                        style={{ display: 'block', width: '100%', padding: '11px 14px', background: clampedScore === opt.value ? '#faf8f4' : 'none', border: 'none', textAlign: 'left', fontSize: 13, color: opt.color, cursor: 'pointer' }}>
+                        {clampedScore === opt.value ? '✓ ' : '　'}{opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 第四行：category_tags chips + ✎ */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+            {(entry.category_tags ?? []).map(tag => (
+              <span key={tag} onClick={() => { setCategoryDraft(entry.category_tags ?? []); setShowCategorySheet(true) }}
+                style={{ fontSize: 11, background: '#f5f0e8', color: '#8a7a6a', padding: '2px 9px', borderRadius: 10, cursor: 'pointer' }}>
+                {tag}
+              </span>
+            ))}
+            <span onClick={() => { setCategoryDraft(entry.category_tags ?? []); setShowCategorySheet(true) }}
+              style={{ fontSize: 11, color: '#d4c4b0', cursor: 'pointer' }}>✎</span>
+          </div>
+        </div>
+
+        {/* ── confidence tip（保持现有逻辑位置不变）── */}
         {entry.emotion_confidence != null && entry.emotion_confidence < 0.75 && (
           <div style={{ fontSize: 10, color: '#bbb', marginBottom: 12, position: 'relative' }}>
             <span style={{ verticalAlign: 'middle' }}>基础标签待确认</span>
@@ -518,21 +630,6 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
             </button>
           </div>
         </div>
-
-        {/* ── 关联区（category_tags）── */}
-        {entry.category_tags?.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-            {entry.category_tags.map(tag => (
-              <span key={tag} style={{
-                fontSize: 10, color: '#888',
-                border: '1px solid #e0dbd4',
-                borderRadius: 4, padding: '2px 6px',
-              }}>
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* ── 关联脉络 ── */}
         {entryThreads.length > 0 && (
@@ -667,6 +764,38 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       >
         ✦ 深度觉察
       </button>
+
+      {/* category_tags 底部 sheet */}
+      {showCategorySheet && (
+        <div onClick={() => setShowCategorySheet(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', background: 'white', borderRadius: '16px 16px 0 0', padding: '20px 18px 32px' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#333', marginBottom: 14 }}>选择内容大类标签</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {categoryOptions.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#ccc' }}>暂无标签，请在「我的」页面添加</div>
+              ) : categoryOptions.map(tag => {
+                const selected = categoryDraft.includes(tag)
+                return (
+                  <button key={tag}
+                    onClick={() => setCategoryDraft(prev => selected ? prev.filter(t => t !== tag) : [...prev, tag])}
+                    style={{ padding: '6px 14px', borderRadius: 20, border: selected ? '1.5px solid #c9a96e' : '1.5px solid #e0dbd4', background: selected ? '#fff8f0' : 'white', color: selected ? '#c9a96e' : '#888', fontSize: 13, cursor: 'pointer' }}>
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: '#bbb', marginBottom: 16 }}>在「我的」页面可以自定义这些标签</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowCategorySheet(false)}
+                style={{ flex: 1, padding: '12px', border: '1px solid #e0dbd4', borderRadius: 10, background: 'white', color: '#888', fontSize: 14, cursor: 'pointer' }}>取消</button>
+              <button onClick={handleCategoryTagsSave}
+                style={{ flex: 2, padding: '12px', border: 'none', borderRadius: 10, background: '#c9a96e', color: 'white', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
