@@ -20,10 +20,19 @@
 
 **搜索模式（搜索框有内容时）：**
 - 搜索结果**替换**默认列表（不合并）
-- 搜索字段：`content`（原始正文） + `entry_summary`（AI 摘要）
-  - 实现：Supabase `.or('content.ilike.%q%,entry_summary.ilike.%q%')`
-  - 搜索结果不分页，上限 30 条
-- **扩展留口**：`core_needs`、`emotion_display` 等 `text[]` 字段后续可通过 Supabase RPC 加入，当前不实现
+- 搜索字段：6 个字段，一次查询全覆盖
+  - `content`（原始正文，text）
+  - `entry_summary`（AI 摘要，text）
+  - `emotions`（情绪词，text[]）
+  - `emotion_display`（情绪描述，text[]）
+  - `core_needs`（核心需求，text[]）
+  - `category_tags`（内容大类，text[]）
+- 实现：Supabase `.or()` 拼接，array 字段用 `::text` 转换做 ilike 匹配：
+  ```js
+  .or(`content.ilike.%${q}%,entry_summary.ilike.%${q}%,emotions::text.ilike.%${q}%,emotion_display::text.ilike.%${q}%,core_needs::text.ilike.%${q}%,category_tags::text.ilike.%${q}%`)
+  ```
+  PostgreSQL 把 `text[]` 转换为 `{焦虑,委屈}` 形式，ilike `%焦虑%` 可以匹配。
+- 搜索结果不分页，上限 30 条
 
 ### 1.3 加载更多实现
 
@@ -50,15 +59,24 @@ AI 提取 prompt（`prompts.js`）使用硬编码标签列表：
 新用户 `user_options` 表无任何 `field_name='content_category'` 记录，导致：
 1. RecordDetail category sheet 显示「暂无标签」
 2. AI 已提取的标签（如「日常生活」）无法在 sheet 里取消
-3. SettingsPage 标签管理无法重命名，重命名后历史也不同步
+3. SettingsPage 标签管理无法重命名，重命名后历史 entry 不同步
+
+### 2.2 prompts.js 与用户自定义标签的脱节（已知局限）
+
+- `prompts.js` 里的硬编码列表：① 作为 A1 方案的一次性默认种子，② 作为 AI 提取时的参考选项
+- 用户在「我的」里新增自定义标签后，`prompts.js` 不会自动更新 → AI 提取时不会选出用户新增的标签
+- 用户删除某标签后，AI 可能仍提取旧名称 → 形成孤儿标签
+- 这是当前架构的已知局限，可接受，后续优化方向：AI 提取时动态读 user_options 注入 prompt
+
+**孤儿标签定义**：`journal_entries.category_tags` 中存在、但不在当前用户 `user_options` 里的标签字符串。常见来源：在「我的」里删掉某标签，但过去的记录已打过该标签。
 
 ---
 
-### 2.2 修复 A — 自动种入默认标签（A1 方案）
+### 2.3 修复 A — 自动种入默认标签（A1 方案）
 
 **时机**：RecordDetail `loadCategoryOptions` useEffect 执行后，若 `data.length === 0`，静默批量 INSERT 默认标签。
 
-**触发条件**：`user_options` 中 `field_name='content_category'` 记录数为 0。
+**触发条件**：`user_options` 中 `field_name='content_category'` 记录数为 0（只会触发一次）。
 
 **默认 11 个标签**（与 `prompts.js` 完全一致，sort_order 从 0 开始递增）：
 ```
@@ -97,92 +115,79 @@ async function loadCategoryOptions() {
     setCategoryOptions((inserted ?? []).map(r => r.option_value))
     return
   }
-  setCategoryOptions((data ?? []).map(r => r.option_value))
+  // 孤儿标签合并（见修复 B）
+  const userOptionLabels = (data ?? []).map(r => r.option_value)
+  const orphans = (entry.category_tags ?? []).filter(t => !userOptionLabels.includes(t))
+  setCategoryOptions([...userOptionLabels, ...orphans])
 }
 ```
 
-**⚠️ 幂等性**：只在 count=0 时触发，不重复执行。
+---
+
+### 2.4 修复 B — Sheet 展示孤儿标签（B1 方案）
+
+孤儿标签在 category sheet 里与普通标签外观**完全一致**（不加灰色区分），可以正常选中/取消。用户取消选中孤儿标签并保存后，该 entry 不再有该标签，孤儿自然消失。
+
+**已合并到修复 A 的 `loadCategoryOptions` 实现中**（见上方代码末尾 orphans 逻辑）。
 
 ---
 
-### 2.3 修复 B — Sheet 展示「孤儿标签」（B1 方案）
+### 2.5 修复 C — 标签重命名 + 回写历史 entry
 
-**孤儿标签**：在 `entry.category_tags` 中存在，但不在 `user_options` 中的标签（多见于 A1 修复前由 AI 提取的历史数据）。
+**数据模型说明：** `journal_entries.category_tags` 存储的是字符串本身（`["日常生活","工作"]`），不是 user_options 的 ID。因此改 user_options 的显示名**不会自动同步**到 entry 里，必须主动更新。
 
-**新的 categoryOptions 构建逻辑：**
-```js
-const userOptionLabels = (data ?? []).map(r => r.option_value)
-const orphans = (entry.category_tags ?? []).filter(t => !userOptionLabels.includes(t))
-const allOptions = [...userOptionLabels, ...orphans]
-setCategoryOptions(allOptions)
+**实现方式：Supabase RPC**，一条 SQL 一次扫描更新所有相关 entry（高效，无需逐条循环）。
+
+**Task 0 需新增一条 SQL（Supabase SQL Editor 执行）：**
+```sql
+CREATE OR REPLACE FUNCTION replace_category_tag(
+  p_user_id UUID,
+  p_old TEXT,
+  p_new TEXT
+)
+RETURNS void LANGUAGE sql AS $$
+  UPDATE journal_entries
+  SET category_tags = array_replace(category_tags, p_old, p_new)
+  WHERE user_id = p_user_id AND p_old = ANY(category_tags);
+$$;
 ```
 
-sheet 里孤儿标签和普通标签外观一致，可以正常选中/取消。用户取消选中孤儿标签并保存后，该 entry 就不再有该标签，孤儿自然消失。
-
----
-
-### 2.4 修复 C — 标签重命名（回写历史 entry）
-
-**入口**：SettingsPage 标签管理页，每个标签条目右侧增加 ✎ 编辑按钮（在删除按钮左侧）。
+**入口**：SettingsPage 标签管理页，每个标签条目增加 ✎ 编辑按钮（ − 按钮左侧）。
 
 **交互：**
 - 点 ✎ → 该条目 chip 变为内联输入框，预填当前值
-- 按 Enter 或点外部失焦 → 保存；按 Esc → 取消
-- 保存时同步执行以下两步（顺序执行，非并发）：
-  1. 更新 `user_options.option_value = newValue` WHERE `id = tag.id`
-  2. 查出所有 `category_tags @> ARRAY['oldValue']` 的 `journal_entries`（当前用户）
-  3. 逐条 update，把 `category_tags` 数组里的 oldValue 替换为 newValue
+- 按 Enter 或失焦 → 保存；按 Esc → 取消
 
 **实现（SettingsPage.jsx）：**
 ```js
-async function handleRenameTag(tag, newValue) {
+// state 新增
+const [editingTagId, setEditingTagId] = useState(null)  // 当前正在编辑的 tag.id
+const [editingTagValue, setEditingTagValue] = useState('')
+
+async function handleRenameTag(tag) {
+  const newValue = editingTagValue.trim()
   const oldValue = tag.option_value
-  if (!newValue.trim() || newValue === oldValue) return
+  setEditingTagId(null)
+  if (!newValue || newValue === oldValue) return
 
   // 1. 更新 user_options
   await db.from('user_options')
-    .update({ option_value: newValue.trim() })
+    .update({ option_value: newValue })
     .eq('id', tag.id)
 
-  // 2. 查找并回写所有历史 entry
-  const { data: entries } = await db.from('journal_entries')
-    .select('id, category_tags')
-    .eq('user_id', user.id)
-    .contains('category_tags', [oldValue])
-
-  if (entries?.length > 0) {
-    await Promise.all(entries.map(entry =>
-      db.from('journal_entries')
-        .update({
-          category_tags: entry.category_tags.map(t => t === oldValue ? newValue.trim() : t)
-        })
-        .eq('id', entry.id)
-    ))
-  }
+  // 2. 批量回写所有历史 entry（一条 RPC 搞定）
+  await db.rpc('replace_category_tag', {
+    p_user_id: user.id,
+    p_old: oldValue,
+    p_new: newValue,
+  })
 
   // 3. 刷新本地 state
   setTagOptions(prev =>
-    prev.map(t => t.id === tag.id ? { ...t, option_value: newValue.trim() } : t)
+    prev.map(t => t.id === tag.id ? { ...t, option_value: newValue } : t)
   )
 }
 ```
-
-**说明：**
-- 历史 entry 数量小（个人日记 App），client-side 逐条 update 性能可接受
-- 重命名后 RecordDetail 的 category sheet 自动读取新名称（从 user_options 读）
-
----
-
-### 2.5 ⚠️ 附：Task 7 计划列名纠错
-
-Task 7（`2026-04-13-threads-interaction-gaps.md`）写计划时误用了错误的列名，代码 session 执行时已自动修正（当前代码已正确）。文档记录如下：
-
-| 计划中写的（错误）| 实际 DB 列名（正确）|
-|---|---|
-| `category` | `field_name` |
-| `label` | `option_value` |
-
-Task 7 的计划文本无需修改（已实现，改文档意义不大），后续新 task 直接使用正确列名。
 
 ---
 
@@ -190,17 +195,18 @@ Task 7 的计划文本无需修改（已实现，改文档意义不大），后�
 
 | 文件 | 变更内容 |
 |---|---|
-| `src/pages/ThreadDetailPage.jsx` | 编辑关联记录：默认列表 + 分页加载 + 搜索升级（content + entry_summary） |
-| `src/components/RecordDetail.jsx` | 修复 A：loadCategoryOptions 自动种入默认标签；修复 B：孤儿标签加入 options |
-| `src/pages/SettingsPage.jsx` | 修复 C：标签列表每条加 ✎ 编辑按钮 + handleRenameTag 函数（回写历史） |
+| Supabase SQL Editor | Task 0 新增 `replace_category_tag` RPC 函数 |
+| `src/pages/ThreadDetailPage.jsx` | 编辑关联记录：默认列表（30条 + 加载更多）+ 搜索升级（6字段） |
+| `src/components/RecordDetail.jsx` | 修复 A+B：loadCategoryOptions 自动种入默认标签 + 孤儿标签合并 |
+| `src/pages/SettingsPage.jsx` | 修复 C：标签列表加 ✎ 编辑按钮 + handleRenameTag（RPC 回写历史） |
 
 ---
 
 ## 四、成功标准
 
 1. 进入编辑关联记录模式 → 立即显示 30 条未关联 entry（时间倒序）
-2. 滑动到底 → 追加 30 条，直到全部加载完
-3. 搜索框输入关键词 → 搜索结果替换列表，覆盖 content + entry_summary
-4. 新用户首次打开 category_tags sheet → 自动出现 11 个默认标签，无需手动添加
-5. 已被 AI 标记「日常生活」的记录 → 打开 sheet 可以看到并取消该标签
-6. 「我的」标签管理 → 每个标签可点 ✎ 重命名 → 保存后该用户所有历史 entry 的该标签同步更新
+2. 滑到底 → 追加 30 条，直到加载完
+3. 搜索框输入「焦虑」→ 匹配 emotions 字段的 entry 出现；输入「自我认同」→ 匹配 core_needs；输入「工作」→ 匹配 category_tags
+4. 新用户首次打开 category_tags sheet → 自动出现 11 个默认标签
+5. 已被 AI 标记「日常生活」的记录 → 打开 sheet 可看到并取消该标签
+6. 「我的」标签管理 → 每个标签可点 ✎ 重命名 → 保存后所有历史 entry 的该标签同步更新（包括 RecordDetail 的 header 展示）
