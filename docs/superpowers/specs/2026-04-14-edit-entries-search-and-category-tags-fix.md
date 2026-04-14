@@ -27,9 +27,11 @@
   - `emotion_display`（情绪描述，text[]）
   - `core_needs`（核心需求，text[]）
   - `category_tags`（内容大类，text[]）
-- 实现：Supabase `.or()` 拼接，array 字段用 `::text` 转换做 ilike 匹配：
+- 实现：搜索前先转义通配符，再用 Supabase `.or()` 拼接，array 字段用 `::text` cast 做 ilike：
   ```js
-  .or(`content.ilike.%${q}%,entry_summary.ilike.%${q}%,emotions::text.ilike.%${q}%,emotion_display::text.ilike.%${q}%,core_needs::text.ilike.%${q}%,category_tags::text.ilike.%${q}%`)
+  // ⚠️ 先转义，防止用户输入 % 或 _ 被当作 ilike 特殊字符
+  const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')
+  .or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%,emotions::text.ilike.%${escaped}%,emotion_display::text.ilike.%${escaped}%,core_needs::text.ilike.%${escaped}%,category_tags::text.ilike.%${escaped}%`)
   ```
   PostgreSQL 把 `text[]` 转换为 `{焦虑,委屈}` 形式，ilike `%焦虑%` 可以匹配。
 - 搜索结果不分页，上限 30 条
@@ -139,18 +141,19 @@ async function loadCategoryOptions() {
 **实现方式：Supabase RPC**，一条 SQL 一次扫描更新所有相关 entry（高效，无需逐条循环）。
 
 **Task 0 需新增一条 SQL（Supabase SQL Editor 执行）：**
+
+> ⚠️ **安全说明（§4.22）：** 函数内使用 `auth.uid()` 而非接收 `p_user_id` 参数，防止前端传入伪造 user_id 越权篡改他人数据。`SECURITY DEFINER` 确保函数以定义者权限运行，RLS 通过 `auth.uid()` 绑定当前登录用户。
+
 ```sql
-CREATE OR REPLACE FUNCTION replace_category_tag(
-  p_user_id UUID,
-  p_old TEXT,
-  p_new TEXT
-)
-RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION replace_category_tag(p_old TEXT, p_new TEXT)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
   UPDATE journal_entries
   SET category_tags = array_replace(category_tags, p_old, p_new)
-  WHERE user_id = p_user_id AND p_old = ANY(category_tags);
+  WHERE user_id = auth.uid() AND p_old = ANY(category_tags);
 $$;
 ```
+
+预期：`Success. No rows returned`。
 
 **入口**：SettingsPage 标签管理页，每个标签条目增加 ✎ 编辑按钮（ − 按钮左侧）。
 
@@ -161,7 +164,7 @@ $$;
 **实现（SettingsPage.jsx）：**
 ```js
 // state 新增
-const [editingTagId, setEditingTagId] = useState(null)  // 当前正在编辑的 tag.id
+const [editingTagId, setEditingTagId] = useState(null)
 const [editingTagValue, setEditingTagValue] = useState('')
 
 async function handleRenameTag(tag) {
@@ -175,12 +178,8 @@ async function handleRenameTag(tag) {
     .update({ option_value: newValue })
     .eq('id', tag.id)
 
-  // 2. 批量回写所有历史 entry（一条 RPC 搞定）
-  await db.rpc('replace_category_tag', {
-    p_user_id: user.id,
-    p_old: oldValue,
-    p_new: newValue,
-  })
+  // 2. 批量回写所有历史 entry（RPC 内部用 auth.uid()，无需传 user_id）
+  await db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })
 
   // 3. 刷新本地 state
   setTagOptions(prev =>

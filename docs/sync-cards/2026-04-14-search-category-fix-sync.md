@@ -27,9 +27,11 @@
 **搜索模式（搜索框有内容时）：**
 - 搜索结果替换默认列表
 - 覆盖 6 个字段：content + entry_summary + emotions + emotion_display + core_needs + category_tags
-- 实现：Supabase `.or()` 拼接，array 字段用 `::text` cast 做 ilike：
+- 实现：搜索前转义通配符，再用 Supabase `.or()` 拼接，array 字段用 `::text` cast：
   ```js
-  .or(`content.ilike.%${q}%,entry_summary.ilike.%${q}%,emotions::text.ilike.%${q}%,emotion_display::text.ilike.%${q}%,core_needs::text.ilike.%${q}%,category_tags::text.ilike.%${q}%`)
+  // 先转义，防止 % _ 被当作 ilike 特殊字符（§4.23）
+  const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')
+  .or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%,emotions::text.ilike.%${escaped}%,emotion_display::text.ilike.%${escaped}%,core_needs::text.ilike.%${escaped}%,category_tags::text.ilike.%${escaped}%`)
   ```
 - 上限 30 条，不分页
 
@@ -69,16 +71,14 @@
 
 #### ⚠️ Task 0（必须最先执行）：在 Supabase SQL Editor 创建 RPC 函数
 
+> **安全说明（§4.22）：** 函数使用 `auth.uid()` 而非接收 `p_user_id`，防止越权篡改他人数据。
+
 ```sql
-CREATE OR REPLACE FUNCTION replace_category_tag(
-  p_user_id UUID,
-  p_old TEXT,
-  p_new TEXT
-)
-RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION replace_category_tag(p_old TEXT, p_new TEXT)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
   UPDATE journal_entries
   SET category_tags = array_replace(category_tags, p_old, p_new)
-  WHERE user_id = p_user_id AND p_old = ANY(category_tags);
+  WHERE user_id = auth.uid() AND p_old = ANY(category_tags);
 $$;
 ```
 
@@ -90,7 +90,7 @@ $$;
 
 **保存逻辑：**
 1. 更新 `user_options.option_value`
-2. 调用 `db.rpc('replace_category_tag', { p_user_id, p_old, p_new })` 批量回写所有历史 entry
+2. 调用 `db.rpc('replace_category_tag', { p_old, p_new })` 批量回写（**无需传 user_id**，DB 函数内用 `auth.uid()`）
 
 **修改文件：** `src/pages/SettingsPage.jsx`
 
@@ -106,12 +106,14 @@ AI 提取时使用 `prompts.js` 硬编码列表，不读 user_options：
 
 ---
 
-## 五、架构风险（新增，见 arch-context.md §4.20 §4.21）
+## 五、架构风险（新增，见 arch-context.md §4.20–4.23）
 
 | 编号 | 风险 | 优先级 |
 |---|---|---|
-| 4.20 | replace_category_tag RPC 函数未创建，重命名功能会 runtime crash | ⚠️ 高（代码 session 执行前必须先建函数） |
+| 4.20 | replace_category_tag RPC 函数未创建，重命名功能会 runtime crash | ⚠️ 高（Task 0 必须先建） |
 | 4.21 | prompts.js category_tags 与 user_options 长期脱节 | 低（已知局限，B1 缓解） |
+| 4.22 | RPC 函数签名含 p_user_id 有越权风险 | ⚠️ 高（已修复：改用 auth.uid()） |
+| 4.23 | 搜索词含 % 或 _ 时 ilike 通配符未转义 | 低（已处理：加转义一行） |
 
 ---
 
