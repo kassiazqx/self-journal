@@ -156,7 +156,7 @@ AI 跨对话记忆 → Supabase user_memory 表（多端同步）
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-11（架构session预开工整备，基于 git HEAD c642591）
+**最后更新：** 2026-04-14（交互细节批次全部实现，基于 git HEAD a04b695）
 
 ### 文件结构（当前）
 
@@ -174,35 +174,41 @@ src/
 │   ├── memory.js               AI记忆读写（Supabase user_memory）
 │   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
 │   ├── conversationService.js  对话保存 + AI 字段提取
-│   ├── insightsService.js      洞察页数据查询服务层（新建）
+│   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
 │   ├── keywordDetection.js     本地关键词检测
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
 │   ├── templates.js            模板配置（含新旧ID兼容）
 │   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
+│   │                           ⚠️ category_tags 选项硬编码（见4.21）
 │   ├── reviewLetterService.js  回顾信触发 + 生成
 │   ├── awarenessFlowState.js   觉察流状态机
 │   ├── awarenessFlowState.test.js
-│   ├── extractSummaryService.js     摘要索引批量提取服务（第二批新增）
+│   ├── extractSummaryService.js     摘要索引批量提取服务
 │   ├── extractSummaryService.test.js
-│   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary（第二批新增）
+│   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary + reAnalyzeThread
 │   └── threadService.test.js
 ├── components/
-│   ├── MainLayout.jsx          4-Tab导航（写/记录/洞察/我的）+ 全屏覆盖层管理
+│   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
+│   │                           含 candidateDetail 屏幕类型 + onOpenPendingThreads 回调
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
-│   ├── RecordDetail.jsx        记录详情（紧凑布局+AI分析按钮）
+│   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
+│   │                           含 category_tags 自动种入默认标签逻辑（A1方案）
 │   └── ReviewLetterDetail.jsx  回顾信详情（只读）
 └── pages/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+引导词+草稿恢复）
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
-    ├── InsightsPage.jsx        洞察页（回顾信+脉络入口区块 + 图表；第二批完成）
-    ├── ThreadsPage.jsx         脉络列表页（第二批新增）
-    ├── ThreadDetailPage.jsx    脉络详情页（第二批新增）
-    ├── ReviewLetterListPage.jsx 回顾信列表页（第二批新增）
-    ├── EditEntryPage.jsx       统一编辑器（原文+觉察流，第二批新增）
-    └── SettingsPage.jsx        我的页（AI配置/API Key/测试连接/AI记忆/数据导出/退出登录/回顾信设置）
+    ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
+    ├── ThreadsPage.jsx         脉络三Tab页（已确认/待确认/已归档）
+    │                           含 ＋浮窗（手动创建/AI分析）+ AI分析sheet + defaultTab prop
+    ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）⭐新增
+    ├── ThreadDetailPage.jsx    脉络详情（mode='confirmed'|'archived'；··· 菜单；编辑关联记录模式）
+    ├── ReviewLetterListPage.jsx 回顾信列表页
+    ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
+    └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
+                                含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
 ```
 
 **已删除：**
@@ -343,6 +349,52 @@ user_options：
 **兼容方案：** `const isV2 = Array.isArray(insights?.suggested_threads)`；UI 层先判断版本再渲染。
 **优先级：** 中（影响历史数据展示；Task 8 执行前必须处理）
 
+### 4.16 overall_state_score 历史数据超范围（-5/+5 → -3/+3 改动后）
+**风险：** AI 提取 prompt 已从 `-5到5` 改为 `-3到3`，但历史 journal_entries 中可能存在 ±4、±5 的值。
+**影响：** RecordDetail.jsx 的 state_score 下拉框（7档）无法覆盖这些历史值，展示时 chip 可能显示 "+4" 但找不到对应高亮选项。
+**处理方案：** 代码 session 实现下拉框时，若当前值 > 3 则 clamp 显示为 "+3"，若 < -3 则 clamp 为 "−3"，或展示原始值并在列表里多加一条「当前：+4（超范围，保存后将调整）」提示。不强制回写旧数据。
+**优先级：** 低（历史数据极少有 ±4/±5，对大多数用户无影响）
+
+### 4.17 user_options.sort_order 初始全为 0 导致排序不稳定
+**风险：** `ALTER TABLE user_options ADD COLUMN sort_order integer NOT NULL DEFAULT 0` 执行后，存量数据所有行 sort_order=0，首次拖动排序后若只写单条 sort_order，其余行仍为 0，下次加载时 DB 返回顺序不稳定（PG 不保证同值排序顺序）。
+**处理：** 代码 session 实现拖动排序保存时，必须将当前列表所有条目的 sort_order 按新顺序写回连续整数（0,1,2,…N），不能只改被拖动的那一条。
+**优先级：** 中（用户感知为"排序保存不住"）
+
+### 4.18 threads.status 约束变更的执行顺序风险
+**风险：** DROP CONSTRAINT 和 ADD CONSTRAINT 两条 SQL 若不在同一次执行，中间窗口期 status 字段无约束保护，任意值均可写入。
+**处理：** 代码 session 在 Supabase SQL Editor 执行时，必须将两条语句合并为一次粘贴执行，不能分两次。
+**优先级：** 低（操作纪律问题，时间窗口极短，但值得标记）
+
+### 4.19 「重新分析」逻辑必须过滤 removed_by_user=true
+**风险：** `removed_by_user` 字段是 2026-04-12 补充 spec 新增，原 Plan Task 4 `scoreEntryForThread` / 重新分析逻辑写于该字段存在之前，极有可能未加此过滤。若不过滤，被用户手动排除的 entry 会被 AI 反复重新关联，用户排除意愿被无视。
+**处理：** 代码 session 实现「重新分析」查询 entry 时，WHERE 条件必须加 `AND (removed_by_user = false OR removed_by_user IS NULL)`。
+**优先级：** 高（影响用户排除意愿被尊重这一核心体验承诺）
+
+### 4.20 replace_category_tag RPC 函数尚未在 DB 创建
+**风险：** `SettingsPage.jsx` 标签重命名功能调用 `db.rpc('replace_category_tag', ...)` 批量回写历史 entry；但该 PostgreSQL 函数尚未在 Supabase 中创建。代码 session 部署后，用户点击重命名会 runtime crash（rpc 找不到函数名）。
+**处理：** 代码 session 执行前，**必须先在 Supabase SQL Editor 执行以下 SQL 创建函数**（属于 Task 0）：
+```sql
+CREATE OR REPLACE FUNCTION replace_category_tag(
+  p_user_id UUID,
+  p_old TEXT,
+  p_new TEXT
+)
+RETURNS void LANGUAGE sql AS $$
+  UPDATE journal_entries
+  SET category_tags = array_replace(category_tags, p_old, p_new)
+  WHERE user_id = p_user_id AND p_old = ANY(category_tags);
+$$;
+```
+**优先级：** 高（功能上线必须，否则重命名 crash）
+
+### 4.21 prompts.js category_tags 选项与 user_options 长期脱节
+**风险：** `prompts.js` 中 `getExtractionPrompt()` 硬编码了 11 个 category_tags 候选选项。用户在「我的」页面增删自定义标签后，AI 提取仍使用旧硬编码列表，导致：
+1. 用户新增的自定义标签 AI 不会自动匹配
+2. 用户删除的标签 AI 可能仍提取（产生孤儿标签）
+**当前处理：** 已知局限，可接受。B1 方案（孤儿标签在 category sheet 中可见可取消）缓解了用户感知。
+**未来优化方向：** AI 提取时动态读取当前用户的 user_options 并注入 prompt。
+**优先级：** 低（不阻塞功能，体验影响小）
+
 ---
 
 ## §5 后续扩展约束
@@ -429,7 +481,9 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-14 · 产品session · 发现两个问题并完成设计：编辑关联记录默认展示30条+搜索扩展6字段（content/entry_summary/emotions/emotion_display/core_needs/category_tags）；category_tags三项修复（A1默认标签种入/B1孤儿标签/C1重命名+RPC批量回写）；spec: 2026-04-14-edit-entries-search-and-category-tags-fix.md；新增§4.20（RPC函数未创建）§4.21（prompts.js脱节）
 - 2026-04-13 · 产品session · 脉络交互细节补充设计完成：threads.status 新增 rejected；thread_entries 新增 removed_by_user 字段；候选三态（candidate/rejected/deleted）流程；脉络编辑模式/重新分析/归档/手动分析 UI；RecordDetail Header 四字段可编辑（template_type下拉/emotion_display内联/state_score-3~+3/category_tags底部sheet）；spec: 2026-04-12-threads-interaction-gaps.md
+- 2026-04-13 · 架构session · 对 spec §A–§I + 同步卡做架构兼容性审查：无违反§2约束；新增4.17（sort_order排序不稳定）/4.18（status约束执行顺序）/4.19（重新分析必须过滤removed_by_user，高优先级）；修复§4.15-4.16编号混乱；整体评级98分
 - 2026-04-12 · 代码session · 收尾补漏：suggested_threads→threads落库（candidate脉络生成闭环）；ThreadsPage长按删除菜单+归档占位；RecordsPage未读信左侧金线；MainLayout四Tab同时挂载消除来回切换加载
 - 2026-04-12 · 代码session · 完成第二批功能全量实现（Task 1-12）：DB建表+RLS；reviewLetterService重构（摘要索引/covered_by_letter_id回写/suggested_threads→threads落库）；extractSummaryService/threadService新建；ThreadsPage/ThreadDetailPage/ReviewLetterListPage新建；RecordDetail摘要索引区+EditableFieldRow+脉络标签；HomePage未读回顾信气泡；MainLayout连线所有新屏幕；额外新增EditEntryPage统一编辑器/RecordsPage长按编辑删除/ThreadsPage新建时选记录+已确认脉络长按删除
 - 2026-04-12 · 架构session · emotionMap.js 词库扩展完成：58词→61词（+渴望/敬佩/欣赏，完整覆盖 Cowen & Keltner 27种情绪）；崇敬从敬畏组移入敬佩组；§2.4 同步更新
