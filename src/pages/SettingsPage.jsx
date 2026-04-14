@@ -6,6 +6,7 @@ import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs } from '../lib/reviewLetterService'
 import { updateMemory } from '../lib/memory'
+import { db } from '../lib/db'
 
 const PROVIDERS = [
   {
@@ -41,6 +42,27 @@ export default function SettingsPage() {
   })
   const [generatingLetter, setGeneratingLetter] = useState(false)
   const [letterMsg, setLetterMsg] = useState('')
+
+  // ── 内容大类标签管理 ──────────────────────────────────
+  const [showTagManager, setShowTagManager] = useState(false)
+  const [tagOptions, setTagOptions] = useState([])   // [{ id, option_value, sort_order }]
+  const [newTagInput, setNewTagInput] = useState('')
+  const [addingTag, setAddingTag] = useState(false)
+  const [dragIndex, setDragIndex] = useState(null)
+
+  useEffect(() => {
+    if (!user) return
+    loadTagOptions()
+  }, [user])
+
+  async function loadTagOptions() {
+    const { data } = await db.from('user_options')
+      .select('id, option_value, sort_order')
+      .eq('user_id', user.id)
+      .eq('field_name', 'content_category')
+      .order('sort_order', { ascending: true })
+    setTagOptions(data ?? [])
+  }
 
   // 触发浏览器下载
   function downloadFile(content, filename, mimeType) {
@@ -121,6 +143,58 @@ export default function SettingsPage() {
     saveAISettings(settings)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  // ── 内容大类标签：删除 ──────────────────────────────
+  async function handleDeleteTag(id) {
+    await db.from('user_options').delete().eq('id', id)
+    loadTagOptions()
+  }
+
+  // ── 内容大类标签：新增 ──────────────────────────────
+  async function handleAddTag() {
+    const label = newTagInput.trim()
+    if (!label) return
+    const nextOrder = tagOptions.length
+    const { data, error } = await db.from('user_options').insert({
+      user_id: user.id,
+      field_name: 'content_category',
+      option_value: label,
+      sort_order: nextOrder,
+    }).select('id, option_value, sort_order').single()
+    if (!error && data) {
+      setTagOptions(prev => [...prev, data])
+    }
+    setNewTagInput('')
+    setAddingTag(false)
+  }
+
+  // ── 内容大类标签：拖动排序（写回全量 sort_order）────
+  async function handleDragReorder(fromIndex, toIndex) {
+    if (fromIndex === toIndex) return
+    const reordered = [...tagOptions]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    setTagOptions(reordered)
+    await Promise.all(
+      reordered.map((tag, i) =>
+        db.from('user_options').update({ sort_order: i }).eq('id', tag.id)
+      )
+    )
+  }
+
+  function handleDragStart(e, index) {
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  function handleDragOver(e, index) {
+    e.preventDefault()
+    if (dragIndex === null || dragIndex === index) return
+    handleDragReorder(dragIndex, index)
+    setDragIndex(index)
+  }
+  function handleDragEnd() {
+    setDragIndex(null)
   }
 
   const handleTest = async () => {
@@ -342,6 +416,26 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* ─── 自定义选项 ─── */}
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #ede9e2' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 14 }}>
+            自定义选项
+          </div>
+          <button
+            onClick={() => setShowTagManager(true)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '12px 16px', background: 'white',
+              border: '1px solid #e0dbd4', borderRadius: 12, cursor: 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 14, color: '#333' }}>内容大类标签</span>
+            <span style={{ fontSize: 12, color: '#bbb' }}>
+              {tagOptions.length} 个标签 ›
+            </span>
+          </button>
+        </div>
+
         {/* ─── 回顾信设置 ─── */}
         <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #ede9e2' }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 14 }}>
@@ -425,6 +519,80 @@ export default function SettingsPage() {
         </div>
 
       </div>
+
+      {/* ─── 内容大类标签管理子页（全屏覆盖） ─── */}
+      {showTagManager && (
+        <div style={{
+          position: 'absolute', inset: 0, background: '#f5f3ef',
+          display: 'flex', flexDirection: 'column', zIndex: 50,
+        }}>
+          {/* 顶部 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', background: '#f5f3ef', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
+            <button onClick={() => setShowTagManager(false)}
+              style={{ background: 'none', border: 'none', fontSize: 22, color: '#c9a96e', cursor: 'pointer', lineHeight: 1 }}>
+              ‹
+            </button>
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>内容大类标签</span>
+          </div>
+
+          {/* 列表 */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px' }}>
+            {tagOptions.map((tag, index) => (
+              <div key={tag.id}
+                draggable
+                onDragStart={e => handleDragStart(e, index)}
+                onDragOver={e => handleDragOver(e, index)}
+                onDragEnd={handleDragEnd}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  background: 'white', borderRadius: 10, padding: '10px 14px',
+                  marginBottom: 8, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                  opacity: dragIndex === index ? 0.5 : 1,
+                  cursor: 'grab',
+                }}
+              >
+                <span style={{ fontSize: 16, color: '#ccc', cursor: 'grab', flexShrink: 0 }}>☰</span>
+                <span style={{ flex: 1, fontSize: 13, color: '#333', padding: '3px 10px', background: '#f5f3ef', borderRadius: 20, display: 'inline-block' }}>
+                  {tag.option_value}
+                </span>
+                <button
+                  onClick={() => handleDeleteTag(tag.id)}
+                  style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1px solid #e0dbd4', background: 'white', color: '#e57373', fontSize: 16, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  −
+                </button>
+              </div>
+            ))}
+
+            {/* 内联新增输入框 */}
+            {addingTag ? (
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <input
+                  autoFocus
+                  value={newTagInput}
+                  onChange={e => setNewTagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddTag() }}
+                  placeholder="标签名称"
+                  style={{ flex: 1, border: '1px solid #e0dbd4', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                />
+                <button onClick={handleAddTag}
+                  style={{ padding: '10px 16px', border: 'none', borderRadius: 10, background: '#c9a96e', color: 'white', fontSize: 13, cursor: 'pointer' }}>
+                  完成
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setAddingTag(true)}
+                style={{ width: '100%', marginTop: 4, padding: '11px', border: '1.5px dashed #e0dbd4', borderRadius: 10, background: 'none', color: '#c9a96e', fontSize: 13, cursor: 'pointer', textAlign: 'center' }}>
+                + 添加新标签
+              </button>
+            )}
+
+            <div style={{ marginTop: 16, fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 1.6 }}>
+              删除标签不影响已打过该标签的笔记记录
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
