@@ -156,7 +156,7 @@ AI 跨对话记忆 → Supabase user_memory 表（多端同步）
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-14（交互细节批次全部实现，基于 git HEAD a04b695）
+**最后更新：** 2026-04-15（category修复批次 + RecordsPage无限滚动，基于 git HEAD 3eb021c）
 
 ### 文件结构（当前）
 
@@ -174,6 +174,7 @@ src/
 │   ├── memory.js               AI记忆读写（Supabase user_memory）
 │   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
 │   ├── conversationService.js  对话保存 + AI 字段提取
+│   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
@@ -181,7 +182,7 @@ src/
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
 │   ├── templates.js            模板配置（含新旧ID兼容）
 │   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
-│   │                           ⚠️ category_tags 选项硬编码（见4.21）
+│   │                           getExtractionPrompt(userCategoryTags) 接受动态标签列表（已修复4.21）
 │   ├── reviewLetterService.js  回顾信触发 + 生成
 │   ├── awarenessFlowState.js   觉察流状态机
 │   ├── awarenessFlowState.test.js
@@ -194,17 +195,20 @@ src/
 │   │                           含 candidateDetail 屏幕类型 + onOpenPendingThreads 回调
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
-│   │                           含 category_tags 自动种入默认标签逻辑（A1方案）
+│   │                           含 category_tags 自动种入默认标签逻辑（A1方案）+ B1孤儿标签合并
+│   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
 │   └── ReviewLetterDetail.jsx  回顾信详情（只读）
 └── pages/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+引导词+草稿恢复）
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
+    │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
     ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
     ├── ThreadsPage.jsx         脉络三Tab页（已确认/待确认/已归档）
     │                           含 ＋浮窗（手动创建/AI分析）+ AI分析sheet + defaultTab prop
-    ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）⭐新增
+    ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）
     ├── ThreadDetailPage.jsx    脉络详情（mode='confirmed'|'archived'；··· 菜单；编辑关联记录模式）
+    │                           编辑模式：已关联在上 / 搜索框置顶于未关联区 / 默认列表30条+上滑加载
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
@@ -261,6 +265,8 @@ user_memory：
 
 user_options：
   - 用户自定义下拉选项
+  - field_name: 'content_category'，option_value，sort_order（integer，拖动排序）
+  - ⚠️ 存量数据 sort_order 全为 0，保存排序时必须写回所有条目的连续整数（见4.17）
 ```
 
 ---
@@ -384,13 +390,10 @@ $$;
 前端调用：`db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })`（无需传 user_id）
 **优先级：** 高（功能上线必须，否则重命名 crash）
 
-### 4.21 prompts.js category_tags 选项与 user_options 长期脱节
-**风险：** `prompts.js` 中 `getExtractionPrompt()` 硬编码了 11 个 category_tags 候选选项。用户在「我的」页面增删自定义标签后，AI 提取仍使用旧硬编码列表，导致：
-1. 用户新增的自定义标签 AI 不会自动匹配
-2. 用户删除的标签 AI 可能仍提取（产生孤儿标签）
-**当前处理：** 已知局限，可接受。B1 方案（孤儿标签在 category sheet 中可见可取消）缓解了用户感知。
-**未来优化方向：** AI 提取时动态读取当前用户的 user_options 并注入 prompt。
-**优先级：** 低（不阻塞功能，体验影响小）
+### 4.21 prompts.js category_tags 选项与 user_options 长期脱节（已修复）
+**风险：** `prompts.js` 中 `getExtractionPrompt()` 硬编码了 11 个 category_tags 候选选项。用户在「我的」页面增删自定义标签后，AI 提取仍使用旧硬编码列表。
+**已修复（2026-04-15）：** `getExtractionPrompt(userCategoryTags)` 改为接受动态标签列表参数；`conversationService.js` 新增 `getUserCategoryTags(userId)` 在提取前从 `user_options` 读取用户标签，新用户自动 seed 11 个默认值。
+**优先级：** 已处理
 
 ### 4.22 replace_category_tag RPC 函数未绑定 auth.uid()，存在越权风险
 **风险：** 同步卡 / spec 中 RPC 函数签名包含 `p_user_id UUID` 参数，调用方（前端）传入 `user.id`。但数据库函数不校验传入的 `p_user_id` 是否等于 `auth.uid()`，若 anon key 泄漏，攻击者可伪造任意 `p_user_id` 批量篡改他人 category_tags。
@@ -406,11 +409,15 @@ $$;
 前端调用改为：`db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })`
 **优先级：** 高（安全性问题，代码 session 执行 Task 0 时使用修复后的 SQL，不用同步卡里的版本）
 
-### 4.23 搜索词含 `%` 或 `_` 时 ilike 通配符未转义
+### 4.23 搜索词含 `%` 或 `_` 时 ilike 通配符未转义（已修复）
 **风险：** ThreadDetailPage 搜索框输入内容直接拼入 `.or()` 的 ilike 字符串，如用户输入「20%」或「_哈哈」会被当作通配符，导致意外匹配或空结果。
-**当前处理：** 日记应用场景极少触发，可接受现状。
-**建议：** 有余力时在构造查询前加一行转义：`const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')`
-**优先级：** 低（不阻塞功能，边缘场景）
+**已修复（2026-04-15）：** 构造查询前加转义：`const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')`
+**优先级：** 已处理
+
+### 4.24 Supabase JS `.or()` 不支持 array 字段 `::text` cast 搜索
+**风险：** 编辑关联记录搜索原计划覆盖 `emotions / emotion_display / core_needs / category_tags` 等 text[] 字段，写成 `emotions::text.ilike.%q%` 会触发 Supabase 400 Bad Request。
+**当前处理：** ThreadDetailPage 搜索临时降级为文本字段：`content + entry_summary`。如需搜索 array 字段，必须改用 SQL RPC（例如 `search_my_entries`），不要在 Supabase JS `.or()` 中拼 `::text`。
+**优先级：** 中（功能范围低于原计划，但避免线上 400）
 
 ---
 
@@ -498,6 +505,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-15 · 代码session · category修复批次（RecordDetail useAuth修复/prompts动态标签/conversationService getUserCategoryTags）+ RecordsPage无限滚动分页（plan外补丁）+ ThreadDetailPage搜索框布局修正；搜索降级为2字段（array::text cast在Supabase JS触发400，新增4.24）
 - 2026-04-15 · 产品session · 实施计划写完，待代码session执行：plan: 2026-04-14-edit-entries-search-and-category-tags-fix.md（Task 0 SQL需用户先在Supabase执行；Task 1–3代码改动；Task 4验证+commit）
 - 2026-04-14 · 架构session · 审查搜索升级+category_tags修复：新增4.22（RPC函数需绑定auth.uid()，高优先级安全漏洞，SQL需改版）/4.23（ilike通配符未转义，低）；确认B1孤儿标签无XSS风险；array::text ilike兼容性通过；整体评级97分
 - 2026-04-14 · 产品session · 发现两个问题并完成设计：编辑关联记录默认展示30条+搜索扩展6字段（content/entry_summary/emotions/emotion_display/core_needs/category_tags）；category_tags三项修复（A1默认标签种入/B1孤儿标签/C1重命名+RPC批量回写）；spec: 2026-04-14-edit-entries-search-and-category-tags-fix.md；新增§4.20（RPC函数未创建）§4.21（prompts.js脱节）
