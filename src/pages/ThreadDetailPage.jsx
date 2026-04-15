@@ -2,7 +2,7 @@
 // 脉络详情页：mode='confirmed'（默认）或 mode='archived'
 // mode=confirmed：··· 菜单（编辑名称/编辑记录/重新分析/归档/删除）+ 编辑关联记录模式
 // mode=archived：只读 banner + 底部恢复/永久删除
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import {
@@ -39,6 +39,12 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
+  // 默认列表分页
+  const [defaultEntries, setDefaultEntries] = useState([])
+  const [defaultOffset, setDefaultOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingRef = useRef(false)      // 同步锁，防止并发加载
   const [arcStale, setArcStale] = useState(false)  // 编辑后 arc_summary 过期
 
   // 重新分析
@@ -91,22 +97,64 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     setRefreshing(false)
   }
 
+  // ── 编辑关联记录：加载默认列表（按时间倒序，每页 30 条）─────
+  async function loadDefaultEntries(offset = 0) {
+    if (loadingRef.current) return   // 同步锁：防止并发
+    loadingRef.current = true
+    setLoadingMore(true)
+    const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
+    const { data } = await db.from('journal_entries')
+      .select('id, entry_summary, created_at, content')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + 29)
+    const filtered = (data ?? []).filter(e => !allExistingIds.has(e.id))
+    if (offset === 0) {
+      setDefaultEntries(filtered)
+    } else {
+      setDefaultEntries(prev => [...prev, ...filtered])
+    }
+    setHasMore((data ?? []).length === 30)
+    setDefaultOffset(offset)
+    loadingRef.current = false
+    setLoadingMore(false)
+  }
+
+  async function loadMore() {
+    await loadDefaultEntries(defaultOffset + 30)
+  }
+
+  // 滚动触底自动加载（只在编辑模式 + 搜索框为空时生效）
+  function handleScroll(e) {
+    if (!editingEntries || !hasMore || loadingRef.current || searchQuery.trim()) return
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    if (scrollHeight - scrollTop - clientHeight < 150) {
+      loadMore()
+    }
+  }
+
   // ── 编辑关联记录：搜索 ────────────────────────────────────────
   useEffect(() => {
     if (!editingEntries) return
-    if (!searchQuery.trim()) { setSearchResults([]); return }
+    if (!searchQuery.trim()) {
+      setSearchResults([])
+      // 进入编辑模式或清空搜索时，加载默认列表
+      loadDefaultEntries(0)
+      return
+    }
     const timer = setTimeout(() => doSearch(searchQuery), 300)
     return () => clearTimeout(timer)
   }, [searchQuery, editingEntries])
 
   async function doSearch(q) {
     setSearching(true)
+    const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')
     const { data } = await db.from('journal_entries')
       .select('id, entry_summary, created_at, content')
       .eq('user_id', user.id)
-      .ilike('content', `%${q}%`)
+      .or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%`)
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(30)
     // 排除已在 entries 中的（含 removed_by_user=true 的也排除，避免重复）
     const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
     setSearchResults((data ?? []).filter(e => !allExistingIds.has(e.id)))
@@ -130,6 +178,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     setEntries(prev => [{ ...entry, added_by: 'user' }, ...prev])
     setRawEntries(prev => [...prev, { thread_id: thread.id, entry_id: entry.id, added_by: 'user', removed_by_user: false, journal_entries: entry }])
     setSearchResults(prev => prev.filter(e => e.id !== entry.id))
+    setDefaultEntries(prev => prev.filter(e => e.id !== entry.id))
     setArcStale(true)
   }
 
@@ -242,50 +291,119 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       {editingEntries && (
         <div style={{ background: '#fff3e8', borderBottom: '1px solid #f0d4b0', padding: '10px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <span style={{ fontSize: 13, color: '#e07850', fontWeight: 500 }}>编辑关联记录</span>
-          <button onClick={() => { setEditingEntries(false); setSearchQuery(''); setSearchResults([]) }}
+          <button onClick={() => { setEditingEntries(false); setSearchQuery(''); setSearchResults([]); setDefaultEntries([]); setDefaultOffset(0); setHasMore(true) }}
             style={{ fontSize: 13, color: '#c9a96e', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>
             完成
           </button>
         </div>
       )}
 
-      {/* 编辑模式搜索框 */}
-      {editingEntries && (
-        <div style={{ padding: '10px 18px', background: '#faf8f4', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
-          <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            placeholder="搜索记录内容…"
-            style={{ width: '100%', border: '1px solid #e0dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-        </div>
-      )}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }} onScroll={handleScroll}>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
-
-        {/* 搜索结果（编辑模式） */}
-        {editingEntries && searchQuery.trim() && (
+        {/* ── 编辑模式：已关联记录（上方，可移除）── */}
+        {editingEntries && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>搜索结果</div>
-            {searching ? (
-              <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>搜索中…</div>
-            ) : searchResults.length === 0 ? (
-              <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>没有找到匹配的记录</div>
-            ) : searchResults.map(entry => (
+            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>已关联记录（{entries.length}）</div>
+            {entries.length === 0 ? (
+              <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>暂无关联记录</div>
+            ) : entries.map(entry => (
               <div key={entry.id}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', borderRadius: 10, padding: '10px 12px', marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, color: '#bbb', marginBottom: 2 }}>{formatDate(entry.created_at)}</div>
                   <div style={{ fontSize: 13, color: '#333', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {entry.entry_summary ?? entry.content?.slice(0, 60) ?? ''}
+                    {entry.entry_summary ?? '（暂无摘要）'}
                   </div>
                 </div>
-                <button onClick={() => handleAddEntry(entry)}
-                  style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', background: '#e8f5e9', border: '1.5px solid #81c784', color: '#43a047', fontSize: 18, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  +
+                <button onClick={e => { e.stopPropagation(); handleRemoveEntry(entry.id) }}
+                  style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', background: '#fde8e8', border: '1.5px solid #e57373', color: '#e05252', fontSize: 14, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  ×
                 </button>
               </div>
             ))}
             <div style={{ height: 1, background: '#ede9e2', margin: '12px 0' }} />
           </div>
         )}
+
+        {/* ── 未关联记录（搜索框始终在顶，下方根据搜索词显示结果或默认列表）── */}
+        {editingEntries && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>未关联记录</div>
+
+            {/* 搜索框（始终置顶） */}
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="搜索记录内容…"
+              style={{ width: '100%', border: '1px solid #e0dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 10 }}
+            />
+
+            {/* 搜索结果（有搜索词时） */}
+            {searchQuery.trim() && (
+              <>
+                {searching ? (
+                  <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>搜索中…</div>
+                ) : searchResults.length === 0 ? (
+                  <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>没有找到匹配的记录</div>
+                ) : searchResults.map(entry => (
+                  <div key={entry.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', borderRadius: 10, padding: '10px 12px', marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: '#bbb', marginBottom: 2 }}>{formatDate(entry.created_at)}</div>
+                      <div style={{ fontSize: 13, color: '#333', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {entry.entry_summary ?? entry.content?.slice(0, 60) ?? ''}
+                      </div>
+                    </div>
+                    <button onClick={() => handleAddEntry(entry)}
+                      style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', background: '#e8f5e9', border: '1.5px solid #81c784', color: '#43a047', fontSize: 18, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      +
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* 默认列表（搜索框为空时） */}
+            {!searchQuery.trim() && (
+              <>
+                {defaultEntries.length === 0 && loadingMore ? (
+                  <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>加载中…</div>
+                ) : defaultEntries.length === 0 ? (
+                  <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>暂无可添加的记录</div>
+                ) : defaultEntries.map(entry => (
+                  <div key={entry.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', borderRadius: 10, padding: '10px 12px', marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: '#bbb', marginBottom: 2 }}>{formatDate(entry.created_at)}</div>
+                      <div style={{ fontSize: 13, color: '#333', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {entry.entry_summary ?? entry.content?.slice(0, 60) ?? ''}
+                      </div>
+                    </div>
+                    <button onClick={() => handleAddEntry(entry)}
+                      style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', background: '#e8f5e9', border: '1.5px solid #81c784', color: '#43a047', fontSize: 18, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      +
+                    </button>
+                  </div>
+                ))}
+                {loadingMore && defaultEntries.length > 0 && (
+                  <div style={{ color: '#ccc', fontSize: 12, textAlign: 'center', padding: '10px 0' }}>加载中…</div>
+                )}
+                {hasMore && !loadingMore && defaultEntries.length > 0 && (
+                  <button onClick={loadMore}
+                    style={{ display: 'block', width: '100%', padding: '10px', background: 'none', border: '1px solid #e0dbd4', borderRadius: 8, color: '#aaa', fontSize: 13, cursor: 'pointer', marginTop: 4 }}>
+                    加载更多 ↓
+                  </button>
+                )}
+                {!hasMore && defaultEntries.length > 0 && (
+                  <div style={{ color: '#ddd', fontSize: 11, textAlign: 'center', padding: '6px 0' }}>已加载全部记录</div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── 正常查看模式：变化轨迹 + 关联记录 ── */}
+        {!editingEntries && (<>
 
         {/* arc_summary 区 */}
         <div style={{ background: isArchived ? '#f5f3ef' : '#fffdf8', border: '1px solid #f0e8d4', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
@@ -332,8 +450,8 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
           <div style={{ textAlign: 'center', color: '#ccc', fontSize: 13, paddingTop: 16 }}>暂无关联记录</div>
         ) : entries.map(entry => (
           <div key={entry.id}
-            onClick={() => !editingEntries && onOpenEntry?.(entry)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 8, cursor: editingEntries ? 'default' : 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', opacity: isArchived ? 0.85 : 1 }}>
+            onClick={() => onOpenEntry?.(entry)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 8, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', opacity: isArchived ? 0.85 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                 <span style={{ fontSize: 11, color: '#bbb' }}>{formatDate(entry.created_at)}</span>
@@ -345,15 +463,9 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                 {entry.entry_summary ?? '（暂无摘要）'}
               </div>
             </div>
-            {/* 编辑模式：移除按钮（红色 ×） */}
-            {editingEntries && (
-              <button onClick={e => { e.stopPropagation(); handleRemoveEntry(entry.id) }}
-                style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', background: '#fde8e8', border: '1.5px solid #e57373', color: '#e05252', fontSize: 14, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                ×
-              </button>
-            )}
           </div>
         ))}
+        </>)}
       </div>
 
       {/* 归档态底部固定操作栏 */}

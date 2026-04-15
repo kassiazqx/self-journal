@@ -134,13 +134,26 @@ function LetterCard({ letter, onOpen }) {
   )
 }
 
+const ENTRY_PAGE = 50   // 每次加载的条数
+
 export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const { user } = useAuth()
-  const [items, setItems] = useState([])
+  const [allEntries, setAllEntries] = useState([])
+  const [allLetters, setAllLetters] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [entryOffset, setEntryOffset] = useState(0)
+  const [hasMoreEntries, setHasMoreEntries] = useState(false)
+  const loadingMoreRef = useRef(false)
   const [latestUnreadLetter, setLatestUnreadLetter] = useState(null)
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // 合并 entries + letters，按时间降序
+  const items = [
+    ...allEntries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
+    ...allLetters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
+  ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
 
   const load = useCallback(async () => {
     if (!user) return
@@ -154,7 +167,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
         .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50),
+        .range(0, ENTRY_PAGE - 1),
       db.from('review_letters')
         .select('id, content, period_start, period_end, is_read, created_at, entry_ids')
         .eq('user_id', user.id)
@@ -169,15 +182,37 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     const unread = letters.find(l => !l.is_read)
     setLatestUnreadLetter(unread ?? null)
 
-    // 合并，按时间降序
-    const combined = [
-      ...entries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
-      ...letters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
-    ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
-
-    setItems(combined)
+    setAllEntries(entries)
+    setAllLetters(letters)
+    setEntryOffset(ENTRY_PAGE)
+    setHasMoreEntries(entries.length === ENTRY_PAGE)
     setLoading(false)
   }, [user])
+
+  async function loadMoreEntries() {
+    if (loadingMoreRef.current || !hasMoreEntries) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    const { data } = await db.from('journal_entries')
+      .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(entryOffset, entryOffset + ENTRY_PAGE - 1)
+    const newEntries = data ?? []
+    setAllEntries(prev => [...prev, ...newEntries])
+    setEntryOffset(prev => prev + ENTRY_PAGE)
+    setHasMoreEntries(newEntries.length === ENTRY_PAGE)
+    loadingMoreRef.current = false
+    setLoadingMore(false)
+  }
+
+  function handleScroll(e) {
+    if (loadingMoreRef.current || !hasMoreEntries || loading) return
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    if (scrollHeight - scrollTop - clientHeight < 200) {
+      loadMoreEntries()
+    }
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -201,7 +236,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   }
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', background: '#f5f3ef' }}>
+    <div style={{ flex: 1, overflowY: 'auto', background: '#f5f3ef' }} onScroll={handleScroll}>
 
       {/* 未读回顾信横幅 */}
       {latestUnreadLetter && (
@@ -258,6 +293,15 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
               ))}
             </div>
           ))
+        )}
+
+        {/* 底部加载提示 */}
+        {!loading && (
+          loadingMore ? (
+            <div style={{ textAlign: 'center', color: '#ccc', fontSize: 12, padding: '10px 0 20px' }}>加载中…</div>
+          ) : !hasMoreEntries && allEntries.length > 0 ? (
+            <div style={{ textAlign: 'center', color: '#ddd', fontSize: 11, padding: '8px 0 20px' }}>已加载全部记录</div>
+          ) : null
         )}
       </div>
 

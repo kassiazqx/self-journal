@@ -49,6 +49,8 @@ export default function SettingsPage() {
   const [newTagInput, setNewTagInput] = useState('')
   const [addingTag, setAddingTag] = useState(false)
   const [dragIndex, setDragIndex] = useState(null)
+  const [editingTagId, setEditingTagId] = useState(null)    // 当前正在编辑的标签 id
+  const [editingTagValue, setEditingTagValue] = useState('') // 编辑框当前值
 
   useEffect(() => {
     if (!user) return
@@ -195,6 +197,27 @@ export default function SettingsPage() {
   }
   function handleDragEnd() {
     setDragIndex(null)
+  }
+
+  // ── 内容大类标签：重命名 + 批量回写历史 entry ──────────────
+  async function handleRenameTag(tag) {
+    const newValue = editingTagValue.trim()
+    const oldValue = tag.option_value
+    setEditingTagId(null)
+    if (!newValue || newValue === oldValue) return
+
+    // 1. 更新 user_options 显示名
+    await db.from('user_options')
+      .update({ option_value: newValue })
+      .eq('id', tag.id)
+
+    // 2. 批量回写所有历史 journal_entries（RPC 内部用 auth.uid()，无需传 user_id）
+    await db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })
+
+    // 3. 刷新本地 state
+    setTagOptions(prev =>
+      prev.map(t => t.id === tag.id ? { ...t, option_value: newValue } : t)
+    )
   }
 
   const handleTest = async () => {
@@ -552,9 +575,35 @@ export default function SettingsPage() {
                 }}
               >
                 <span style={{ fontSize: 16, color: '#ccc', cursor: 'grab', flexShrink: 0 }}>☰</span>
-                <span style={{ flex: 1, fontSize: 13, color: '#333', padding: '3px 10px', background: '#f5f3ef', borderRadius: 20, display: 'inline-block' }}>
-                  {tag.option_value}
-                </span>
+
+                {/* 标签名：正常展示 or 内联编辑输入框 */}
+                {editingTagId === tag.id ? (
+                  <input
+                    autoFocus
+                    value={editingTagValue}
+                    onChange={e => setEditingTagValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleRenameTag(tag)
+                      if (e.key === 'Escape') setEditingTagId(null)
+                    }}
+                    onBlur={() => handleRenameTag(tag)}
+                    style={{ flex: 1, border: '1px solid #c9a96e', borderRadius: 20, padding: '3px 10px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                  />
+                ) : (
+                  <span style={{ flex: 1, fontSize: 13, color: '#333', padding: '3px 10px', background: '#f5f3ef', borderRadius: 20, display: 'inline-block' }}>
+                    {tag.option_value}
+                  </span>
+                )}
+
+                {/* ✎ 编辑按钮 */}
+                <button
+                  onClick={() => { setEditingTagId(tag.id); setEditingTagValue(tag.option_value) }}
+                  style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1px solid #e0dbd4', background: 'white', color: '#c9a96e', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ✎
+                </button>
+
+                {/* − 删除按钮 */}
                 <button
                   onClick={() => handleDeleteTag(tag.id)}
                   style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1px solid #e0dbd4', background: 'white', color: '#e57373', fontSize: 16, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}

@@ -3,6 +3,7 @@
 > **代码 session / 架构 session 冷启动时读这一份即可。**
 >
 > - 完整 spec：`docs/superpowers/specs/2026-04-14-edit-entries-search-and-category-tags-fix.md`
+> - 实施计划：`docs/superpowers/plans/2026-04-14-edit-entries-search-and-category-tags-fix.md`
 > - 上轮同步卡：`docs/sync-cards/2026-04-12-threads-gaps-sync.md`
 
 ---

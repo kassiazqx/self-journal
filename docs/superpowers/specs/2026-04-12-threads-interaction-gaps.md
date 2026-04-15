@@ -255,7 +255,8 @@
 
 ```sql
 -- user_options 表（已有），内容大类标签的 category 字段值为 'content_category'
--- 新增 sort_order 字段（如尚未有）以支持拖动排序
+-- sort_order 字段需新增（当前表中不存在）
+ALTER TABLE user_options ADD COLUMN sort_order integer NOT NULL DEFAULT 0;
 
 SELECT * FROM user_options
 WHERE user_id = ? AND category = 'content_category'
@@ -386,10 +387,8 @@ rejected   →  删除 → 行删除（灰色卡片右侧触发）
 | −2 比较难 | 红 |
 | −3 非常难 | 深红 |
 
-当前值左侧显示 ✓。点击某项 → 更新 `journal_entries.state_score`，chip 文字和颜色同步刷新。
+当前值左侧显示 ✓。点击某项 → 更新 `journal_entries.overall_state_score`，chip 文字和颜色同步刷新。
 
-### I.5 core_needs 移至主体区域
+### I.5 core_needs 确认保持现状
 
-`core_needs`（核心需求）字段**不再展示在顶部标签区**，改为展示在笔记详情页主体区域的「认知觉察 / 行为洞察」字段组内，与其他深层分析字段并列。
-
-理由：核心需求属于更深层的 AI 分析结果，适合与「认知重构」「行为模式」等字段放在一起，而非与轻量标签混排在顶部。
+`core_needs`（核心需求）**已在主体字段区**（核心字段区 `EditableFieldRow`），无需移动。不放入顶部标签区。

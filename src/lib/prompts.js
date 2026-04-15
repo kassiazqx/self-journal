@@ -154,7 +154,7 @@ export function getInitialUserMessage(entry, reflectionAnswers) {
   if (emotions.length > 0) known.push(`情绪：${emotions.join('、')}`)
   if (entry.overall_state_score !== null && entry.overall_state_score !== undefined) {
     const score = entry.overall_state_score
-    const desc = score >= 3 ? '很好' : score >= 1 ? '还不错' : score === 0 ? '平静' : score >= -2 ? '有些低落' : '比较低落'
+    const desc = score >= 2 ? '很好' : score >= 1 ? '还不错' : score === 0 ? '平静' : score >= -1 ? '有些低落' : '比较低落'
     known.push(`整体状态：${score > 0 ? '+' : ''}${score}（${desc}）`)
   }
   if (entry.handling_rating) known.push(`处理方式自评：${entry.handling_rating}`)
@@ -195,7 +195,10 @@ ${conversationText}
 //   1. 此函数里的 JSON 字段列表
 //   2. AIConversation.jsx finishAndSave() 里的 update 字段列表
 //   3. supabase-schema.sql
-export function getExtractionPrompt() {
+export function getExtractionPrompt(userCategoryTags = []) {
+  const categoryLine = userCategoryTags.length > 0
+    ? `大类标签，从以下选：${userCategoryTags.join(' / ')}。只选最贴合的 1-2 个，没有匹配的就留空数组`
+    : `大类标签，选 1-2 个最贴合的生活领域关键词，若无明显归类则留空数组`
   return `请根据我们刚才的完整对话（包括我最初的日记），提取以下信息，以纯 JSON 格式返回，不要有任何其他文字或 markdown 符号。如果某项信息在对话中没有提到，填 null。
 
 {
@@ -204,7 +207,7 @@ export function getExtractionPrompt() {
   "event_summary": "事件一句话总结（如适用，否则 null）",
   "emotions": ["情绪词数组，如：焦虑、委屈、开心、后悔、敬佩、渴望，没有则空数组"],
   "emotion_display": ["描述情绪感受的短语，必须是情绪词而非事件描述，比单个词更丰富，如：克制后的难受、守住边界的坚定、隐隐的兴奋、后悔不已。最多3个，每个不超过8字，没有则空数组。⚠️禁止填入事件或行为描述（如：错过早睡、吃了奶茶），只填情绪感受"],
-  "overall_state_score": 整体状态评分整数（-5到5，-5极度低落，5极度喜悦，0平静）,
+  "overall_state_score": 整体状态评分整数（-3到3，-3极度低落，3极度喜悦，0平静）,
   "body_sensations": "身体感受描述，没有则 null",
   "current_thought": "当时最主要的想法或念头（一句话），没有则 null",
   "core_needs": ["核心需求，如：被理解、安全感、被爱，没有则空数组"],
@@ -213,7 +216,7 @@ export function getExtractionPrompt() {
   "cognitive_distortion_type": "从以下选一个：灾难化 / 以偏概全 / 读心臆想 / 情绪推理 / 极端化 / 应该必须 / 过度自责 / 预测未来 / 缩小积极 / 贴标签，没有则 null",
   "cognitive_analysis": "对想法的分析或认知重构，没有则 null",
   "reflection_insight": "整体复盘洞见（1-2句话），没有则 null",
-  "category_tags": ["大类标签，从以下选：工作 / 家庭 / 恋爱与亲密关系 / 个人成长 / 学习 / 财务 / 运动健康 / 社交 / 玩乐休闲 / 灵性修行 / 日常生活"],
+  "category_tags": ["${categoryLine}"],
   "people_involved": ["涉及的人，用关系称呼如：妈妈、同事小李，没有则空数组"]
 }`
 }

@@ -372,19 +372,16 @@ user_options：
 
 ### 4.20 replace_category_tag RPC 函数尚未在 DB 创建
 **风险：** `SettingsPage.jsx` 标签重命名功能调用 `db.rpc('replace_category_tag', ...)` 批量回写历史 entry；但该 PostgreSQL 函数尚未在 Supabase 中创建。代码 session 部署后，用户点击重命名会 runtime crash（rpc 找不到函数名）。
-**处理：** 代码 session 执行前，**必须先在 Supabase SQL Editor 执行以下 SQL 创建函数**（属于 Task 0）：
+**处理：** 代码 session 执行前，**必须先在 Supabase SQL Editor 执行以下 SQL 创建函数**（已修复越权漏洞，见 4.22）：
 ```sql
-CREATE OR REPLACE FUNCTION replace_category_tag(
-  p_user_id UUID,
-  p_old TEXT,
-  p_new TEXT
-)
-RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION replace_category_tag(p_old TEXT, p_new TEXT)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
   UPDATE journal_entries
   SET category_tags = array_replace(category_tags, p_old, p_new)
-  WHERE user_id = p_user_id AND p_old = ANY(category_tags);
+  WHERE user_id = auth.uid() AND p_old = ANY(category_tags);
 $$;
 ```
+前端调用：`db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })`（无需传 user_id）
 **优先级：** 高（功能上线必须，否则重命名 crash）
 
 ### 4.21 prompts.js category_tags 选项与 user_options 长期脱节
@@ -394,6 +391,26 @@ $$;
 **当前处理：** 已知局限，可接受。B1 方案（孤儿标签在 category sheet 中可见可取消）缓解了用户感知。
 **未来优化方向：** AI 提取时动态读取当前用户的 user_options 并注入 prompt。
 **优先级：** 低（不阻塞功能，体验影响小）
+
+### 4.22 replace_category_tag RPC 函数未绑定 auth.uid()，存在越权风险
+**风险：** 同步卡 / spec 中 RPC 函数签名包含 `p_user_id UUID` 参数，调用方（前端）传入 `user.id`。但数据库函数不校验传入的 `p_user_id` 是否等于 `auth.uid()`，若 anon key 泄漏，攻击者可伪造任意 `p_user_id` 批量篡改他人 category_tags。
+**修复方案：** 去掉 `p_user_id` 参数，函数内直接用 `auth.uid()`：
+```sql
+CREATE OR REPLACE FUNCTION replace_category_tag(p_old TEXT, p_new TEXT)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+  UPDATE journal_entries
+  SET category_tags = array_replace(category_tags, p_old, p_new)
+  WHERE user_id = auth.uid() AND p_old = ANY(category_tags);
+$$;
+```
+前端调用改为：`db.rpc('replace_category_tag', { p_old: oldValue, p_new: newValue })`
+**优先级：** 高（安全性问题，代码 session 执行 Task 0 时使用修复后的 SQL，不用同步卡里的版本）
+
+### 4.23 搜索词含 `%` 或 `_` 时 ilike 通配符未转义
+**风险：** ThreadDetailPage 搜索框输入内容直接拼入 `.or()` 的 ilike 字符串，如用户输入「20%」或「_哈哈」会被当作通配符，导致意外匹配或空结果。
+**当前处理：** 日记应用场景极少触发，可接受现状。
+**建议：** 有余力时在构造查询前加一行转义：`const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')`
+**优先级：** 低（不阻塞功能，边缘场景）
 
 ---
 
@@ -481,6 +498,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-15 · 产品session · 实施计划写完，待代码session执行：plan: 2026-04-14-edit-entries-search-and-category-tags-fix.md（Task 0 SQL需用户先在Supabase执行；Task 1–3代码改动；Task 4验证+commit）
+- 2026-04-14 · 架构session · 审查搜索升级+category_tags修复：新增4.22（RPC函数需绑定auth.uid()，高优先级安全漏洞，SQL需改版）/4.23（ilike通配符未转义，低）；确认B1孤儿标签无XSS风险；array::text ilike兼容性通过；整体评级97分
 - 2026-04-14 · 产品session · 发现两个问题并完成设计：编辑关联记录默认展示30条+搜索扩展6字段（content/entry_summary/emotions/emotion_display/core_needs/category_tags）；category_tags三项修复（A1默认标签种入/B1孤儿标签/C1重命名+RPC批量回写）；spec: 2026-04-14-edit-entries-search-and-category-tags-fix.md；新增§4.20（RPC函数未创建）§4.21（prompts.js脱节）
 - 2026-04-13 · 产品session · 脉络交互细节补充设计完成：threads.status 新增 rejected；thread_entries 新增 removed_by_user 字段；候选三态（candidate/rejected/deleted）流程；脉络编辑模式/重新分析/归档/手动分析 UI；RecordDetail Header 四字段可编辑（template_type下拉/emotion_display内联/state_score-3~+3/category_tags底部sheet）；spec: 2026-04-12-threads-interaction-gaps.md
 - 2026-04-13 · 架构session · 对 spec §A–§I + 同步卡做架构兼容性审查：无违反§2约束；新增4.17（sort_order排序不稳定）/4.18（status约束执行顺序）/4.19（重新分析必须过滤removed_by_user，高优先级）；修复§4.15-4.16编号混乱；整体评级98分

@@ -2,6 +2,7 @@
 // 记录详情页：三段式布局（核心字段卡 → 关联标签 → 统一记录流）
 // 情绪标签可点击内联编辑，使用本地 mapDisplayToBase，不调 AI
 import { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
@@ -91,6 +92,7 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
 }
 
 export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness, onEdit, refreshToken }) {
+  const { user } = useAuth()
   const [entry, setEntry] = useState(initialEntry)
   const [messages, setMessages] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
@@ -151,18 +153,37 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     loadThreads()
   }, [initialEntry.id])
 
-  // 读取用户自定义内容大类标签（⚠️ 实际列名：field_name / option_value）
+  // 读取用户自定义内容大类标签（含 A1 自动种入 + B1 孤儿标签）
   useEffect(() => {
+    if (!user?.id) return
     async function loadCategoryOptions() {
       const { data } = await db.from('user_options')
         .select('id, option_value, sort_order')
-        .eq('user_id', initialEntry.user_id)
+        .eq('user_id', user.id)
         .eq('field_name', 'content_category')
         .order('sort_order', { ascending: true })
-      setCategoryOptions((data ?? []).map(r => r.option_value))
+
+      // A1：新用户首次打开，静默种入 11 个默认标签
+      if ((data ?? []).length === 0) {
+        const defaults = ['工作','家庭','恋爱与亲密关系','个人成长','学习','财务','运动健康','社交','玩乐休闲','灵性修行','日常生活']
+        const rows = defaults.map((label, i) => ({
+          user_id: user.id,
+          field_name: 'content_category',
+          option_value: label,
+          sort_order: i,
+        }))
+        const { data: inserted } = await db.from('user_options').insert(rows).select('id, option_value, sort_order')
+        setCategoryOptions((inserted ?? []).map(r => r.option_value))
+        return
+      }
+
+      // B1：孤儿标签合并（entry 上有、但 user_options 里已删除的标签）
+      const userOptionLabels = (data ?? []).map(r => r.option_value)
+      const orphans = (entry.category_tags ?? []).filter(t => !userOptionLabels.includes(t))
+      setCategoryOptions([...userOptionLabels, ...orphans])
     }
     loadCategoryOptions()
-  }, [initialEntry.user_id])
+  }, [user?.id, entry.id])
 
   function showToast(msg) {
     setToast(msg)
@@ -287,7 +308,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
       const hasConversation = !!msgText
       const fullText = `原始写作：\n${entry.content}${msgText ? `\n\n对话记录：\n${msgText}` : ''}`
-      const extraction = await extractFields(fullText, hasConversation)
+      const extraction = await extractFields(fullText, hasConversation, user.id)
 
       if (!extraction || Object.keys(extraction).length === 0) {
         showToast('分析失败，请稍后重试')

@@ -4,9 +4,34 @@ import { callAI } from './aiClient'
 import { getExtractionPrompt, getMemoryUpdatePrompt } from './prompts'
 import { updateEntry } from './journalService'
 import { updateMemory, incrementConversationCount, resetConversationCount } from './memory'
+import { db } from './db'
 
 // 每完成多少次对话才更新一次 AI 记忆
 const MEMORY_UPDATE_INTERVAL = 20
+
+// 新用户默认 11 个内容大类标签（user_options 为空时使用并写入）
+const DEFAULT_CATEGORY_TAGS = ['工作','家庭','恋爱与亲密关系','个人成长','学习','财务','运动健康','社交','玩乐休闲','灵性修行','日常生活']
+
+// ─── 获取用户标签（空时自动 seed）────────────────────────────────
+async function getUserCategoryTags(userId) {
+  const { data } = await db.from('user_options')
+    .select('option_value, sort_order')
+    .eq('user_id', userId)
+    .eq('field_name', 'content_category')
+    .order('sort_order', { ascending: true })
+  if ((data ?? []).length > 0) {
+    return data.map(r => r.option_value)
+  }
+  // 新用户：种入默认标签，并返回
+  const rows = DEFAULT_CATEGORY_TAGS.map((label, i) => ({
+    user_id: userId,
+    field_name: 'content_category',
+    option_value: label,
+    sort_order: i,
+  }))
+  await db.from('user_options').insert(rows)
+  return DEFAULT_CATEGORY_TAGS
+}
 
 // ─── 手动触发记忆更新（设置页按钮调用）──────────────────────
 // 传入最近一次对话的 visibleMsgs，立即执行记忆更新并重置计数
@@ -70,10 +95,11 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
     .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
     .join('\n\n')
 
-  // 提取字段
+  // 提取字段（先拉用户标签）
   let extraction = {}
   try {
-    const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt()}`
+    const userCategoryTags = await getUserCategoryTags(entry.user_id)
+    const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt(userCategoryTags)}`
     const raw = await callAI(
       [{ role: 'user', content: extractPrompt }],
       '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
@@ -136,12 +162,14 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
 // ─── 手动 AI 分析（RecordDetail 页面「✦ AI 分析」按钮触发）───────
 // fullText：原始写作 + 觉察对话内容拼接
 // hasConversation：true 表示有觉察对话，false 表示只有日记原文
+// userId：用于拉取用户自定义 category_tags
 // 返回 extraction 对象（含 emotion_display 等字段）
-export async function extractFields(fullText, hasConversation = true) {
+export async function extractFields(fullText, hasConversation = true, userId = null) {
+  const userCategoryTags = userId ? await getUserCategoryTags(userId) : []
   const intro = hasConversation
     ? `以下是我们的对话记录：\n\n${fullText}\n\n`
     : `以下是用户的一篇日记原文：\n\n${fullText}\n\n请根据日记内容进行推断和分析，即使某些信息没有明确说明，也请基于文字线索给出合理推断（仅当完全无法判断时才填 null）。\n\n`
-  const extractPrompt = intro + getExtractionPrompt()
+  const extractPrompt = intro + getExtractionPrompt(userCategoryTags)
   const raw = await callAI(
     [{ role: 'user', content: extractPrompt }],
     '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
