@@ -6,6 +6,7 @@ import { db } from '../lib/db'
 import { deleteEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { checkAndGenerateLetter } from '../lib/reviewLetterService'
+import FilterBar from '../components/FilterBar'
 
 // 把 ISO 字符串格式化成「4月9日 周三」
 function formatGroupDate(isoStr) {
@@ -146,14 +147,21 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const [hasMoreEntries, setHasMoreEntries] = useState(false)
   const loadingMoreRef = useRef(false)
   const [latestUnreadLetter, setLatestUnreadLetter] = useState(null)
+
+  // 搜索 + 筛选
+  const [showSearch, setShowSearch]         = useState(false)
+  const [categoryOptions, setCategoryOptions] = useState([])
+  const [filteredEntries, setFilteredEntries] = useState(null) // null = 无筛选，[] = 筛选结果空
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  // 合并 entries + letters，按时间降序
-  const items = [
-    ...allEntries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
-    ...allLetters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
-  ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
+  // filteredEntries !== null → 筛选模式：只显示筛选出的 journal_entries，不含回顾信
+  const items = filteredEntries !== null
+    ? filteredEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
+    : [
+        ...allEntries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
+        ...allLetters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
+      ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
 
   const load = useCallback(async () => {
     if (!user) return
@@ -216,6 +224,17 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
 
   useEffect(() => { load() }, [load])
 
+  // 加载内容类型标签（用于 FilterBar categoryOptions）
+  useEffect(() => {
+    if (!user) return
+    db.from('user_options')
+      .select('option_value')
+      .eq('user_id', user.id)
+      .eq('field_name', 'content_category')
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
+  }, [user?.id])
+
   // 按日期分组
   const groups = []
   let currentDate = ''
@@ -235,8 +254,84 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     load()
   }
 
+  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedDate }) {
+    const hasFilter = searchText.trim() || selectedEmotions.length ||
+                      selectedCategories.length || selectedDate
+    if (!hasFilter) {
+      setFilteredEntries(null)   // 恢复默认列表（含回顾信）
+      return
+    }
+
+    let query = db.from('journal_entries')
+      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, template_type')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (searchText.trim()) {
+      const escaped = searchText.replace(/%/g, '\\%').replace(/_/g, '\\_')
+      query = query.or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%`)
+    }
+    if (selectedEmotions.length) {
+      query = query.overlaps('emotions', selectedEmotions)
+    }
+    if (selectedCategories.length) {
+      query = query.overlaps('category_tags', selectedCategories)
+    }
+    if (selectedDate) {
+      const y = selectedDate.getFullYear()
+      const m = selectedDate.getMonth()
+      const d = selectedDate.getDate()
+      query = query
+        .gte('created_at', new Date(y, m, d, 0, 0, 0).toISOString())
+        .lte('created_at', new Date(y, m, d, 23, 59, 59).toISOString())
+    }
+
+    const { data } = await query
+    setFilteredEntries(data ?? [])
+  }
+
   return (
-    <div style={{ flex: 1, overflowY: 'auto', background: '#f5f3ef' }} onScroll={handleScroll}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f5f3ef' }}>
+
+      {/* 顶部 sticky 区域（header + FilterBar） */}
+      <div style={{ flexShrink: 0 }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 18px 10px',
+          background: '#faf8f4', borderBottom: '1px solid #ede9e2',
+        }}>
+          <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>记录</span>
+          <button
+            onClick={() => {
+              if (showSearch) {
+                setShowSearch(false)
+                setFilteredEntries(null)
+              } else {
+                setShowSearch(true)
+              }
+            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 20, color: '#888', lineHeight: 1, padding: '0 2px' }}
+          >
+            {showSearch ? '✕' : '🔍'}
+          </button>
+        </div>
+
+        {/* FilterBar（仅 showSearch=true 时显示） */}
+        {showSearch && (
+          <FilterBar
+            onFilter={handleFilter}
+            categoryOptions={categoryOptions}
+            placeholder="搜索记录内容…"
+            showDate={true}
+          />
+        )}
+      </div>
+
+      {/* 可滚动内容区 */}
+      <div style={{ flex: 1, overflowY: 'auto' }} onScroll={filteredEntries === null ? handleScroll : undefined}>
 
       {/* 未读回顾信横幅 */}
       {latestUnreadLetter && (
@@ -266,7 +361,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
         ) : groups.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#ccc',
             fontSize: 14, padding: '60px 0' }}>
-            还没有记录，去写第一条吧
+            {filteredEntries !== null ? '没有符合条件的记录' : '还没有记录，去写第一条吧'}
           </div>
         ) : (
           groups.map(group => (
@@ -304,6 +399,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
           ) : null
         )}
       </div>
+
+      </div>  {/* 滚动内容区 */}
 
       {/* 长按动作菜单 */}
       {actionEntry && (

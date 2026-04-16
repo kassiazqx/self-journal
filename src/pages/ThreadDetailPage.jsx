@@ -13,6 +13,7 @@ import {
   addEntryToThread,
   reAnalyzeThread,
 } from '../lib/threadService'
+import FilterBar from '../components/FilterBar'
 
 function formatDate(isoStr) {
   if (!isoStr) return ''
@@ -46,6 +47,9 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [loadingMore, setLoadingMore] = useState(false)
   const loadingRef = useRef(false)      // 同步锁，防止并发加载
   const [arcStale, setArcStale] = useState(false)  // 编辑后 arc_summary 过期
+  // FilterBar 筛选条件（编辑模式用）
+  const [filterConditions, setFilterConditions] = useState(null) // null = 未激活，object = 激活
+  const [categoryOptions, setCategoryOptions] = useState([])
 
   // 重新分析
   const [reanalyzing, setReanalyzing] = useState(false)
@@ -61,6 +65,17 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => { if (thread?.id) load() }, [thread?.id])
+
+  // 加载内容类型标签（用于 FilterBar categoryOptions）
+  useEffect(() => {
+    if (!user) return
+    db.from('user_options')
+      .select('option_value')
+      .eq('user_id', user.id)
+      .eq('field_name', 'content_category')
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
+  }, [user?.id])
 
   async function load() {
     setLoading(true)
@@ -126,7 +141,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
 
   // 滚动触底自动加载（只在编辑模式 + 搜索框为空时生效）
   function handleScroll(e) {
-    if (!editingEntries || !hasMore || loadingRef.current || searchQuery.trim()) return
+    if (!editingEntries || !hasMore || loadingRef.current || searchQuery.trim() || filterConditions) return
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
     if (scrollHeight - scrollTop - clientHeight < 150) {
       loadMore()
@@ -138,13 +153,15 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     if (!editingEntries) return
     if (!searchQuery.trim()) {
       setSearchResults([])
-      // 进入编辑模式或清空搜索时，加载默认列表
-      loadDefaultEntries(0)
+      // 有 FilterBar 筛选条件时，不重载默认列表（FilterBar 自己管理结果）
+      if (!filterConditions) {
+        loadDefaultEntries(0)
+      }
       return
     }
     const timer = setTimeout(() => doSearch(searchQuery), 300)
     return () => clearTimeout(timer)
-  }, [searchQuery, editingEntries])
+  }, [searchQuery, editingEntries, filterConditions])
 
   async function doSearch(q) {
     setSearching(true)
@@ -157,6 +174,53 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       .limit(30)
     // 排除已在 entries 中的（含 removed_by_user=true 的也排除，避免重复）
     const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
+    setSearchResults((data ?? []).filter(e => !allExistingIds.has(e.id)))
+    setSearching(false)
+  }
+
+  // 编辑模式：FilterBar 的 onFilter 回调
+  // 有任意条件 → 执行筛选查询；无条件 → 恢复默认列表
+  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedDate }) {
+    const hasFilter = searchText.trim() || selectedEmotions.length ||
+                      selectedCategories.length || selectedDate
+    if (!hasFilter) {
+      setFilterConditions(null)
+      setSearchResults([])
+      loadDefaultEntries(0)
+      return
+    }
+
+    setFilterConditions({ searchText, selectedEmotions, selectedCategories, selectedDate })
+    setSearching(true)
+
+    const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
+
+    let query = db.from('journal_entries')
+      .select('id, entry_summary, created_at, content, emotions, category_tags')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    if (searchText.trim()) {
+      const escaped = searchText.replace(/%/g, '\\%').replace(/_/g, '\\_')
+      query = query.or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%`)
+    }
+    if (selectedEmotions.length) {
+      query = query.overlaps('emotions', selectedEmotions)
+    }
+    if (selectedCategories.length) {
+      query = query.overlaps('category_tags', selectedCategories)
+    }
+    if (selectedDate) {
+      const y = selectedDate.getFullYear()
+      const m = selectedDate.getMonth()
+      const d = selectedDate.getDate()
+      query = query
+        .gte('created_at', new Date(y, m, d, 0, 0, 0).toISOString())
+        .lte('created_at', new Date(y, m, d, 23, 59, 59).toISOString())
+    }
+
+    const { data } = await query
     setSearchResults((data ?? []).filter(e => !allExistingIds.has(e.id)))
     setSearching(false)
   }
@@ -291,7 +355,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       {editingEntries && (
         <div style={{ background: '#fff3e8', borderBottom: '1px solid #f0d4b0', padding: '10px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <span style={{ fontSize: 13, color: '#e07850', fontWeight: 500 }}>编辑关联记录</span>
-          <button onClick={() => { setEditingEntries(false); setSearchQuery(''); setSearchResults([]); setDefaultEntries([]); setDefaultOffset(0); setHasMore(true) }}
+          <button onClick={() => { setEditingEntries(false); setSearchQuery(''); setSearchResults([]); setFilterConditions(null); setDefaultEntries([]); setDefaultOffset(0); setHasMore(true) }}
             style={{ fontSize: 13, color: '#c9a96e', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>
             完成
           </button>
@@ -330,16 +394,16 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>未关联记录</div>
 
-            {/* 搜索框（始终置顶） */}
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+            {/* FilterBar 搜索 + 情绪/类型筛选（showDate=false） */}
+            <FilterBar
+              onFilter={handleFilter}
+              categoryOptions={categoryOptions}
               placeholder="搜索记录内容…"
-              style={{ width: '100%', border: '1px solid #e0dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 10 }}
+              showDate={false}
             />
 
-            {/* 搜索结果（有搜索词时） */}
-            {searchQuery.trim() && (
+            {/* 搜索结果（有搜索词 或 有筛选条件时） */}
+            {(searchQuery.trim() || filterConditions) && (
               <>
                 {searching ? (
                   <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>搜索中…</div>
@@ -363,8 +427,8 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
               </>
             )}
 
-            {/* 默认列表（搜索框为空时） */}
-            {!searchQuery.trim() && (
+            {/* 默认列表（搜索框为空 且 无筛选条件时） */}
+            {!searchQuery.trim() && !filterConditions && (
               <>
                 {defaultEntries.length === 0 && loadingMore ? (
                   <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>加载中…</div>
@@ -386,16 +450,16 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                   </div>
                 ))}
                 {loadingMore && defaultEntries.length > 0 && (
-                  <div style={{ color: '#ccc', fontSize: 12, textAlign: 'center', padding: '10px 0' }}>加载中…</div>
+                  <div style={{ color: '#ccc', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>加载中…</div>
+                )}
+                {!hasMore && defaultEntries.length > 0 && (
+                  <div style={{ color: '#ddd', fontSize: 11, textAlign: 'center', padding: '6px 0 12px' }}>已加载全部</div>
                 )}
                 {hasMore && !loadingMore && defaultEntries.length > 0 && (
                   <button onClick={loadMore}
                     style={{ display: 'block', width: '100%', padding: '10px', background: 'none', border: '1px solid #e0dbd4', borderRadius: 8, color: '#aaa', fontSize: 13, cursor: 'pointer', marginTop: 4 }}>
                     加载更多 ↓
                   </button>
-                )}
-                {!hasMore && defaultEntries.length > 0 && (
-                  <div style={{ color: '#ddd', fontSize: 11, textAlign: 'center', padding: '6px 0' }}>已加载全部记录</div>
                 )}
               </>
             )}

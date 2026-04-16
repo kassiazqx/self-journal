@@ -415,9 +415,41 @@ $$;
 **优先级：** 已处理
 
 ### 4.24 Supabase JS `.or()` 不支持 array 字段 `::text` cast 搜索
-**风险：** 编辑关联记录搜索原计划覆盖 `emotions / emotion_display / core_needs / category_tags` 等 text[] 字段，写成 `emotions::text.ilike.%q%` 会触发 Supabase 400 Bad Request。
-**当前处理：** ThreadDetailPage 搜索临时降级为文本字段：`content + entry_summary`。如需搜索 array 字段，必须改用 SQL RPC（例如 `search_my_entries`），不要在 Supabase JS `.or()` 中拼 `::text`。
-**优先级：** 中（功能范围低于原计划，但避免线上 400）
+**风险：** 编辑关联记录搜索原计划覆盖 `emotions / emotion_display / core_needs / category_tags` 等 text[] 字段，写成 `emotions::text.ilike.%q%` 会触发 Supabase 400 Bad Request。这是 PostgREST/Supabase JS 的已知限制，不是 SQL 本身的问题。
+**当前处理：** ThreadDetailPage 搜索临时降级为文本字段：`content + entry_summary`。
+**全量搜索正确实现方式：** 必须改用 SQL RPC，**不要**在 Supabase JS `.or()` 中拼 `::text`。需要时在 Supabase SQL Editor 创建以下函数：
+```sql
+CREATE OR REPLACE FUNCTION search_my_entries(q TEXT)
+RETURNS SETOF journal_entries LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT * FROM journal_entries
+  WHERE user_id = auth.uid()
+    AND (
+      content ILIKE '%' || q || '%'
+      OR entry_summary ILIKE '%' || q || '%'
+      OR emotions::text ILIKE '%' || q || '%'
+      OR emotion_display::text ILIKE '%' || q || '%'
+      OR core_needs::text ILIKE '%' || q || '%'
+      OR category_tags::text ILIKE '%' || q || '%'
+    )
+  ORDER BY created_at DESC
+  LIMIT 30;
+$$;
+```
+前端调用：`db.rpc('search_my_entries', { q: escaped })`
+**优先级：** 中（功能范围低于原计划；如产品决定补齐 6 字段搜索，用上方 RPC 方案）
+
+### 4.25 FilterBar userId 来源必须用 useAuth()，不能靠 prop 传入
+**风险：** FilterBar 内部做 `datesWithRecords` 查询时需要 userId。若通过 prop 传入，上游调用方可能漏传或传入部分字段对象（同 RecordDetail §4.15 的旧 bug），导致查询 `.eq('user_id', undefined)` 静默返回空数据，月历日期全显示浅灰。
+**处理：** FilterBar 内部直接 `import { useAuth }` 自行获取 user.id，不接受 userId prop。
+**优先级：** 中（不影响核心功能，但 undefined user_id 难以排查）
+
+### 4.26 日期筛选 UTC 时区偏差（journal_entries.created_at 存 UTC）
+**风险：** 用户选择本地日期筛选时，查询构造的是该日期 00:00–23:59 的 UTC 时间戳。在 UTC+8 时区，用户本地 0:00–7:59 写的记录，其 `created_at` UTC 时间戳属于前一天，因此：
+- 月历中该日期显示「有记录」（查 UTC 范围能覆盖）
+- 用户点击该日期筛选时，凌晨写的记录**不会出现在结果里**（UTC 日期是前一天）
+**影响：** 边界场景（凌晨 0–8 点写日记的用户），非系统性错误。
+**已修复（2026-04-16）：** spec 改用 `new Date(r.created_at)` 转本地时间取日期部分（替代 `slice(0,10)` 截 UTC 字符串）；日期范围查询用 `new Date(y, m, d, 0, 0, 0).toISOString()` 转本地午夜时间，两处均对齐设备本地时区，偏差消除。
+**优先级：** 已处理
 
 ---
 
@@ -505,6 +537,9 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-16 · 架构session · 审查全局搜索+筛选spec：三问题全部回答；新增4.25（FilterBar userId必须useAuth不能prop）/4.26（日期UTC偏差低优先级）；.overlaps()受RLS保护+显式eq双保险确认合规；整体设计无违反§2约束
+- 2026-04-16 · 产品session · 全局搜索+筛选功能设计完成：FilterBar共享组件（情绪/类型/日期三筛选器）；RecordsPage🔍入口+有筛选时隐藏回顾信；ThreadDetailPage编辑模式加情绪/类型筛选；数组字段用.overlaps()绕开§4.24限制；spec: 2026-04-16-search-filter-design.md；待架构审查3个问题（FilterBar查DB分层/overlaps RLS/UTC时区偏差）
+- 2026-04-15 · 架构session · 同步代码session偏差；补全4.24 RPC正确实现方案（search_my_entries SQL）；4.20/4.22/4.23标注已处理状态核对完毕；无新架构风险
 - 2026-04-15 · 代码session · category修复批次（RecordDetail useAuth修复/prompts动态标签/conversationService getUserCategoryTags）+ RecordsPage无限滚动分页（plan外补丁）+ ThreadDetailPage搜索框布局修正；搜索降级为2字段（array::text cast在Supabase JS触发400，新增4.24）
 - 2026-04-15 · 产品session · 实施计划写完，待代码session执行：plan: 2026-04-14-edit-entries-search-and-category-tags-fix.md（Task 0 SQL需用户先在Supabase执行；Task 1–3代码改动；Task 4验证+commit）
 - 2026-04-14 · 架构session · 审查搜索升级+category_tags修复：新增4.22（RPC函数需绑定auth.uid()，高优先级安全漏洞，SQL需改版）/4.23（ilike通配符未转义，低）；确认B1孤儿标签无XSS风险；array::text ilike兼容性通过；整体评级97分
