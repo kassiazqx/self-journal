@@ -12,6 +12,8 @@ const EMOTION_NEGATIVE = ['难过','愤怒','委屈','焦虑','羞愧','无力',
 export default function FilterBar({
   onFilter,
   categoryOptions = [],
+  peopleOptions = [],
+  coreNeedOptions = [],
   placeholder = '搜索内容…',
   showDate = true,
 }) {
@@ -20,9 +22,13 @@ export default function FilterBar({
   const [searchText, setSearchText]               = useState('')
   const [selectedEmotions, setSelectedEmotions]   = useState([])
   const [selectedCategories, setSelectedCategories] = useState([])
+  const [selectedPeople, setSelectedPeople]       = useState([])
+  const [selectedCoreNeeds, setSelectedCoreNeeds] = useState([])
   const [selectedDate, setSelectedDate]           = useState(null)
   const [showEmotionMenu, setShowEmotionMenu]     = useState(false)
   const [showCategoryMenu, setShowCategoryMenu]   = useState(false)
+  const [showPeopleMenu, setShowPeopleMenu]       = useState(false)
+  const [showCoreNeedsMenu, setShowCoreNeedsMenu] = useState(false)
   const [showCalendar, setShowCalendar]           = useState(false)
 
   const now = new Date()
@@ -34,14 +40,18 @@ export default function FilterBar({
   const filterBarRef = useRef(null)
   const emotionMenuRef = useRef(null)
   const categoryMenuRef = useRef(null)
+  const peopleMenuRef = useRef(null)
+  const coreNeedsMenuRef = useRef(null)
 
   // 点击 FilterBar 外部时关闭浮层（不用 fixed 遮罩，避免拦截父容器滚动）
   useEffect(() => {
-    if (!showEmotionMenu && !showCategoryMenu) return
+    if (!showEmotionMenu && !showCategoryMenu && !showPeopleMenu && !showCoreNeedsMenu) return
     function handleOutside(e) {
       if (filterBarRef.current && !filterBarRef.current.contains(e.target)) {
         setShowEmotionMenu(false)
         setShowCategoryMenu(false)
+        setShowPeopleMenu(false)
+        setShowCoreNeedsMenu(false)
       }
     }
     document.addEventListener('mousedown', handleOutside)
@@ -50,7 +60,7 @@ export default function FilterBar({
       document.removeEventListener('mousedown', handleOutside)
       document.removeEventListener('touchstart', handleOutside)
     }
-  }, [showEmotionMenu, showCategoryMenu])
+  }, [showEmotionMenu, showCategoryMenu, showPeopleMenu, showCoreNeedsMenu])
 
   // 浮层展开时自动滚动：让浮层底部 + 200px（约3条笔记）进入视野
   function scrollToShowMenu(menuEl) {
@@ -83,14 +93,26 @@ export default function FilterBar({
     return () => clearTimeout(id)
   }, [showCategoryMenu])
 
+  useEffect(() => {
+    if (!showPeopleMenu) return
+    const id = setTimeout(() => scrollToShowMenu(peopleMenuRef.current), 50)
+    return () => clearTimeout(id)
+  }, [showPeopleMenu])
+
+  useEffect(() => {
+    if (!showCoreNeedsMenu) return
+    const id = setTimeout(() => scrollToShowMenu(coreNeedsMenuRef.current), 50)
+    return () => clearTimeout(id)
+  }, [showCoreNeedsMenu])
+
   // 任何筛选条件变化时通知父页面（搜索框 300ms 防抖）
   useEffect(() => {
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => {
-      onFilter({ searchText, selectedEmotions, selectedCategories, selectedDate })
+      onFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate })
     }, 300)
     return () => clearTimeout(searchTimer.current)
-  }, [searchText, selectedEmotions, selectedCategories, selectedDate])
+  }, [searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate])
 
   // 月历展开或切换月份时，查询当月哪些天有记录
   useEffect(() => {
@@ -119,6 +141,12 @@ export default function FilterBar({
   }
   function toggleCategory(c) {
     setSelectedCategories(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  }
+  function togglePerson(p) {
+    setSelectedPeople(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
+  }
+  function toggleCoreNeed(n) {
+    setSelectedCoreNeeds(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])
   }
   function handleDateClick(date) {
     setSelectedDate(prev => prev && prev.toDateString() === date.toDateString() ? null : date)
@@ -185,7 +213,7 @@ export default function FilterBar({
       <div style={{ display: 'flex', gap: 6, padding: '8px 16px', overflowX: 'auto' }}>
         {/* 情绪 */}
         <button style={chipStyle(showEmotionMenu)}
-          onClick={() => { setShowEmotionMenu(v => !v); setShowCategoryMenu(false); setShowCalendar(false) }}>
+          onClick={() => { setShowEmotionMenu(v => !v); setShowCategoryMenu(false); setShowCalendar(false); setShowPeopleMenu(false); setShowCoreNeedsMenu(false) }}>
           情绪 ▾
         </button>
         {selectedEmotions.map(e => (
@@ -198,7 +226,7 @@ export default function FilterBar({
 
         {/* 类型 */}
         <button style={chipStyle(showCategoryMenu)}
-          onClick={() => { setShowCategoryMenu(v => !v); setShowEmotionMenu(false); setShowCalendar(false) }}>
+          onClick={() => { setShowCategoryMenu(v => !v); setShowEmotionMenu(false); setShowCalendar(false); setShowPeopleMenu(false); setShowCoreNeedsMenu(false) }}>
           类型 ▾
         </button>
         {selectedCategories.map(c => (
@@ -208,6 +236,36 @@ export default function FilterBar({
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#8a7a5a', fontSize: 12 }}>✕</button>
           </span>
         ))}
+
+        {/* 人物（词库为空时不渲染） */}
+        {peopleOptions.length > 0 && <>
+          <button style={chipStyle(showPeopleMenu)}
+            onClick={() => { setShowPeopleMenu(v => !v); setShowEmotionMenu(false); setShowCategoryMenu(false); setShowCalendar(false); setShowCoreNeedsMenu(false) }}>
+            人物 ▾
+          </button>
+          {selectedPeople.map(p => (
+            <span key={p} style={selectedChipStyle}>
+              {p}
+              <button onClick={() => togglePerson(p)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#8a7a5a', fontSize: 12 }}>✕</button>
+            </span>
+          ))}
+        </>}
+
+        {/* 需求（词库为空时不渲染） */}
+        {coreNeedOptions.length > 0 && <>
+          <button style={chipStyle(showCoreNeedsMenu)}
+            onClick={() => { setShowCoreNeedsMenu(v => !v); setShowEmotionMenu(false); setShowCategoryMenu(false); setShowCalendar(false); setShowPeopleMenu(false) }}>
+            需求 ▾
+          </button>
+          {selectedCoreNeeds.map(n => (
+            <span key={n} style={selectedChipStyle}>
+              {n}
+              <button onClick={() => toggleCoreNeed(n)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#8a7a5a', fontSize: 12 }}>✕</button>
+            </span>
+          ))}
+        </>}
 
         {/* 日期（仅 showDate=true） */}
         {showDate && <>
@@ -262,6 +320,36 @@ export default function FilterBar({
               ? <span style={{ fontSize: 12, color: '#bbb' }}>暂无标签，请先在「我的」中添加</span>
               : categoryOptions.map(c => <button key={c} style={emotionBtnStyle(selectedCategories.includes(c))} onClick={() => toggleCategory(c)}>{c}</button>)
             }
+          </div>
+        </div>
+      )}
+
+      {/* 人物浮层 */}
+      {showPeopleMenu && (
+        <div ref={peopleMenuRef} style={{ margin: '0 16px 8px',
+          background: 'white', borderRadius: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          padding: 12, maxHeight: 240, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button onClick={() => setShowPeopleMenu(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>✅</button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {peopleOptions.map(p => <button key={p} style={emotionBtnStyle(selectedPeople.includes(p))} onClick={() => togglePerson(p)}>{p}</button>)}
+          </div>
+        </div>
+      )}
+
+      {/* 需求浮层 */}
+      {showCoreNeedsMenu && (
+        <div ref={coreNeedsMenuRef} style={{ margin: '0 16px 8px',
+          background: 'white', borderRadius: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          padding: 12, maxHeight: 240, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button onClick={() => setShowCoreNeedsMenu(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>✅</button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {coreNeedOptions.map(n => <button key={n} style={emotionBtnStyle(selectedCoreNeeds.includes(n))} onClick={() => toggleCoreNeed(n)}>{n}</button>)}
           </div>
         </div>
       )}

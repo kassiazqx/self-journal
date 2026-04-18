@@ -14,6 +14,7 @@ import {
   addCoreNeed,
   loadCoreNeeds,
 } from '../lib/coreNeedsService'
+import { loadContacts } from '../lib/contactsService'
 import { updateEntry } from '../lib/journalService'
 
 // 把 ISO 字符串格式化成「4月9日 周三」
@@ -159,6 +160,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   // 搜索 + 筛选
   const [showSearch, setShowSearch]         = useState(false)
   const [categoryOptions, setCategoryOptions] = useState([])
+  const [peopleOptions, setPeopleOptions]   = useState([])
+  const [coreNeedOptions, setCoreNeedOptions] = useState([])
   const [filteredEntries, setFilteredEntries] = useState(null) // null = 无筛选，[] = 筛选结果空
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -334,6 +337,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
       .eq('field_name', 'content_category')
       .order('sort_order', { ascending: true })
       .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
+    loadContacts().then(list => setPeopleOptions((list ?? []).map(c => c.canonical))).catch(() => {})
+    loadCoreNeeds().then(list => setCoreNeedOptions((list ?? []).map(n => n.option_value))).catch(() => {})
   }, [user?.id])
 
   // 按日期分组
@@ -355,29 +360,42 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     load()
   }
 
-  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedDate }) {
+  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {
     const hasFilter = searchText.trim() || selectedEmotions.length ||
-                      selectedCategories.length || selectedDate
+                      selectedCategories.length || selectedPeople.length ||
+                      selectedCoreNeeds.length || selectedDate
     if (!hasFilter) {
       setFilteredEntries(null)   // 恢复默认列表（含回顾信）
       return
     }
 
     let query = db.from('journal_entries')
-      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, template_type')
+      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, people_involved, core_needs, template_type')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
 
     if (searchText.trim()) {
       const escaped = searchText.replace(/%/g, '\\%').replace(/_/g, '\\_')
-      query = query.or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%`)
+      query = query.or(
+        `content.ilike.%${escaped}%,` +
+        `entry_summary.ilike.%${escaped}%,` +
+        `cognitive_analysis.ilike.%${escaped}%,` +
+        `body_sensations.ilike.%${escaped}%,` +
+        `reflection_insight.ilike.%${escaped}%`
+      )
     }
     if (selectedEmotions.length) {
       query = query.overlaps('emotions', selectedEmotions)
     }
     if (selectedCategories.length) {
       query = query.overlaps('category_tags', selectedCategories)
+    }
+    if (selectedPeople.length) {
+      query = query.overlaps('people_involved', selectedPeople)
+    }
+    if (selectedCoreNeeds.length) {
+      query = query.overlaps('core_needs', selectedCoreNeeds)
     }
     if (selectedDate) {
       const y = selectedDate.getFullYear()
@@ -425,7 +443,9 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
           <FilterBar
             onFilter={handleFilter}
             categoryOptions={categoryOptions}
-            placeholder="搜索记录内容…"
+            peopleOptions={peopleOptions}
+            coreNeedOptions={coreNeedOptions}
+            placeholder="搜索记录内容、认知、洞见…"
             showDate={true}
           />
         )}

@@ -14,6 +14,8 @@ import {
   reAnalyzeThread,
 } from '../lib/threadService'
 import FilterBar from '../components/FilterBar'
+import { loadContacts } from '../lib/contactsService'
+import { loadCoreNeeds } from '../lib/coreNeedsService'
 
 function formatDate(isoStr) {
   if (!isoStr) return ''
@@ -50,6 +52,8 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   // FilterBar 筛选条件（编辑模式用）
   const [filterConditions, setFilterConditions] = useState(null) // null = 未激活，object = 激活
   const [categoryOptions, setCategoryOptions] = useState([])
+  const [peopleOptions, setPeopleOptions]     = useState([])
+  const [coreNeedOptions, setCoreNeedOptions] = useState([])
 
   // 重新分析
   const [reanalyzing, setReanalyzing] = useState(false)
@@ -75,6 +79,8 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       .eq('field_name', 'content_category')
       .order('sort_order', { ascending: true })
       .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
+    loadContacts().then(list => setPeopleOptions((list ?? []).map(c => c.canonical))).catch(() => {})
+    loadCoreNeeds().then(list => setCoreNeedOptions((list ?? []).map(n => n.option_value))).catch(() => {})
   }, [user?.id])
 
   async function load() {
@@ -180,9 +186,10 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
 
   // 编辑模式：FilterBar 的 onFilter 回调
   // 有任意条件 → 执行筛选查询；无条件 → 恢复默认列表
-  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedDate }) {
+  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {
     const hasFilter = searchText.trim() || selectedEmotions.length ||
-                      selectedCategories.length || selectedDate
+                      selectedCategories.length || selectedPeople.length ||
+                      selectedCoreNeeds.length || selectedDate
     if (!hasFilter) {
       setFilterConditions(null)
       setSearchResults([])
@@ -190,26 +197,38 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       return
     }
 
-    setFilterConditions({ searchText, selectedEmotions, selectedCategories, selectedDate })
+    setFilterConditions({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate })
     setSearching(true)
 
     const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
 
     let query = db.from('journal_entries')
-      .select('id, entry_summary, created_at, content, emotions, category_tags')
+      .select('id, entry_summary, created_at, content, emotions, category_tags, people_involved, core_needs')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(30)
 
     if (searchText.trim()) {
       const escaped = searchText.replace(/%/g, '\\%').replace(/_/g, '\\_')
-      query = query.or(`content.ilike.%${escaped}%,entry_summary.ilike.%${escaped}%`)
+      query = query.or(
+        `content.ilike.%${escaped}%,` +
+        `entry_summary.ilike.%${escaped}%,` +
+        `cognitive_analysis.ilike.%${escaped}%,` +
+        `body_sensations.ilike.%${escaped}%,` +
+        `reflection_insight.ilike.%${escaped}%`
+      )
     }
     if (selectedEmotions.length) {
       query = query.overlaps('emotions', selectedEmotions)
     }
     if (selectedCategories.length) {
       query = query.overlaps('category_tags', selectedCategories)
+    }
+    if (selectedPeople.length) {
+      query = query.overlaps('people_involved', selectedPeople)
+    }
+    if (selectedCoreNeeds.length) {
+      query = query.overlaps('core_needs', selectedCoreNeeds)
     }
     if (selectedDate) {
       const y = selectedDate.getFullYear()
@@ -394,10 +413,12 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>未关联记录</div>
 
-            {/* FilterBar 搜索 + 情绪/类型筛选（showDate=false） */}
+            {/* FilterBar 搜索 + 情绪/类型/人物/需求筛选（showDate=false） */}
             <FilterBar
               onFilter={handleFilter}
               categoryOptions={categoryOptions}
+              peopleOptions={peopleOptions}
+              coreNeedOptions={coreNeedOptions}
               placeholder="搜索记录内容…"
               showDate={false}
             />
