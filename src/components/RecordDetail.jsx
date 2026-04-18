@@ -314,8 +314,17 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     setShowPeopleSheet(false)
   }
 
+  const VOCAB_VALID_RE = /["'\\n]/
+  function validateVocabInput(val) {
+    if (val.length > 20) return '不能超过 20 字'
+    if (VOCAB_VALID_RE.test(val)) return '不能包含引号、反斜杠或换行符'
+    return null
+  }
+
   async function handlePersonAddNew(name) {
     if (!name.trim()) return
+    const err = validateVocabInput(name.trim())
+    if (err) return
     const newContact = await addContact(name.trim())
     setContacts(prev => [...prev, newContact])
     await handlePersonAdd(name.trim())
@@ -347,6 +356,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   // 通过「+」新增自定义需求：同时写入词库（user_options）和当前 entry
   async function handleNeedAddCustom(word) {
     if (!word.trim()) return
+    if (validateVocabInput(word.trim())) return
     try {
       const newNeed = await addCoreNeed(word.trim())
       setCoreNeeds(prev => [...prev, newNeed])
@@ -729,11 +739,12 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
                 {/* 新增输入框（点「+」后展开）*/}
                 {showAddPersonInput && (
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                  <>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
                     <input
                       value={addPersonDraft}
                       onChange={e => setAddPersonDraft(e.target.value)}
-                      placeholder="输入新人物名"
+                      placeholder="输入新人物名（最多 20 字）"
                       autoFocus
                       onKeyDown={e => { if (e.key === 'Enter') handlePersonAddNew(addPersonDraft) }}
                       style={{
@@ -742,7 +753,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                       }}
                     />
                     <button onClick={() => handlePersonAddNew(addPersonDraft)}
-                      style={{ padding: '7px 14px', background: '#5a7a8a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                      disabled={!!validateVocabInput(addPersonDraft.trim())}
+                      style={{ padding: '7px 14px', background: '#5a7a8a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', opacity: validateVocabInput(addPersonDraft.trim()) ? 0.4 : 1 }}>
                       添加
                     </button>
                     <button onClick={() => { setShowAddPersonInput(false); setAddPersonDraft('') }}
@@ -750,6 +762,10 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                       取消
                     </button>
                   </div>
+                  {addPersonDraft && validateVocabInput(addPersonDraft) && (
+                    <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>{validateVocabInput(addPersonDraft)}</div>
+                  )}
+                  </>
                 )}
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -834,26 +850,32 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
                   {/* 灰色「+」首 chip */}
                   {showAddNeedInput ? (
-                    <div style={{ display: 'flex', gap: 6, width: '100%', marginBottom: 4 }}>
-                      <input
-                        value={addNeedDraft}
-                        onChange={e => setAddNeedDraft(e.target.value)}
-                        placeholder="输入新需求词"
-                        autoFocus
-                        onKeyDown={e => { if (e.key === 'Enter') handleNeedAddCustom(addNeedDraft) }}
-                        style={{
-                          flex: 1, padding: '7px 10px', border: '1px solid #e5e7eb',
-                          borderRadius: 8, fontSize: 14, outline: 'none',
-                        }}
-                      />
-                      <button onClick={() => handleNeedAddCustom(addNeedDraft)}
-                        style={{ padding: '7px 14px', background: '#7a6a9a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
-                        添加
-                      </button>
-                      <button onClick={() => { setShowAddNeedInput(false); setAddNeedDraft('') }}
-                        style={{ padding: '7px 10px', background: '#f3f4f6', color: '#888', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
-                        取消
-                      </button>
+                    <div style={{ width: '100%', marginBottom: 4 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          value={addNeedDraft}
+                          onChange={e => setAddNeedDraft(e.target.value)}
+                          placeholder="输入新需求词（最多 20 字）"
+                          autoFocus
+                          onKeyDown={e => { if (e.key === 'Enter') handleNeedAddCustom(addNeedDraft) }}
+                          style={{
+                            flex: 1, padding: '7px 10px', border: '1px solid #e5e7eb',
+                            borderRadius: 8, fontSize: 14, outline: 'none',
+                          }}
+                        />
+                        <button onClick={() => handleNeedAddCustom(addNeedDraft)}
+                          disabled={!!validateVocabInput(addNeedDraft.trim())}
+                          style={{ padding: '7px 14px', background: '#7a6a9a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', opacity: validateVocabInput(addNeedDraft.trim()) ? 0.4 : 1 }}>
+                          添加
+                        </button>
+                        <button onClick={() => { setShowAddNeedInput(false); setAddNeedDraft('') }}
+                          style={{ padding: '7px 10px', background: '#f3f4f6', color: '#888', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                          取消
+                        </button>
+                      </div>
+                      {addNeedDraft && validateVocabInput(addNeedDraft) && (
+                        <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validateVocabInput(addNeedDraft)}</div>
+                      )}
                     </div>
                   ) : (
                     <button onClick={() => setShowAddNeedInput(true)}

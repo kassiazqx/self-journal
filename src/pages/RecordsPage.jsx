@@ -296,6 +296,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   async function handlePendingEditSave(item) {
     const newWord = pendingEditValue.trim()
     if (!newWord) return
+    if (newWord.length > 20 || /["'\\n]/.test(newWord)) return
     await addCoreNeed(newWord)
     const srcEntry = item.journal_entries
     const current = srcEntry?.core_needs ?? []
@@ -689,16 +690,19 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
                     autoFocus
                     style={{
                       width: '100%', padding: '8px 12px', border: '1px solid #d1d5db',
-                      borderRadius: 8, fontSize: 14, marginBottom: 8, boxSizing: 'border-box',
+                      borderRadius: 8, fontSize: 14, marginBottom: 4, boxSizing: 'border-box',
                     }}
                   />
+                  {pendingEditValue && (pendingEditValue.length > 20 || /["'\\n]/.test(pendingEditValue)) && (
+                    <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>词条过长或含无效字符</div>
+                  )}
                   <button
                     onClick={() => handlePendingEditSave(item)}
-                    disabled={!pendingEditValue.trim()}
+                    disabled={!pendingEditValue.trim() || pendingEditValue.length > 20 || /["'\\n]/.test(pendingEditValue)}
                     style={{
                       padding: '8px 20px', background: '#6366f1', color: '#fff',
                       border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer',
-                      opacity: pendingEditValue.trim() ? 1 : 0.4,
+                      opacity: (pendingEditValue.trim() && pendingEditValue.length <= 20 && !/["'\\n]/.test(pendingEditValue)) ? 1 : 0.4,
                     }}
                   >
                     保存

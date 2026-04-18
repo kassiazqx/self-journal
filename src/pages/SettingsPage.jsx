@@ -103,6 +103,12 @@ export default function SettingsPage() {
     return null
   }
 
+  function validateContactInput(val) {
+    if (val.length > 20) return '名称不能超过 20 字'
+    if (/["'\\n]/.test(val)) return '不能包含引号、反斜杠或换行符'
+    return null
+  }
+
   // 触发浏览器下载
   function downloadFile(content, filename, mimeType) {
     const blob = new Blob([content], { type: mimeType })
@@ -804,13 +810,16 @@ export default function SettingsPage() {
                 <input
                   value={newContactCanonical}
                   onChange={e => setNewContactCanonical(e.target.value)}
-                  placeholder="规范名称"
+                  placeholder="规范名称（最多 20 字）"
                   style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
                 />
                 <button
                   onClick={async () => {
-                    if (!newContactCanonical.trim()) return
-                    await addContact(newContactCanonical.trim())
+                    const val = newContactCanonical.trim()
+                    if (!val) return
+                    const err = validateContactInput(val)
+                    if (err) { alert(err); return }
+                    await addContact(val)
                     setNewContactCanonical('')
                     await loadContactsData()
                   }}
@@ -819,6 +828,9 @@ export default function SettingsPage() {
                   添加
                 </button>
               </div>
+              {newContactCanonical && validateContactInput(newContactCanonical) && (
+                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validateContactInput(newContactCanonical)}</div>
+              )}
             </div>
           </div>
         </div>
