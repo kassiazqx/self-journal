@@ -296,13 +296,8 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
     clearDraft()
     const gotoAwareness = template.awarenessStart !== null
-    onDone?.(optimisticEntry, gotoAwareness)  // 立即跳转，不等 DB
-
-    // 重置写作区（不阻塞跳转）
-    setContent('')
-    setTemplate(DEFAULT_TEMPLATE)
-    setSelectedPeople([])
     setSaving(false)
+    onDone?.(optimisticEntry, gotoAwareness)  // 立即跳转，不等 DB
 
     // 后台写入 DB（fire-and-forget，用 optimisticEntry 里的 id）
     insertEntry(optimisticEntry)
@@ -326,9 +321,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
     clearDraft()
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
-    setContent('')
-    setTemplate(DEFAULT_TEMPLATE)
-    setSelectedPeople([])
   }, [content, saving, template, user, onDone])
 
   // ── 渲染 ──────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ export default function MainLayout() {
   const [screens, setScreens] = useState([])
   const [refreshKey, setRefreshKey] = useState(0)
   const [detailRefreshToken, setDetailRefreshToken] = useState(0)
+  const [writeResetKey, setWriteResetKey] = useState(0)
 
   // 清理旧版导航栈 localStorage（一次性）
   useEffect(() => {
@@ -65,6 +66,7 @@ export default function MainLayout() {
   // ── AwarenessFlow 完成后 ────────────────────────────────────
   function handleAwarenessComplete() {
     setRefreshKey(k => k + 1)
+    setWriteResetKey(k => k + 1)  // 重挂 HomePage，清空写作区
     goTab('records')
   }
 
@@ -262,7 +264,7 @@ export default function MainLayout() {
 
       {/* 所有 Tab 同时挂载，切换时只改 display，避免重复拉取数据 */}
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'write' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <HomePage onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
+          <HomePage key={writeResetKey} onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
           <RecordsPage
