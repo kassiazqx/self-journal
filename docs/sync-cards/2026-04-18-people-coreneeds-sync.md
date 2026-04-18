@@ -4,7 +4,8 @@
 >
 > - 对应 plan：`docs/superpowers/plans/2026-04-18-people-coreneeds.md`
 > - 对应 spec：`docs/superpowers/specs/2026-04-17-people-coreneeds-design.md`
-> - git commit：`8b20071`
+> - git commit（初版）：`8b20071`
+> - git commit（补漏）：`a539230` `4f95c2b`
 > - 完成日期：2026-04-18
 
 ---
@@ -12,6 +13,11 @@
 ## 执行结果
 
 Tasks 1–8 已全部完成并 commit。新增文件：`contactsService.js`、`coreNeedsService.js`。
+
+**遗留问题 1、2 已于同日补完（commit a539230、4f95c2b）：**
+- ✅ 输入校验（§4.29）：RecordDetail / SettingsPage / RecordsPage 所有新增路径
+- ✅ pending_core_needs 处理弹卡片三路径（原已存在，补加了改措辞路径的输入校验）
+- ✅ SettingsPage 人物/需求管理新增输入框移至列表顶部
 
 ---
 
@@ -49,19 +55,13 @@ Tasks 1–8 已全部完成并 commit。新增文件：`contactsService.js`、`c
 
 ## 遗留问题 / 未完成
 
-### 1. 输入校验（§4.29）未加
+### ~~1. 输入校验（§4.29）未加~~（已完成，commit a539230）
 
-spec §4.29 要求词条写入前校验长度 ≤ 20、禁特殊字符。RecordDetail 的「+」新增输入框和 SettingsPage 的编辑框目前没有加此校验。
-
-**下一步：** SettingsPage 人物/需求管理的编辑路径上加校验（RecordDetail「+」新增也要加）。
+### ~~3. pending_core_needs banner 功能结构占位~~（已完成，三路径逻辑原已存在，补加校验后闭环，commit a539230）
 
 ### 2. Task 9（group_name 分组）未做
 
-plan Task 9 是 Tasks 1–8 全部完成后才做的可选任务（需先执行 ALTER TABLE SQL）。本批次没有执行，保留在 plan 文件里。
-
-### 3. pending_core_needs banner 功能结构占位
-
-RecordsPage 新增了 banner（橙色提示条）和 pending 计数展示，但处理弹卡片（spec §7.2 三路径操作：加入词库 / 改措辞 / 合并到已有）目前是结构占位，业务逻辑不完整。
+plan Task 9 是 Tasks 1–8 全部完成后才做的可选任务（需先执行 ALTER TABLE SQL）。保留在 plan 文件里，无时间限制。
 
 ---
 
@@ -74,8 +74,6 @@ RecordsPage 新增了 banner（橙色提示条）和 pending 计数展示，但�
 
 ---
 
-## 下一步建议
+## 当前状态：✅ 本批次全部完成
 
-1. **输入校验**（§4.29）：SettingsPage 和 RecordDetail 的自定义词条/联系人新增输入框加 length ≤ 20 + 禁特殊字符校验
-2. **pending_core_needs 处理逻辑**：RecordsPage banner 点击后展示 pending 列表，支持「加入词库 / 改措辞加入 / 合并到已有词条」三路径
-3. **Task 9（可选）**：user_contacts 加 group_name 分组字段，@ 浮层按分组显示
+唯一遗留是 Task 9（group_name 分组），属于可选增量功能，不影响核心流程。
