@@ -733,6 +733,34 @@ export default function SettingsPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增人物</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newContactCanonical}
+                  onChange={e => setNewContactCanonical(e.target.value)}
+                  placeholder="规范名称（最多 20 字）"
+                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
+                />
+                <button
+                  onClick={async () => {
+                    const val = newContactCanonical.trim()
+                    if (!val) return
+                    const err = validateContactInput(val)
+                    if (err) { alert(err); return }
+                    await addContact(val)
+                    setNewContactCanonical('')
+                    await loadContactsData()
+                  }}
+                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+                >
+                  添加
+                </button>
+              </div>
+              {newContactCanonical && validateContactInput(newContactCanonical) && (
+                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validateContactInput(newContactCanonical)}</div>
+              )}
+            </div>
             {contacts.map(c => (
               <div key={c.id} style={{ background: '#fff', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
                 {editingContactId === c.id ? (
@@ -804,34 +832,6 @@ export default function SettingsPage() {
               </div>
             ))}
 
-            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', marginTop: 4 }}>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增人物</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={newContactCanonical}
-                  onChange={e => setNewContactCanonical(e.target.value)}
-                  placeholder="规范名称（最多 20 字）"
-                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
-                />
-                <button
-                  onClick={async () => {
-                    const val = newContactCanonical.trim()
-                    if (!val) return
-                    const err = validateContactInput(val)
-                    if (err) { alert(err); return }
-                    await addContact(val)
-                    setNewContactCanonical('')
-                    await loadContactsData()
-                  }}
-                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
-                >
-                  添加
-                </button>
-              </div>
-              {newContactCanonical && validateContactInput(newContactCanonical) && (
-                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validateContactInput(newContactCanonical)}</div>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -851,6 +851,32 @@ export default function SettingsPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增词条</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newNeedInput}
+                  onChange={e => setNewNeedInput(e.target.value)}
+                  placeholder="最多 20 字"
+                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
+                />
+                <button
+                  onClick={async () => {
+                    const err = validateCoreNeedInput(newNeedInput.trim())
+                    if (err || !newNeedInput.trim()) return
+                    await addCoreNeed(newNeedInput.trim())
+                    setNewNeedInput('')
+                    await loadCoreNeedsData()
+                  }}
+                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+                >
+                  添加
+                </button>
+              </div>
+              {newNeedInput && validateCoreNeedInput(newNeedInput) && (
+                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>词条过长或含无效字符</div>
+              )}
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
               {coreNeeds.map(c => (
                 <span
@@ -913,32 +939,6 @@ export default function SettingsPage() {
               )
             })()}
 
-            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增词条</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={newNeedInput}
-                  onChange={e => setNewNeedInput(e.target.value)}
-                  placeholder="最多 20 字"
-                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
-                />
-                <button
-                  onClick={async () => {
-                    const err = validateCoreNeedInput(newNeedInput.trim())
-                    if (err || !newNeedInput.trim()) return
-                    await addCoreNeed(newNeedInput.trim())
-                    setNewNeedInput('')
-                    await loadCoreNeedsData()
-                  }}
-                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
-                >
-                  添加
-                </button>
-              </div>
-              {newNeedInput && validateCoreNeedInput(newNeedInput) && (
-                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>词条过长或含无效字符</div>
-              )}
-            </div>
           </div>
         </div>
       )}
