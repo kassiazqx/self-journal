@@ -211,6 +211,32 @@ RecordDetail：左上角时间戳可点击，弹 DatetimePicker sheet，确认�
 - 不要在 `DatetimePicker` 里直接调 DB（只管 UI 状态，写回由调用方负责）
 - 不要在编辑模式（`editEntry`）下显示日期 pill（已有记录走 RecordDetail 修改）
 
+### 2.11 搜索筛选增强（FilterBar）
+
+```
+FilterBar 新增两个筛选维度：人物（people_involved）+ 内心需求（core_needs）。
+两者均用 Supabase .overlaps() 查询（与现有 emotions / category_tags 筛选完全一致）。
+
+options 来源：
+  peopleOptions  — loadContacts() 返回的 canonical 列表
+  coreNeedOptions — loadCoreNeeds() 返回的 option_value 列表
+  两者均在父页面 mount 时加载，以 props 传入 FilterBar。
+  词库为空时对应入口 chip 不渲染（隐藏而非禁用）。
+
+文字搜索覆盖字段扩展：
+  原：content + entry_summary
+  新增：cognitive_analysis + body_sensations + reflection_insight
+  实现：.or() 子句追加三个 ilike 条件，两个父页面同步更新。
+
+涉及文件：FilterBar.jsx（新增 props + state + 浮层）
+           RecordsPage.jsx（mount 加载 options，handleFilter 扩展）
+           ThreadDetailPage.jsx（同上，showDate=false）
+```
+
+**不要改成什么：**
+- 不要在 FilterBar 内部自己调 loadContacts / loadCoreNeeds（props 注入，FilterBar 无副作用）
+- 不要用 `.contains()` 替代 `.overlaps()`（contains 要求全部匹配，overlaps 是任意匹配）
+
 ---
 
 ## §3 当前代码真实结构
