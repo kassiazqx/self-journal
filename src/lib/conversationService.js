@@ -5,12 +5,23 @@ import { getExtractionPrompt, getMemoryUpdatePrompt } from './prompts'
 import { updateEntry } from './journalService'
 import { updateMemory, incrementConversationCount, resetConversationCount } from './memory'
 import { db } from './db'
+import { createPendingCoreNeed } from './coreNeedsService'
 
 // 每完成多少次对话才更新一次 AI 记忆
 const MEMORY_UPDATE_INTERVAL = 20
 
 // 新用户默认 11 个内容大类标签（user_options 为空时使用并写入）
 const DEFAULT_CATEGORY_TAGS = ['工作','家庭','恋爱与亲密关系','个人成长','学习','财务','运动健康','社交','玩乐休闲','灵性修行','日常生活']
+
+// ─── 获取用户核心需求词库 ─────────────────────────────────────
+async function getUserCoreNeeds(userId) {
+  const { data } = await db.from('user_options')
+    .select('option_value')
+    .eq('user_id', userId)
+    .eq('field_name', 'core_need')
+    .order('sort_order', { ascending: true })
+  return (data ?? []).map(r => r.option_value)
+}
 
 // ─── 获取用户标签（空时自动 seed）────────────────────────────────
 async function getUserCategoryTags(userId) {
@@ -95,11 +106,14 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
     .map(m => `${m.role === 'user' ? '我' : 'AI'}：${m.content}`)
     .join('\n\n')
 
-  // 提取字段（先拉用户标签）
+  // 提取字段（并行拉用户标签和核心需求词库）
   let extraction = {}
   try {
-    const userCategoryTags = await getUserCategoryTags(entry.user_id)
-    const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt(userCategoryTags)}`
+    const [userCategoryTags, userCoreNeeds] = await Promise.all([
+      getUserCategoryTags(entry.user_id),
+      getUserCoreNeeds(entry.user_id),
+    ])
+    const extractPrompt = `以下是我们的对话记录：\n\n${convoText}\n\n${getExtractionPrompt(userCategoryTags, userCoreNeeds)}`
     const raw = await callAI(
       [{ role: 'user', content: extractPrompt }],
       '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',
@@ -133,6 +147,14 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
         people_involved:           extraction.people_involved           ?? [],
       },
     }).then(({ error: e }) => { if (e) console.error('[extract] 写回失败:', e) })
+
+    // 写入未匹配词条到 pending_core_needs
+    const unmatched = extraction.unmatched_core_needs
+    if (Array.isArray(unmatched) && unmatched.length > 0) {
+      await Promise.all(
+        unmatched.map(word => createPendingCoreNeed(entry.id, word).catch(() => {}))
+      )
+    }
   }
 
   // 500ms 间隔后更新记忆（仅每 MEMORY_UPDATE_INTERVAL 次对话触发一次）
@@ -165,11 +187,14 @@ async function _backgroundProcess({ visibleMsgs, entry }) {
 // userId：用于拉取用户自定义 category_tags
 // 返回 extraction 对象（含 emotion_display 等字段）
 export async function extractFields(fullText, hasConversation = true, userId = null) {
-  const userCategoryTags = userId ? await getUserCategoryTags(userId) : []
+  const [userCategoryTags, userCoreNeeds] = await Promise.all([
+    userId ? getUserCategoryTags(userId) : Promise.resolve([]),
+    userId ? getUserCoreNeeds(userId) : Promise.resolve([]),
+  ])
   const intro = hasConversation
     ? `以下是我们的对话记录：\n\n${fullText}\n\n`
     : `以下是用户的一篇日记原文：\n\n${fullText}\n\n请根据日记内容进行推断和分析，即使某些信息没有明确说明，也请基于文字线索给出合理推断（仅当完全无法判断时才填 null）。\n\n`
-  const extractPrompt = intro + getExtractionPrompt(userCategoryTags)
+  const extractPrompt = intro + getExtractionPrompt(userCategoryTags, userCoreNeeds)
   const raw = await callAI(
     [{ role: 'user', content: extractPrompt }],
     '你是数据提取助手，只返回纯 JSON，不加任何说明或 markdown。',

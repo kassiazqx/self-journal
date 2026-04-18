@@ -195,10 +195,13 @@ ${conversationText}
 //   1. 此函数里的 JSON 字段列表
 //   2. AIConversation.jsx finishAndSave() 里的 update 字段列表
 //   3. supabase-schema.sql
-export function getExtractionPrompt(userCategoryTags = []) {
+export function getExtractionPrompt(userCategoryTags = [], coreNeedsVocab = []) {
   const categoryLine = userCategoryTags.length > 0
     ? `大类标签，从以下选：${userCategoryTags.join(' / ')}。只选最贴合的 1-2 个，没有匹配的就留空数组`
     : `大类标签，选 1-2 个最贴合的生活领域关键词，若无明显归类则留空数组`
+  const coreNeedsLine = coreNeedsVocab.length > 0
+    ? `核心需求，从以下词库中选择最匹配的词（可多选）：${coreNeedsVocab.join('、')}。若日记涉及的内心需求在词库中找不到合适的词，额外返回 unmatched_core_needs 字段（字符串数组，每条 ≤10字）。没有需求则空数组`
+    : `核心需求，自由提取，全部放入 unmatched_core_needs 字段（字符串数组，每条 ≤10字），core_needs 返回空数组`
   return `请根据我们刚才的完整对话（包括我最初的日记），提取以下信息，以纯 JSON 格式返回，不要有任何其他文字或 markdown 符号。如果某项信息在对话中没有提到，填 null。
 
 {
@@ -210,7 +213,8 @@ export function getExtractionPrompt(userCategoryTags = []) {
   "overall_state_score": 整体状态评分整数（-3到3，-3极度低落，3极度喜悦，0平静）,
   "body_sensations": "身体感受描述，没有则 null",
   "current_thought": "当时最主要的想法或念头（一句话），没有则 null",
-  "core_needs": ["核心需求，如：被理解、安全感、被爱，没有则空数组"],
+  "core_needs": ["${coreNeedsLine}"],
+  "unmatched_core_needs": ["词库外的核心需求建议词，若无则省略此字段或返回空数组"],
   "current_behavior": "当时的行为反应，没有则 null",
   "handling_rating": "从以下选一个：处理得很好 / 还不错 / 勉强应对 / 处理失当 / 失控了，没有则 null",
   "cognitive_distortion_type": "从以下选一个：灾难化 / 以偏概全 / 读心臆想 / 情绪推理 / 极端化 / 应该必须 / 过度自责 / 预测未来 / 缩小积极 / 贴标签，没有则 null",

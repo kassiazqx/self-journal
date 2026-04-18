@@ -8,6 +8,8 @@ import { updateEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { mapDisplayToBase } from '../lib/emotionMap'
 import { extractFields } from '../lib/conversationService'
+import { loadContacts, addContact } from '../lib/contactsService'
+import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 
 function formatDateTime(isoStr) {
   const d = new Date(isoStr)
@@ -114,6 +116,19 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [categoryOptions, setCategoryOptions] = useState([])   // 从 user_options 读
   const [categoryDraft, setCategoryDraft] = useState([])       // sheet 内暂存选择
 
+  // people_involved 浮层
+  const [contacts, setContacts] = useState([])
+  const [showPeopleSheet, setShowPeopleSheet] = useState(false)
+  const [showAddPersonInput, setShowAddPersonInput] = useState(false)
+  const [addPersonDraft, setAddPersonDraft] = useState('')
+
+  // core_needs 浮层
+  const [coreNeeds, setCoreNeeds] = useState([])
+  const [showNeedsSheet, setShowNeedsSheet] = useState(false)
+  const [needsSearch, setNeedsSearch] = useState('')
+  const [showAddNeedInput, setShowAddNeedInput] = useState(false)
+  const [addNeedDraft, setAddNeedDraft] = useState('')
+
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
 
@@ -184,6 +199,16 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     }
     loadCategoryOptions()
   }, [user?.id, entry.id])
+
+  // 加载联系人列表（RecordDetail 编辑时用）
+  useEffect(() => {
+    loadContacts().then(setContacts).catch(console.error)
+  }, [])
+
+  // 加载 core_needs 词库
+  useEffect(() => {
+    loadCoreNeeds().then(setCoreNeeds).catch(console.error)
+  }, [])
 
   function showToast(msg) {
     setToast(msg)
@@ -269,6 +294,66 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
     setEntry(e => ({ ...e, core_needs: arr }))
     await handleFieldSave('core_needs', arr)
+  }
+
+  // ── people_involved 增删 ──────────────────────────────────────
+  async function handlePersonRemove(name) {
+    const updated = (entry.people_involved ?? []).filter(p => p !== name)
+    setEntry(e => ({ ...e, people_involved: updated }))
+    await handleFieldSave('people_involved', updated)
+  }
+
+  async function handlePersonAdd(canonical) {
+    if ((entry.people_involved ?? []).includes(canonical)) {
+      setShowPeopleSheet(false)
+      return
+    }
+    const updated = [...(entry.people_involved ?? []), canonical]
+    setEntry(e => ({ ...e, people_involved: updated }))
+    await handleFieldSave('people_involved', updated)
+    setShowPeopleSheet(false)
+  }
+
+  async function handlePersonAddNew(name) {
+    if (!name.trim()) return
+    const newContact = await addContact(name.trim())
+    setContacts(prev => [...prev, newContact])
+    await handlePersonAdd(name.trim())
+    setAddPersonDraft('')
+    setShowAddPersonInput(false)
+  }
+
+  // ── core_needs 增删 ───────────────────────────────────────────
+  async function handleNeedRemove(word) {
+    const updated = (entry.core_needs ?? []).filter(n => n !== word)
+    setEntry(e => ({ ...e, core_needs: updated }))
+    await handleFieldSave('core_needs', updated)
+  }
+
+  async function handleNeedAdd(word) {
+    if ((entry.core_needs ?? []).includes(word)) {
+      setShowNeedsSheet(false)
+      return
+    }
+    const updated = [...(entry.core_needs ?? []), word]
+    setEntry(e => ({ ...e, core_needs: updated }))
+    await handleFieldSave('core_needs', updated)
+    setShowNeedsSheet(false)
+    setNeedsSearch('')
+    setShowAddNeedInput(false)
+    setAddNeedDraft('')
+  }
+
+  // 通过「+」新增自定义需求：同时写入词库（user_options）和当前 entry
+  async function handleNeedAddCustom(word) {
+    if (!word.trim()) return
+    try {
+      const newNeed = await addCoreNeed(word.trim())
+      setCoreNeeds(prev => [...prev, newNeed])
+    } catch (e) {
+      console.error('[RecordDetail] addCoreNeed failed:', e)
+    }
+    await handleNeedAdd(word.trim())
   }
 
   async function handleBodySensationsSave(value) {
@@ -600,16 +685,203 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           borderTop: '1px solid #ede9e2', paddingTop: 12,
         }}>
           {/* 已填字段始终展示，分析不完整时在下方保留按钮 */}
-          <EditableFieldRow
-            label="核心需求"
-            value={(entry.core_needs ?? []).join('、')}
-            displayValue={
-              entry.core_needs?.length > 0
-                ? entry.core_needs.join('、')
-                : null
-            }
-            onSave={handleCoreNeedsSave}
-          />
+
+          {/* 涉及的人 */}
+          <div style={{ display: 'flex', gap: 12, paddingBottom: 6, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, minWidth: 44, paddingTop: 6 }}>
+              涉及的人
+            </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>
+              {(entry.people_involved ?? []).map(name => (
+                <span key={name} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', background: '#e8f0f5', color: '#5a7a8a',
+                  borderRadius: 99, fontSize: 13,
+                }}>
+                  {name}
+                  <button onClick={() => handlePersonRemove(name)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#5a7a8a', lineHeight: 1 }}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button onClick={() => { loadContacts().then(setContacts).catch(console.error); setShowPeopleSheet(true) }}
+                style={{
+                  background: 'none', border: '1px dashed #cbd5e1', borderRadius: 99,
+                  padding: '2px 10px', fontSize: 13, color: '#94a3b8', cursor: 'pointer',
+                }}>
+                ＋
+              </button>
+            </div>
+          </div>
+
+          {/* 人物选择浮层 */}
+          {showPeopleSheet && (
+            <div style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
+              zIndex: 100, display: 'flex', alignItems: 'flex-end',
+            }} onClick={() => { setShowPeopleSheet(false); setShowAddPersonInput(false); setAddPersonDraft('') }}>
+              <div style={{
+                width: '100%', background: '#fff', borderRadius: '16px 16px 0 0',
+                padding: '20px 16px 32px', maxHeight: '60vh', overflowY: 'auto',
+              }} onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#333', marginBottom: 14 }}>选择涉及的人</div>
+
+                {/* 新增输入框（点「+」后展开）*/}
+                {showAddPersonInput && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                    <input
+                      value={addPersonDraft}
+                      onChange={e => setAddPersonDraft(e.target.value)}
+                      placeholder="输入新人物名"
+                      autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') handlePersonAddNew(addPersonDraft) }}
+                      style={{
+                        flex: 1, padding: '7px 10px', border: '1px solid #e5e7eb',
+                        borderRadius: 8, fontSize: 14, outline: 'none',
+                      }}
+                    />
+                    <button onClick={() => handlePersonAddNew(addPersonDraft)}
+                      style={{ padding: '7px 14px', background: '#5a7a8a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                      添加
+                    </button>
+                    <button onClick={() => { setShowAddPersonInput(false); setAddPersonDraft('') }}
+                      style={{ padding: '7px 10px', background: '#f3f4f6', color: '#888', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                      取消
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {/* 灰色「+」首 chip */}
+                  {!showAddPersonInput && (
+                    <button onClick={() => setShowAddPersonInput(true)}
+                      style={{
+                        padding: '5px 14px', borderRadius: 99,
+                        border: '1.5px dashed #cbd5e1', background: 'none',
+                        color: '#94a3b8', fontSize: 14, cursor: 'pointer',
+                      }}>
+                      ＋
+                    </button>
+                  )}
+                  {/* 联系人 chip（只显示 canonical，过滤已选）*/}
+                  {contacts
+                    .filter(c => !(entry.people_involved ?? []).includes(c.canonical))
+                    .map(c => (
+                      <span key={c.id} onClick={() => handlePersonAdd(c.canonical)}
+                        style={{
+                          padding: '5px 14px', background: '#e8f0f5', color: '#5a7a8a',
+                          borderRadius: 99, fontSize: 14, cursor: 'pointer',
+                        }}>
+                        {c.canonical}
+                      </span>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 内心需求 */}
+          <div style={{ display: 'flex', gap: 12, paddingBottom: 6, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, minWidth: 44, paddingTop: 6 }}>
+              内心需求
+            </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>
+              {(entry.core_needs ?? []).map(word => (
+                <span key={word} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', background: '#ede8f5', color: '#7a6a9a',
+                  borderRadius: 99, fontSize: 13,
+                }}>
+                  {word}
+                  <button onClick={() => handleNeedRemove(word)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#7a6a9a', lineHeight: 1 }}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button onClick={() => { loadCoreNeeds().then(setCoreNeeds).catch(console.error); setShowNeedsSheet(true); setNeedsSearch('') }}
+                style={{
+                  background: 'none', border: '1px dashed #c4b5e0', borderRadius: 99,
+                  padding: '2px 10px', fontSize: 13, color: '#b4a0d0', cursor: 'pointer',
+                }}>
+                ＋
+              </button>
+            </div>
+          </div>
+
+          {/* 词库选择浮层 */}
+          {showNeedsSheet && (
+            <div style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
+              zIndex: 100, display: 'flex', alignItems: 'flex-end',
+            }} onClick={() => setShowNeedsSheet(false)}>
+              <div style={{
+                width: '100%', background: '#fff', borderRadius: '16px 16px 0 0',
+                padding: 16, maxHeight: '60vh', overflowY: 'auto',
+              }} onClick={e => e.stopPropagation()}>
+                <input
+                  placeholder="搜索词条"
+                  value={needsSearch}
+                  onChange={e => setNeedsSearch(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', border: '1px solid #e5e7eb',
+                    borderRadius: 8, fontSize: 14, marginBottom: 8, boxSizing: 'border-box',
+                  }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
+                  {/* 灰色「+」首 chip */}
+                  {showAddNeedInput ? (
+                    <div style={{ display: 'flex', gap: 6, width: '100%', marginBottom: 4 }}>
+                      <input
+                        value={addNeedDraft}
+                        onChange={e => setAddNeedDraft(e.target.value)}
+                        placeholder="输入新需求词"
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') handleNeedAddCustom(addNeedDraft) }}
+                        style={{
+                          flex: 1, padding: '7px 10px', border: '1px solid #e5e7eb',
+                          borderRadius: 8, fontSize: 14, outline: 'none',
+                        }}
+                      />
+                      <button onClick={() => handleNeedAddCustom(addNeedDraft)}
+                        style={{ padding: '7px 14px', background: '#7a6a9a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                        添加
+                      </button>
+                      <button onClick={() => { setShowAddNeedInput(false); setAddNeedDraft('') }}
+                        style={{ padding: '7px 10px', background: '#f3f4f6', color: '#888', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                        取消
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowAddNeedInput(true)}
+                      style={{
+                        padding: '5px 14px', borderRadius: 99,
+                        border: '1.5px dashed #c4b5e0', background: 'none',
+                        color: '#b4a0d0', fontSize: 14, cursor: 'pointer',
+                      }}>
+                      ＋
+                    </button>
+                  )}
+                  {coreNeeds
+                    .filter(c => !needsSearch || c.option_value.includes(needsSearch))
+                    .filter(c => !(entry.core_needs ?? []).includes(c.option_value))
+                    .map(c => (
+                      <span key={c.id} onClick={() => handleNeedAdd(c.option_value)}
+                        style={{
+                          padding: '5px 14px', background: '#ede8f5', color: '#7a6a9a',
+                          borderRadius: 99, fontSize: 14, cursor: 'pointer',
+                        }}>
+                        {c.option_value}
+                      </span>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
+          )}
           <EditableFieldRow
             label="认知"
             value={entry.cognitive_analysis ?? ''}

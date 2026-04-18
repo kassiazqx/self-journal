@@ -22,6 +22,8 @@ import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
 import { insertEntry, updateEntry } from '../lib/journalService'
 import { Mic, MicOff } from 'lucide-react'
 import { db } from '../lib/db'
+import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
+import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
@@ -113,6 +115,31 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
   const textareaRef = useRef(null)
   const draftTimerRef = useRef(null)
+  // 手动 ✕ 过的人物（session 内永久 dismiss，文字里再出现也不重现）
+  const [dismissedPeople, setDismissedPeople] = useState(new Set())
+
+  // ── 联系人（进页面时一次性加载到内存）─────────────────────────
+  const [contacts, setContacts] = useState([])
+  // @ 浮层
+  const [mentionQuery, setMentionQuery] = useState(null)  // null = 关闭，字符串 = 搜索词
+  const [mentionAnchor, setMentionAnchor] = useState(0)   // @ 字符在文本中的位置
+  const [mentionTop, setMentionTop] = useState(0)          // 浮窗距容器顶部的像素偏移
+  // 底部 chip：已选人物的 canonical 数组
+  const [selectedPeople, setSelectedPeople] = useState(
+    editEntry?.people_involved ?? []
+  )
+
+  // ── 加载联系人（seed 一次，然后读取）──────────────────────────
+  useEffect(() => {
+    if (!user) return
+    async function init() {
+      await seedDefaultContacts()
+      await seedDefaultCoreNeeds()
+      const list = await loadContacts()
+      setContacts(list)
+    }
+    init().catch(console.error)
+  }, [user])
 
   // ── 草稿检查（仅新建模式）──────────────────────────────────────
   useEffect(() => {
@@ -179,6 +206,58 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     )
   }
 
+  // ── 监听 @ 字符（实时识别由 render 时计算，不在此累积）──────
+  const handleContentChange = (e) => {
+    const val = e.target.value
+    setContent(val)
+
+    // 检测 @ 触发：找光标前最近一个 @，且 @ 后无空格
+    const cursor = e.target.selectionStart
+    const before = val.slice(0, cursor)
+    const atIdx = before.lastIndexOf('@')
+    if (atIdx !== -1) {
+      const afterAt = before.slice(atIdx + 1)
+      if (!afterAt.includes(' ') && !afterAt.includes('\n')) {
+        // 计算浮窗 top：@ 所在行数 × 行高 + 上方 padding + 一行偏移（显示在光标下方）
+        const LINE_H = 28  // 15px × 1.85 ≈ 28px
+        const TOP_PAD = 14 // pt-[14px]
+        const linesBefore = (val.slice(0, atIdx).match(/\n/g) || []).length
+        setMentionTop(linesBefore * LINE_H + LINE_H + TOP_PAD)
+        setMentionQuery(afterAt)
+        setMentionAnchor(atIdx)
+        return
+      }
+    }
+    setMentionQuery(null)
+  }
+
+  // ── @ 选人 ────────────────────────────────────────────────────
+  const handleMentionSelect = async (contact) => {
+    // 把 @<query> 替换为 alias 原文（去掉 @，文字保留）
+    const before = content.slice(0, mentionAnchor)   // @ 之前
+    const after = content.slice(mentionAnchor)         // @ 开始往后
+    const query = mentionQuery
+    const afterCleaned = after.replace('@' + query, query)
+    setContent(before + afterCleaned)
+    setMentionQuery(null)
+
+    // 底部 chip 追加（去重）
+    const canonical = contact.canonical
+    setSelectedPeople(prev =>
+      prev.includes(canonical) ? prev : [...prev, canonical]
+    )
+  }
+
+  const handleMentionAddNew = async (name) => {
+    if (!name.trim()) return
+    const newContact = await addContact(name.trim())
+    setContacts(prev => [...prev, newContact])
+    setMentionQuery(null)
+    setSelectedPeople(prev =>
+      prev.includes(name.trim()) ? prev : [...prev, name.trim()]
+    )
+  }
+
   // ── 点 ✓（完成写作）──────────────────────────────────────────
   const handleDone = useCallback(async () => {
     if (!content.trim() || saving) return
@@ -186,11 +265,17 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
     const trimmed = content.trim()
 
+    // 实时计算 people_involved（文本识别 + 手动选 - 已 dismiss）
+    const autoDetected = detectPeopleFromText(trimmed, contacts)
+    const allPeople = [...new Set([...selectedPeople, ...autoDetected])]
+      .filter(p => !dismissedPeople.has(p))
+
     if (isEditMode) {
       // 编辑模式：后台 UPDATE，立即回调
       const fields = {
         content: trimmed,
         template_type: template.id,
+        people_involved: allPeople,
       }
       const updatedEntry = { ...editEntry, ...fields }
       onDone?.(updatedEntry, false)  // 编辑不进觉察流
@@ -206,6 +291,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
       content: trimmed,
       template_type: template.id,
       created_at: new Date().toISOString(),
+      people_involved: allPeople,
     }
 
     clearDraft()
@@ -215,12 +301,13 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     // 重置写作区（不阻塞跳转）
     setContent('')
     setTemplate(DEFAULT_TEMPLATE)
+    setSelectedPeople([])
     setSaving(false)
 
     // 后台写入 DB（fire-and-forget，用 optimisticEntry 里的 id）
     insertEntry(optimisticEntry)
       .then(({ error }) => { if (error) console.error('[insert]', error) })
-  }, [content, saving, isEditMode, template, editEntry, user, onDone])
+  }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts, selectedPeople])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
@@ -241,6 +328,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
     setContent('')
     setTemplate(DEFAULT_TEMPLATE)
+    setSelectedPeople([])
   }, [content, saving, template, user, onDone])
 
   // ── 渲染 ──────────────────────────────────────────────────────
@@ -361,12 +449,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
         </p>
       </div>
 
-      {/* ── 输入区 ── */}
-      <div className="flex-1 px-[18px] pt-[14px] pb-[80px]">
+      {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}
+      <div className="flex-1 px-[18px] pt-[14px] pb-[80px]" style={{ position: 'relative' }}>
         <textarea
           ref={textareaRef}
           value={content}
-          onChange={e => setContent(e.target.value)}
+          onChange={handleContentChange}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setMentionQuery(null)
+          }}
           placeholder="把脑子里的写下来…"
           className="w-full h-full border-none outline-none bg-transparent resize-none"
           style={{
@@ -377,74 +468,175 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
             fontFamily: 'inherit',
           }}
         />
+
+        {/* @ 浮层 */}
+        {mentionQuery !== null && (() => {
+          const uniqueContacts = [...new Map(contacts.map(c => [c.canonical, c])).values()]
+          const filtered = uniqueContacts.filter(c => {
+            const q = mentionQuery.toLowerCase()
+            return (
+              c.canonical.toLowerCase().includes(q) ||
+              (c.aliases || []).some(a => a.toLowerCase().includes(q))
+            )
+          })
+          return (
+            <div style={{
+              position: 'absolute',
+              left: 18,
+              top: mentionTop,
+              width: 200,
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              borderRadius: 12,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.14)',
+              zIndex: 50,
+              maxHeight: 200,
+              overflowY: 'auto',
+            }}>
+              {filtered.map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => handleMentionSelect(c)}
+                  style={{
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    color: '#333',
+                    borderBottom: '1px solid #f3f4f6',
+                  }}
+                >
+                  {c.canonical}
+                </div>
+              ))}
+              {mentionQuery.trim() && (
+                <div
+                  onClick={() => handleMentionAddNew(mentionQuery)}
+                  style={{
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    color: '#c9a96e',
+                  }}
+                >
+                  ＋ 新增「{mentionQuery}」
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
-      {/* ── 底部浮动栏 ── */}
+      {/* ── 涉及的人 chip 区（浮动栏上方）── */}
+      {/* ── 底部浮动栏（含人物 chip）── */}
       <div
-        className="absolute bottom-0 left-0 right-0 flex items-center justify-between"
+        className="absolute bottom-0 left-0 right-0"
         style={{
           padding: '8px 18px 22px',
           background: 'linear-gradient(transparent, #faf8f4 38%)',
         }}
       >
-        {/* 左：✦ 深入觉察 + 语音 */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleDeepAwareness}
-            disabled={!content.trim() || saving}
-            className="flex items-center gap-[5px] disabled:opacity-30 active:scale-95 transition-transform"
-          >
-            <span
-              className="flex items-center justify-center rounded-full"
-              style={{
-                width: '30px',
-                height: '30px',
-                background: '#f0ece4',
-                border: '1px solid #ddd8cf',
-                fontSize: '11px',
-                color: '#b8a88a',
-              }}
-            >
-              ✦
-            </span>
-            <span style={{ fontSize: '10px', color: '#ccc' }}>深入觉察</span>
-          </button>
-
-          {isSupported && (
+        <div className="flex items-center gap-2">
+          {/* 左：✦ 深入觉察 + 语音 */}
+          <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
             <button
-              onClick={handleVoiceToggle}
-              className={`flex items-center justify-center rounded-full active:scale-95 transition-all ${
-                isRecording ? 'recording-pulse' : ''
-              }`}
-              style={{
-                width: '30px',
-                height: '30px',
-                background: isRecording ? '#ef4444' : '#f0ece4',
-                border: `1px solid ${isRecording ? '#ef4444' : '#ddd8cf'}`,
-                color: isRecording ? '#fff' : '#b8a88a',
-              }}
+              onClick={handleDeepAwareness}
+              disabled={!content.trim() || saving}
+              className="flex items-center gap-[5px] disabled:opacity-30 active:scale-95 transition-transform"
             >
-              {isRecording ? <MicOff size={13} /> : <Mic size={13} />}
+              <span
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  background: '#f0ece4',
+                  border: '1px solid #ddd8cf',
+                  fontSize: '11px',
+                  color: '#b8a88a',
+                }}
+              >
+                ✦
+              </span>
+              <span style={{ fontSize: '10px', color: '#ccc' }}>深入觉察</span>
             </button>
-          )}
-        </div>
 
-        {/* 右：✓ 完成按钮 */}
-        <button
-          onClick={handleDone}
-          disabled={!content.trim() || saving}
-          className="flex items-center justify-center rounded-full active:scale-95 transition-all disabled:opacity-30"
-          style={{
-            width: '36px',
-            height: '36px',
-            background: saving ? '#999' : '#2d2928',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
-            fontSize: '13px',
-            color: '#fff',
-          }}
-        >
-          {saving ? '…' : '✓'}
-        </button>
+            {isSupported && (
+              <button
+                onClick={handleVoiceToggle}
+                className={`flex items-center justify-center rounded-full active:scale-95 transition-all ${
+                  isRecording ? 'recording-pulse' : ''
+                }`}
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  background: isRecording ? '#ef4444' : '#f0ece4',
+                  border: `1px solid ${isRecording ? '#ef4444' : '#ddd8cf'}`,
+                  color: isRecording ? '#fff' : '#b8a88a',
+                }}
+              >
+                {isRecording ? <MicOff size={13} /> : <Mic size={13} />}
+              </button>
+            )}
+          </div>
+
+          {/* 中：人物 chip（横向可滚动，实时计算）*/}
+          {(() => {
+            const autoDetected = detectPeopleFromText(content, contacts)
+            const displayedPeople = [...new Set([...selectedPeople, ...autoDetected])]
+              .filter(p => !dismissedPeople.has(p))
+            return (
+              <div style={{
+                flex: 1,
+                overflowX: 'auto',
+                display: 'flex',
+                gap: 5,
+                alignItems: 'center',
+                scrollbarWidth: 'none',
+              }}>
+                {displayedPeople.map(name => (
+                  <span key={name} style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    padding: '2px 8px',
+                    background: '#e8f0f5',
+                    color: '#5a7a8a',
+                    borderRadius: 99,
+                    fontSize: 12,
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {name}
+                    <button
+                      onClick={() => {
+                        setDismissedPeople(prev => new Set([...prev, name]))
+                        setSelectedPeople(prev => prev.filter(p => p !== name))
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: '#5a7a8a', fontSize: 11 }}
+                    >✕</button>
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
+
+          {/* 右：✓ 完成按钮 */}
+          <button
+            onClick={handleDone}
+            disabled={!content.trim() || saving}
+            className="flex items-center justify-center rounded-full active:scale-95 transition-all disabled:opacity-30"
+            style={{
+              width: '36px',
+              height: '36px',
+              flexShrink: 0,
+              background: saving ? '#999' : '#2d2928',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+              fontSize: '13px',
+              color: '#fff',
+            }}
+          >
+            {saving ? '…' : '✓'}
+          </button>
+        </div>
       </div>
     </div>
   )

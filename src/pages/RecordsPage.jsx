@@ -7,6 +7,14 @@ import { deleteEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { checkAndGenerateLetter } from '../lib/reviewLetterService'
 import FilterBar from '../components/FilterBar'
+import {
+  getPendingCoreNeedsCount,
+  getPendingCoreNeeds,
+  deletePendingCoreNeed,
+  addCoreNeed,
+  loadCoreNeeds,
+} from '../lib/coreNeedsService'
+import { updateEntry } from '../lib/journalService'
 
 // 把 ISO 字符串格式化成「4月9日 周三」
 function formatGroupDate(isoStr) {
@@ -155,6 +163,16 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // pending_core_needs banner + 处理卡片
+  const [pendingCount, setPendingCount]   = useState(0)
+  const [showPendingCard, setShowPendingCard] = useState(false)
+  const [pendingItems, setPendingItems]   = useState([])
+  const [currentPendingIdx, setCurrentPendingIdx] = useState(0)
+  const [pendingEditValue, setPendingEditValue]   = useState('')
+  const [showPendingEdit, setShowPendingEdit]     = useState(false)
+  const [showMergeList, setShowMergeList]         = useState(false)
+  const [coreNeedsVocab, setCoreNeedsVocab]       = useState([])
+
   // filteredEntries !== null → 筛选模式：只显示筛选出的 journal_entries，不含回顾信
   const items = filteredEntries !== null
     ? filteredEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
@@ -194,6 +212,11 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     setAllLetters(letters)
     setEntryOffset(ENTRY_PAGE)
     setHasMoreEntries(entries.length === ENTRY_PAGE)
+
+    // 查询 pending_core_needs 数量
+    const count = await getPendingCoreNeedsCount()
+    setPendingCount(count ?? 0)
+
     setLoading(false)
   }, [user])
 
@@ -223,6 +246,83 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   }
 
   useEffect(() => { load() }, [load])
+
+  // 加载 core_needs 词库（供「合并到已有词条」）
+  useEffect(() => {
+    if (!user) return
+    loadCoreNeeds().then(setCoreNeedsVocab).catch(console.error)
+  }, [user])
+
+  // ── pending_core_needs 处理 ──────────────────────────────────
+  async function handleOpenPendingCard() {
+    const items = await getPendingCoreNeeds()
+    setPendingItems(items)
+    setCurrentPendingIdx(0)
+    setPendingEditValue('')
+    setShowPendingEdit(false)
+    setShowMergeList(false)
+    setShowPendingCard(true)
+  }
+
+  function advancePending(newItems) {
+    if (newItems.length === 0) {
+      setShowPendingCard(false)
+      setPendingCount(0)
+    } else {
+      setPendingItems(newItems)
+      setCurrentPendingIdx(0)
+      setPendingEditValue('')
+      setShowPendingEdit(false)
+      setShowMergeList(false)
+      setPendingCount(newItems.length)
+    }
+  }
+
+  async function handlePendingAddToVocab(item) {
+    await addCoreNeed(item.proposed)
+    const srcEntry = item.journal_entries
+    const current = srcEntry?.core_needs ?? []
+    if (!current.includes(item.proposed)) {
+      await updateEntry({
+        id: item.entry_id,
+        userId: srcEntry?.user_id,
+        fields: { core_needs: [...current, item.proposed] },
+      })
+    }
+    await deletePendingCoreNeed(item.id)
+    advancePending(pendingItems.filter(p => p.id !== item.id))
+  }
+
+  async function handlePendingEditSave(item) {
+    const newWord = pendingEditValue.trim()
+    if (!newWord) return
+    await addCoreNeed(newWord)
+    const srcEntry = item.journal_entries
+    const current = srcEntry?.core_needs ?? []
+    if (!current.includes(newWord)) {
+      await updateEntry({
+        id: item.entry_id,
+        userId: srcEntry?.user_id,
+        fields: { core_needs: [...current, newWord] },
+      })
+    }
+    await deletePendingCoreNeed(item.id)
+    advancePending(pendingItems.filter(p => p.id !== item.id))
+  }
+
+  async function handlePendingMerge(item, existingWord) {
+    const srcEntry = item.journal_entries
+    const current = srcEntry?.core_needs ?? []
+    if (!current.includes(existingWord)) {
+      await updateEntry({
+        id: item.entry_id,
+        userId: srcEntry?.user_id,
+        fields: { core_needs: [...current, existingWord] },
+      })
+    }
+    await deletePendingCoreNeed(item.id)
+    advancePending(pendingItems.filter(p => p.id !== item.id))
+  }
 
   // 加载内容类型标签（用于 FilterBar categoryOptions）
   useEffect(() => {
@@ -327,6 +427,27 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
             placeholder="搜索记录内容…"
             showDate={true}
           />
+        )}
+
+        {/* pending_core_needs 橙色 banner */}
+        {pendingCount > 0 && (
+          <div
+            onClick={handleOpenPendingCard}
+            style={{
+              background: '#fff7ed',
+              borderLeft: '3px solid #f97316',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              fontSize: 13,
+              color: '#92400e',
+            }}
+          >
+            <span>● 有 {pendingCount} 个新的内心需求待确认</span>
+            <span style={{ fontSize: 12 }}>查看 →</span>
+          </div>
         )}
       </div>
 
@@ -495,6 +616,130 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
           </div>
         </div>
       )}
+
+      {/* pending_core_needs 处理卡片 */}
+      {showPendingCard && pendingItems.length > 0 && (() => {
+        const item = pendingItems[currentPendingIdx] ?? pendingItems[0]
+        const srcEntry = item?.journal_entries
+        const srcDate = srcEntry?.created_at
+          ? new Date(srcEntry.created_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : ''
+
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+            zIndex: 200, display: 'flex', alignItems: 'flex-end',
+          }}>
+            <div style={{
+              width: '100%', background: '#fff',
+              borderRadius: '16px 16px 0 0', padding: 20,
+              maxHeight: '80vh', overflowY: 'auto',
+            }}>
+              <div style={{ fontSize: 12, color: '#aaa', marginBottom: 12 }}>
+                待处理 {pendingItems.length} 条
+              </div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>来源记录</div>
+              <div
+                onClick={() => onOpenDetail?.(srcEntry)}
+                style={{
+                  background: '#f9f9f9', borderRadius: 10, padding: '10px 14px',
+                  marginBottom: 16, cursor: srcEntry ? 'pointer' : 'default',
+                }}
+              >
+                <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{srcDate}</span>
+                  {srcEntry && <span style={{ color: '#6366f1' }}>查看 →</span>}
+                </div>
+                <div style={{ fontSize: 13, color: '#555', lineHeight: 1.6,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {srcEntry?.content ?? ''}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>AI 提议</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#333', marginBottom: 20, paddingLeft: 4 }}>
+                {item.proposed}
+              </div>
+              <button
+                onClick={() => handlePendingAddToVocab(item)}
+                style={{
+                  width: '100%', padding: '13px 0', marginBottom: 10,
+                  background: '#6366f1', color: '#fff', border: 'none',
+                  borderRadius: 10, fontSize: 15, cursor: 'pointer',
+                }}
+              >
+                ✓ 加入词库
+              </button>
+              <button
+                onClick={() => { setShowPendingEdit(v => !v); setShowMergeList(false) }}
+                style={{
+                  width: '100%', padding: '13px 0', marginBottom: showPendingEdit ? 0 : 10,
+                  background: '#f3f4f6', color: '#374151', border: 'none',
+                  borderRadius: showPendingEdit ? '10px 10px 0 0' : 10,
+                  fontSize: 15, cursor: 'pointer',
+                }}
+              >
+                ✎ 改措辞后加入
+              </button>
+              {showPendingEdit && (
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: 12, marginBottom: 10 }}>
+                  <input
+                    value={pendingEditValue}
+                    onChange={e => setPendingEditValue(e.target.value)}
+                    placeholder={item.proposed}
+                    autoFocus
+                    style={{
+                      width: '100%', padding: '8px 12px', border: '1px solid #d1d5db',
+                      borderRadius: 8, fontSize: 14, marginBottom: 8, boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    onClick={() => handlePendingEditSave(item)}
+                    disabled={!pendingEditValue.trim()}
+                    style={{
+                      padding: '8px 20px', background: '#6366f1', color: '#fff',
+                      border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer',
+                      opacity: pendingEditValue.trim() ? 1 : 0.4,
+                    }}
+                  >
+                    保存
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={() => { setShowMergeList(v => !v); setShowPendingEdit(false) }}
+                style={{
+                  width: '100%', padding: '13px 0',
+                  background: '#f3f4f6', color: '#374151', border: 'none',
+                  borderRadius: showMergeList ? '10px 10px 0 0' : 10,
+                  fontSize: 15, cursor: 'pointer',
+                }}
+              >
+                合并到已有词条 ›
+              </button>
+              {showMergeList && (
+                <div style={{
+                  background: '#f9fafb', border: '1px solid #e5e7eb', borderTop: 'none',
+                  borderRadius: '0 0 10px 10px', padding: 12,
+                  display: 'flex', flexWrap: 'wrap', gap: 8,
+                }}>
+                  {coreNeedsVocab.map(c => (
+                    <span
+                      key={c.id}
+                      onClick={() => handlePendingMerge(item, c.option_value)}
+                      style={{
+                        padding: '5px 14px', background: '#ede8f5', color: '#7a6a9a',
+                        borderRadius: 99, fontSize: 14, cursor: 'pointer',
+                      }}
+                    >
+                      {c.option_value}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

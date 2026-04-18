@@ -56,11 +56,22 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
   if (!entries?.length) throw new Error('NO_ENTRIES')
 
-  // Step 2: 批量补提取缺失的 entry_summary / theme_hints
+  // Step 2: 批量补提取缺失的 entry_summary / theme_hints（含词库）
   // （extractEntrySummaries 已在文件顶部静态 import，见 §4.14 注意事项）
   const needExtract = entries.filter(e => !e.entry_summary)
   if (needExtract.length > 0) {
-    await extractEntrySummaries(userId, needExtract.map(e => e.id))
+    // 并行拉三个词库
+    const [coreNeedsRows, categoryRows, contactsRows] = await Promise.all([
+      db.from('user_options').select('option_value').eq('user_id', userId).eq('field_name', 'core_need').order('sort_order', { ascending: true }),
+      db.from('user_options').select('option_value').eq('user_id', userId).eq('field_name', 'content_category').order('sort_order', { ascending: true }),
+      db.from('user_contacts').select('canonical').eq('user_id', userId),
+    ])
+    const vocabOptions = {
+      coreNeedsVocab: (coreNeedsRows.data ?? []).map(r => r.option_value),
+      categoryTags: (categoryRows.data ?? []).map(r => r.option_value),
+      contacts: contactsRows.data ?? [],
+    }
+    await extractEntrySummaries(userId, needExtract.map(e => e.id), vocabOptions)
 
     // 重新读取，拿到最新摘要
     const { data: refreshed } = await db.from('journal_entries')

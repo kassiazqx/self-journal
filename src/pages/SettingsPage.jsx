@@ -7,6 +7,12 @@ import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs } from '../lib/reviewLetterService'
 import { updateMemory } from '../lib/memory'
 import { db } from '../lib/db'
+import {
+  loadContacts, addContact, updateContact, deleteContact,
+} from '../lib/contactsService'
+import {
+  loadCoreNeeds, addCoreNeed, updateCoreNeed, deleteCoreNeed,
+} from '../lib/coreNeedsService'
 
 const PROVIDERS = [
   {
@@ -52,6 +58,21 @@ export default function SettingsPage() {
   const [editingTagId, setEditingTagId] = useState(null)    // 当前正在编辑的标签 id
   const [editingTagValue, setEditingTagValue] = useState('') // 编辑框当前值
 
+  // 人物管理子页
+  const [showPeoplePage, setShowPeoplePage]   = useState(false)
+  const [contacts, setContacts]               = useState([])
+  const [editingContactId, setEditingContactId] = useState(null)
+  const [contactCanonicalDraft, setContactCanonicalDraft] = useState('')
+  const [contactAliasesDraft, setContactAliasesDraft]   = useState('')
+  const [newContactCanonical, setNewContactCanonical]   = useState('')
+
+  // core_needs 词库子页
+  const [showNeedsPage, setShowNeedsPage]     = useState(false)
+  const [coreNeeds, setCoreNeeds]             = useState([])
+  const [editingNeedId, setEditingNeedId]     = useState(null)
+  const [needDraft, setNeedDraft]             = useState('')
+  const [newNeedInput, setNewNeedInput]       = useState('')
+
   useEffect(() => {
     if (!user) return
     loadTagOptions()
@@ -64,6 +85,22 @@ export default function SettingsPage() {
       .eq('field_name', 'content_category')
       .order('sort_order', { ascending: true })
     setTagOptions(data ?? [])
+  }
+
+  async function loadContactsData() {
+    const data = await loadContacts()
+    setContacts(data)
+  }
+
+  async function loadCoreNeedsData() {
+    const data = await loadCoreNeeds()
+    setCoreNeeds(data)
+  }
+
+  function validateCoreNeedInput(val) {
+    if (val.length > 20) return '词条不能超过 20 字'
+    if (/["'\\n]/.test(val)) return '不能包含引号、反斜杠或换行符'
+    return null
   }
 
   // 触发浏览器下载
@@ -524,6 +561,38 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* 人物管理入口 */}
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">人物管理</p>
+              <p className="text-xs text-gray-400 mt-0.5">管理联系人和识别关键词</p>
+            </div>
+            <button
+              onClick={() => { loadContactsData(); setShowPeoplePage(true) }}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              进入 ›
+            </button>
+          </div>
+        </div>
+
+        {/* 内心需求词库入口 */}
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">内心需求词库</p>
+              <p className="text-xs text-gray-400 mt-0.5">管理 AI 提取时使用的词条</p>
+            </div>
+            <button
+              onClick={() => { loadCoreNeedsData(); setShowNeedsPage(true) }}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              进入 ›
+            </button>
+          </div>
+        </div>
+
         {/* 分割线 */}
         <div className="border-t border-gray-100 pt-4">
           <div className="flex items-center justify-between">
@@ -638,6 +707,225 @@ export default function SettingsPage() {
 
             <div style={{ marginTop: 16, fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 1.6 }}>
               删除标签不影响已打过该标签的笔记记录
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 人物管理子页 ─── */}
+      {showPeoplePage && (
+        <div style={{
+          position: 'absolute', inset: 0, background: '#f5f3ef',
+          display: 'flex', flexDirection: 'column', zIndex: 50,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', background: '#f5f3ef', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
+            <button onClick={() => { setShowPeoplePage(false); setEditingContactId(null) }}
+              style={{ background: 'none', border: 'none', fontSize: 22, color: '#c9a96e', cursor: 'pointer', lineHeight: 1 }}>
+              ‹
+            </button>
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>人物管理</span>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            {contacts.map(c => (
+              <div key={c.id} style={{ background: '#fff', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                {editingContactId === c.id ? (
+                  <div style={{ padding: '12px 14px' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>规范名称</div>
+                      <input
+                        value={contactCanonicalDraft}
+                        onChange={e => setContactCanonicalDraft(e.target.value)}
+                        style={{ width: '100%', padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>识别关键词（空格分隔）</div>
+                      <input
+                        value={contactAliasesDraft}
+                        onChange={e => setContactAliasesDraft(e.target.value)}
+                        style={{ width: '100%', padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={async () => {
+                          const aliases = contactAliasesDraft.split(/\s+/).map(s => s.trim()).filter(Boolean)
+                          await updateContact(c.id, contactCanonicalDraft.trim(), aliases)
+                          await loadContactsData()
+                          setEditingContactId(null)
+                        }}
+                        style={{ padding: '7px 16px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}
+                      >
+                        保存（级联替换历史）
+                      </button>
+                      <button
+                        onClick={() => setEditingContactId(null)}
+                        style={{ padding: '7px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: '#333' }}>{c.canonical}</span>
+                      {c.aliases?.length > 0 && (
+                        <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>
+                          别名：{c.aliases.join(' · ')}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => { setEditingContactId(c.id); setContactCanonicalDraft(c.canonical); setContactAliasesDraft((c.aliases || []).join(' ')) }}
+                      style={{ fontSize: 12, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm(`删除「${c.canonical}」？已有记录里的标记保留不变。`)) return
+                        await deleteContact(c.id)
+                        await loadContactsData()
+                      }}
+                      style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增人物</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newContactCanonical}
+                  onChange={e => setNewContactCanonical(e.target.value)}
+                  placeholder="规范名称"
+                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
+                />
+                <button
+                  onClick={async () => {
+                    if (!newContactCanonical.trim()) return
+                    await addContact(newContactCanonical.trim())
+                    setNewContactCanonical('')
+                    await loadContactsData()
+                  }}
+                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+                >
+                  添加
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── core_needs 词库子页 ─── */}
+      {showNeedsPage && (
+        <div style={{
+          position: 'absolute', inset: 0, background: '#f5f3ef',
+          display: 'flex', flexDirection: 'column', zIndex: 50,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', background: '#f5f3ef', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
+            <button onClick={() => { setShowNeedsPage(false); setEditingNeedId(null) }}
+              style={{ background: 'none', border: 'none', fontSize: 22, color: '#c9a96e', cursor: 'pointer', lineHeight: 1 }}>
+              ‹
+            </button>
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>内心需求词库</span>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {coreNeeds.map(c => (
+                <span
+                  key={c.id}
+                  onClick={() => {
+                    setEditingNeedId(editingNeedId === c.id ? null : c.id)
+                    setNeedDraft(c.option_value)
+                  }}
+                  style={{
+                    padding: '6px 14px',
+                    background: editingNeedId === c.id ? '#d8d0f0' : '#ede8f5',
+                    color: '#7a6a9a', borderRadius: 99, fontSize: 14, cursor: 'pointer',
+                  }}
+                >
+                  {c.option_value}
+                </span>
+              ))}
+            </div>
+
+            {editingNeedId && (() => {
+              const validErr = needDraft ? validateCoreNeedInput(needDraft) : null
+              return (
+                <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                  <input
+                    value={needDraft}
+                    onChange={e => setNeedDraft(e.target.value)}
+                    autoFocus
+                    style={{ width: '100%', padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14, marginBottom: 4, boxSizing: 'border-box' }}
+                  />
+                  {validErr && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>词条过长或含无效字符</div>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button
+                      disabled={!!validErr || !needDraft.trim()}
+                      onClick={async () => {
+                        await updateCoreNeed(editingNeedId, needDraft.trim())
+                        setEditingNeedId(null)
+                        await loadCoreNeedsData()
+                      }}
+                      style={{
+                        padding: '7px 16px', background: '#6366f1', color: '#fff',
+                        border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer',
+                        opacity: (!validErr && needDraft.trim()) ? 1 : 0.4,
+                      }}
+                    >
+                      保存（级联替换历史）
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('删除该词条？已有记录里的标记保留不变。')) return
+                        await deleteCoreNeed(editingNeedId)
+                        setEditingNeedId(null)
+                        await loadCoreNeedsData()
+                      }}
+                      style={{ padding: '7px 14px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}
+                    >
+                      删除词条
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+
+            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增词条</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newNeedInput}
+                  onChange={e => setNewNeedInput(e.target.value)}
+                  placeholder="最多 20 字"
+                  style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14 }}
+                />
+                <button
+                  onClick={async () => {
+                    const err = validateCoreNeedInput(newNeedInput.trim())
+                    if (err || !newNeedInput.trim()) return
+                    await addCoreNeed(newNeedInput.trim())
+                    setNewNeedInput('')
+                    await loadCoreNeedsData()
+                  }}
+                  style={{ padding: '6px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+                >
+                  添加
+                </button>
+              </div>
+              {newNeedInput && validateCoreNeedInput(newNeedInput) && (
+                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>词条过长或含无效字符</div>
+              )}
             </div>
           </div>
         </div>
