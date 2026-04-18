@@ -191,7 +191,7 @@ const isValidVocabWord = (word) =>
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-15（category修复批次 + RecordsPage无限滚动，基于 git HEAD 3eb021c）
+**最后更新：** 2026-04-18（people_involved + core_needs 批次，基于 git HEAD 8b20071）
 
 ### 文件结构（当前）
 
@@ -210,6 +210,11 @@ src/
 │   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
 │   ├── conversationService.js  对话保存 + AI 字段提取
 │   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
+│   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
+│   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
+│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
+│   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
+│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
@@ -300,8 +305,17 @@ user_memory：
 
 user_options：
   - 用户自定义下拉选项
-  - field_name: 'content_category'，option_value，sort_order（integer，拖动排序）
+  - field_name: 'content_category' 或 'core_need'，option_value，sort_order（integer，拖动排序）
   - ⚠️ 存量数据 sort_order 全为 0，保存排序时必须写回所有条目的连续整数（见4.17）
+
+user_contacts：（people_involved 批次新增）
+  - id, user_id, canonical（规范名称）, aliases(text[])（识别别名）, sort_order
+  - RLS：user_id = auth.uid()
+  - ⚠️ 所有 INSERT 必须显式传 user_id，RLS 不自动填充（见4.30）
+
+pending_core_needs：（people_involved 批次新增）
+  - id, user_id, entry_id(→journal_entries ON DELETE CASCADE), proposed, created_at
+  - 存 AI 提取但不在用户词库中的 core_needs 词条，持久至用户在 RecordsPage 处理
 ```
 
 ---
@@ -508,6 +522,18 @@ const isValidVocabWord = (word) =>
 后端（RLS + SECURITY DEFINER RPC）不做内容校验，仅做身份校验；内容防护在前端输入层完成。
 **优先级：** 中（前端 UI 层可实现，不影响核心功能；实现词库管理页时同步加入）
 
+### 4.30 Supabase RLS INSERT 不自动填充 user_id（已修复）
+
+**风险：** `user_contacts` 和 `user_options` 表的 RLS 策略仅对 SELECT/UPDATE/DELETE 做 `user_id = auth.uid()` 过滤，INSERT 时 Supabase **不会**自动为 `user_id` 赋 `auth.uid()` 值——INSERT 必须由调用方显式传入 `user_id`，否则 RLS 检查 `null ≠ auth.uid()` 导致 403。
+
+**触发的症状：**
+- `seedDefaultContacts()` / `seedDefaultCoreNeeds()` 插入时没有 `user_id` → 403 静默失败 → count 检查走 RLS-filtered SELECT 返回 0 → 每次 mount 重试 seed → 无限循环
+- `addContact()` / `addCoreNeed()` 同样缺 `user_id` → 用户新增操作静默失败
+
+**已修复（2026-04-18）：** 所有四个函数都改为先 `db.auth.getUser()` 取 `user.id`，再显式传入 INSERT。
+
+**未来新建 insert 函数时必须遵守：** `user_contacts` 和 `user_options` 的任何 INSERT，必须显式包含 `user_id: user.id`（通过 `db.auth.getUser()` 获取），不能依赖 RLS 或数据库 DEFAULT 自动填充。
+
 ---
 
 ## §5 后续扩展约束
@@ -594,6 +620,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-18 · 代码session · people_involved + core_needs 批次完整实现（Tasks 1–8）：新建 contactsService.js / coreNeedsService.js；修复全部 RLS INSERT 缺 user_id 问题（seed + add 四个函数，见4.30）；RecordDetail 打开 sheet 时实时重新 loadContacts/loadCoreNeeds；人物 chip 改为渲染时实时计算+dismiss 语义区分；@ 浮层改为窄浮窗（width:200）+仅 canonical+去重；prompts/conversationService/extractSummaryService/reviewLetterService 均传入词库；SettingsPage 新增人物管理/需求管理子页；RecordsPage 新增 pending_core_needs banner；偏差：chip 同步改为「渲染时实时 detect + dismissedPeople 状态」（plan 中为 state 累积），sheet 词库改为「打开时重新加载」（plan 中为 mount 时一次性加载）
 - 2026-04-17 · 架构session · 审查 people_involved + core_needs spec（Q1–Q5全部回答）：新增§2.8（user_contacts一次性加载内存）/§2.9（core_needs词库约束+pending独立表原因）；新增4.27（pending ON DELETE CASCADE确认）/4.28（extractSummaryService maxTokens需改1200，高优先级）/4.29（词条内容prompt injection风险，前端校验长度≤20+禁特殊字符）；两个新RPC（replace_person_name/replace_core_need）安全模式确认正确
 - 2026-04-16 · 架构session · 审查全局搜索+筛选spec：三问题全部回答；新增4.25（FilterBar userId必须useAuth不能prop）/4.26（日期UTC偏差低优先级）；.overlaps()受RLS保护+显式eq双保险确认合规；整体设计无违反§2约束
 - 2026-04-16 · 产品session · 全局搜索+筛选功能设计完成：FilterBar共享组件（情绪/类型/日期三筛选器）；RecordsPage🔍入口+有筛选时隐藏回顾信；ThreadDetailPage编辑模式加情绪/类型筛选；数组字段用.overlaps()绕开§4.24限制；spec: 2026-04-16-search-filter-design.md；待架构审查3个问题（FilterBar查DB分层/overlaps RLS/UTC时区偏差）
