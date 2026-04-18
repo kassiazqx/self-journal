@@ -87,15 +87,20 @@ export async function deleteCoreNeed(id) {
 
 // 查询未处理 pending 数量（用于 RecordsPage banner）
 export async function getPendingCoreNeedsCount() {
+  const { data: { user } } = await db.auth.getUser()
+  if (!user) return 0
   const { count, error } = await db
     .from('pending_core_needs')
     .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
   if (error) throw error
   return count
 }
 
 // 查询全部 pending 项（用于处理弹卡片）
 export async function getPendingCoreNeeds() {
+  const { data: { user } } = await db.auth.getUser()
+  if (!user) return []
   const { data, error } = await db
     .from('pending_core_needs')
     .select(`
@@ -103,6 +108,7 @@ export async function getPendingCoreNeeds() {
       entry_id,
       journal_entries (id, content, created_at)
     `)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
   if (error) throw error
   return data
