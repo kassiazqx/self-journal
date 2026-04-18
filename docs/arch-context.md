@@ -185,6 +185,28 @@ const isValidVocabWord = (word) =>
   word.length <= 20 && !/["'\\\n\r]/.test(word)
 ```
 
+### 2.10 写作页日期时间选择
+
+```
+HomePage 新建模式：模板栏右侧 pill 显示 selectedDatetime（React state）。
+inferDatetime(text, now) 纯函数从文本关键词推算时间（debounce 800ms），取最近不超过当前时刻的结果。
+手动通过 picker 确认后 manualOverride = true，之后自动识别不再覆盖。
+selectedDatetime（ISO 字符串）+ manualOverride（boolean）随草稿持久化到 localStorage（journal_draft）；
+  读取时 new Date(str) 转回 Date 对象。
+
+RecordDetail：左上角时间戳可点击，弹 DatetimePicker sheet，确认后 updateEntry 写回 created_at（见4.31）。
+两处共用 DatetimePicker.jsx（props: initialDatetime / onConfirm / onClose）。
+```
+
+**文件分工：**
+- `src/lib/dateUtils.js`（新建）— `inferDatetime(text, now)` 纯函数，以及未来日期相关工具
+- `src/components/DatetimePicker.jsx`（新建）— 快捷按钮 + 迷你日历 + 时间输入框 sheet
+
+**不要改成什么：**
+- 不要把 `inferDatetime` 内联在 `HomePage.jsx`（纯函数属 lib/ 层）
+- 不要在 `DatetimePicker` 里直接调 DB（只管 UI 状态，写回由调用方负责）
+- 不要在编辑模式（`editEntry`）下显示日期 pill（已有记录走 RecordDetail 修改）
+
 ---
 
 ## §3 当前代码真实结构
@@ -534,6 +556,12 @@ const isValidVocabWord = (word) =>
 
 **未来新建 insert 函数时必须遵守：** `user_contacts` 和 `user_options` 的任何 INSERT，必须显式包含 `user_id: user.id`（通过 `db.auth.getUser()` 获取），不能依赖 RLS 或数据库 DEFAULT 自动填充。
 
+### 4.31 客户端 UPDATE created_at（已确认可行）
+
+**背景：** `journal_entries.created_at` 设有 `DEFAULT now()`，datetime picker 功能需要客户端 UPDATE 该列。
+**结论：** 可以正常 UPDATE。`DEFAULT now()` 仅约束 INSERT 时的填充行为，不保护 UPDATE。RLS（`user_id = auth.uid()`）通过即可写入，无需 RPC 绕过。允许设置未来时间（spec 明确允许，如提前规划），服务端不做时间范围校验。
+**优先级：** 已确认，无风险
+
 ---
 
 ## §5 后续扩展约束
@@ -620,6 +648,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-18 · 代码session · 架构两问回答：①getPendingCoreNeeds 补显式 user_id 过滤（原仅依赖 RLS，join 侧 journal_entries 已有独立 RLS 无泄露风险，但补显式过滤增强防御）；②awarenessState 传递确认深拷贝安全（serializeFlowState 内部用 JSON.parse/stringify，无共享引用风险）；同步卡：docs/sync-cards/2026-04-18-arch-qa-pending-awareness-sync.md
+- 2026-04-18 · 架构session · 审查写作页日期时间选择 spec（Q1–Q4全部回答）：新增§2.10（inferDatetime→dateUtils.js / DatetimePicker独立组件 / manualOverride随草稿存localStorage）/§4.31（UPDATE created_at确认可行，DEFAULT now()不保护UPDATE）；整体设计无违反§2约束
 - 2026-04-18 · 代码session · 修复写作页↔觉察流导航三连 bug（内容消失/重复创建entry/卡片历史丢失）：根本原因为 HomePage 常驻挂载但 handleDone 提前 setContent('')；修复方案还原 718c1f7 设计——退出觉察流推 editHome screen（编辑模式打开写作页，点✓走 updateEntry 不重复建记录），带 awarenessState 回觉察流从中断位置恢复，觉察流「完成」时通过 writeResetKey 重挂写作页清空；同步卡：docs/sync-cards/2026-04-18-awareness-nav-bugfix-sync.md
 - 2026-04-18 · 代码session · 补漏：输入校验（§4.29）全面落地（RecordDetail 人物/需求新增、SettingsPage 联系人新增、RecordsPage 改措辞路径）；SettingsPage 人物/需求管理新增输入框移至列表顶部；pending_core_needs 三路径处理弹卡片闭环（原逻辑已存在，补校验后完整）；本批次功能至此全部完成，唯 Task 9（group_name 分组）为可选增量
 - 2026-04-18 · 代码session · people_involved + core_needs 批次完整实现（Tasks 1–8）：新建 contactsService.js / coreNeedsService.js；修复全部 RLS INSERT 缺 user_id 问题（seed + add 四个函数，见4.30）；RecordDetail 打开 sheet 时实时重新 loadContacts/loadCoreNeeds；人物 chip 改为渲染时实时计算+dismiss 语义区分；@ 浮层改为窄浮窗（width:200）+仅 canonical+去重；prompts/conversationService/extractSummaryService/reviewLetterService 均传入词库；SettingsPage 新增人物管理/需求管理子页；RecordsPage 新增 pending_core_needs banner；偏差：chip 同步改为「渲染时实时 detect + dismissedPeople 状态」（plan 中为 state 累积），sheet 词库改为「打开时重新加载」（plan 中为 mount 时一次性加载）
