@@ -10,6 +10,7 @@ import { mapDisplayToBase } from '../lib/emotionMap'
 import { extractFields } from '../lib/conversationService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
+import DatetimePicker from './DatetimePicker'
 
 function formatDateTime(isoStr) {
   const d = new Date(isoStr)
@@ -128,6 +129,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [needsSearch, setNeedsSearch] = useState('')
   const [showAddNeedInput, setShowAddNeedInput] = useState(false)
   const [addNeedDraft, setAddNeedDraft] = useState('')
+  const [showDatetimePicker, setShowDatetimePicker] = useState(false)
 
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
@@ -505,6 +507,20 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       paddingBottom: 100,
     }}>
 
+      {/* ── 日期时间 picker sheet ── */}
+      {showDatetimePicker && (
+        <DatetimePicker
+          initialDatetime={new Date(entry.created_at)}
+          onConfirm={async (d) => {
+            const iso = d.toISOString()
+            setShowDatetimePicker(false)
+            setEntry(e => ({ ...e, created_at: iso }))
+            await updateEntry({ id: entry.id, userId: user.id, fields: { created_at: iso } })
+          }}
+          onClose={() => setShowDatetimePicker(false)}
+        />
+      )}
+
       {/* ── 顶部导航 ── */}
       <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexShrink: 0 }}>
@@ -537,7 +553,17 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
           {/* 第一行：时间 + template_type 下拉 */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: '#bbb' }}>{formatDateTime(entry.created_at)}</span>
+            <button
+              onClick={() => setShowDatetimePicker(true)}
+              style={{
+                fontSize: 12, color: '#bbb', background: 'none',
+                border: 'none', padding: 0, cursor: 'pointer',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = '#999'}
+              onMouseLeave={e => e.currentTarget.style.color = '#bbb'}
+            >
+              {formatDateTime(entry.created_at)}
+            </button>
             {/* template_type badge */}
             <div style={{ position: 'relative' }}>
               <button onClick={() => { setShowTemplatePicker(v => !v); setShowScorePicker(false) }}

@@ -2,6 +2,18 @@
 
 > 版本：2026-04-18
 > 设计看板：`docs/superpowers/design-boards/2026-04-18-datetime-picker.html`
+> 架构审查：2026-04-18（Q1–Q4 已回答，结论见下）
+
+---
+
+## §0 架构审查结论（2026-04-18）
+
+| # | 问题 | 结论 |
+|---|---|---|
+| Q1 | Supabase 允许 UPDATE `created_at` 吗 | ✅ 可以。`DEFAULT now()` 仅约束 INSERT，不保护 UPDATE。RLS 通过即可写入，无需 RPC 绕过。 |
+| Q2 | `inferDatetime` 放哪里 | ✅ 独立文件 `src/lib/dateUtils.js`。纯函数，零副作用，属 lib/ 层，内联 HomePage 违反 §2 分层。 |
+| Q3 | `DatetimePicker` 独立组件还是内联 | ✅ 独立组件 `src/components/DatetimePicker.jsx`（props: `initialDatetime / onConfirm / onClose`）。两处共用，内联必然重复。 |
+| Q4 | `manualOverride` 是否随草稿存 localStorage | ✅ 需要。`selectedDatetime`（ISO 字符串）+ `manualOverride`（boolean）一起存入 `journal_draft`。读取时 `new Date(str)` 转回 Date 对象。 |
 
 ---
 

@@ -24,16 +24,20 @@ import { Mic, MicOff } from 'lucide-react'
 import { db } from '../lib/db'
 import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
 import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
+import DatetimePicker from '../components/DatetimePicker'
+import { inferDatetime, formatPill } from '../lib/dateUtils'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
 
-function saveDraft(content, templateId) {
+function saveDraft(content, templateId, selectedDatetime, manualOverride) {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       content,
       template: templateId,
       savedAt: new Date().toISOString(),
+      selectedDatetime: selectedDatetime instanceof Date ? selectedDatetime.toISOString() : null,
+      manualOverride: Boolean(manualOverride),
     }))
   } catch (_) {}
 }
@@ -47,6 +51,10 @@ function loadDraft() {
     if (Date.now() - new Date(draft.savedAt).getTime() > 86400000) {
       localStorage.removeItem(DRAFT_KEY)
       return null
+    }
+    // 把 ISO 字符串还原为 Date
+    if (draft.selectedDatetime) {
+      draft.selectedDatetime = new Date(draft.selectedDatetime)
     }
     return draft
   } catch (_) {
@@ -108,6 +116,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
   // 保存中状态（防重复点击）
   const [saving, setSaving] = useState(false)
 
+  // 日期时间选择（仅新建模式）
+  const [selectedDatetime, setSelectedDatetime] = useState(() => new Date())
+  const [manualOverride, setManualOverride] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+  const inferTimerRef = useRef(null)
+
   // 语音
   const { isRecording, isSupported, startRecording, stopRecording } = useSpeechRecognition()
   const voiceBaseRef = useRef('')
@@ -156,10 +170,22 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     if (isEditMode) return
     clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
-      if (content.trim()) saveDraft(content, template.id)
+      if (content.trim()) saveDraft(content, template.id, selectedDatetime, manualOverride)
     }, 3000)
     return () => clearTimeout(draftTimerRef.current)
-  }, [content, template.id, isEditMode])
+  }, [content, template.id, isEditMode, selectedDatetime, manualOverride])
+
+  // ── inferDatetime debounce（仅新建模式）──────────────────────
+  useEffect(() => {
+    if (isEditMode) return
+    clearTimeout(inferTimerRef.current)
+    inferTimerRef.current = setTimeout(() => {
+      if (manualOverride) return
+      const result = inferDatetime(content)
+      if (result) setSelectedDatetime(result)
+    }, 800)
+    return () => clearTimeout(inferTimerRef.current)
+  }, [content, isEditMode, manualOverride])
 
   // ── textarea 自动聚焦 ──────────────────────────────────────────
   useEffect(() => {
@@ -172,6 +198,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
       setContent(draftRef.current.content)
       const t = resolveTemplate(draftRef.current.template)
       setTemplate(t)
+      if (draftRef.current.selectedDatetime) {
+        setSelectedDatetime(draftRef.current.selectedDatetime)
+        setManualOverride(draftRef.current.manualOverride ?? false)
+      }
     }
     setShowDraftBanner(false)
   }
@@ -290,7 +320,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
-      created_at: new Date().toISOString(),
+      created_at: selectedDatetime.toISOString(),
       people_involved: allPeople,
     }
 
@@ -313,7 +343,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
       user_id: user.id,
       content: content.trim(),
       template_type: template.id,
-      created_at: new Date().toISOString(),
+      created_at: selectedDatetime.toISOString(),
     })
 
     setSaving(false)
@@ -329,6 +359,19 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
       className="flex flex-col h-full relative"
       style={{ backgroundColor: '#faf8f4' }}
     >
+      {/* ── 日期时间 picker sheet ── */}
+      {showPicker && (
+        <DatetimePicker
+          initialDatetime={selectedDatetime}
+          onConfirm={(d) => {
+            setSelectedDatetime(d)
+            setManualOverride(true)
+            setShowPicker(false)
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
       {/* ── 草稿恢复横幅 ── */}
       {showDraftBanner && (
         <div className="px-4 pt-3 fade-in">
@@ -411,6 +454,30 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
             取消
           </button>
         )}
+
+        {/* 日期时间 pill（仅新建模式） */}
+        {!isEditMode && (() => {
+          const now = new Date()
+          const isModified = manualOverride || Math.abs(selectedDatetime.getTime() - now.getTime()) >= 60000
+          return (
+            <button
+              onClick={() => setShowPicker(true)}
+              style={{
+                marginLeft: isEditMode ? 0 : 'auto',
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 99,
+                border: `1px solid ${isModified ? '#f0e4cc' : 'transparent'}`,
+                background: isModified ? '#fdf6ec' : 'none',
+                color: isModified ? '#c9a96e' : '#bbb',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {formatPill(selectedDatetime)}
+            </button>
+          )
+        })()}
       </div>
 
       {/* ── 引导词行（细竖线 + 文字）── */}
