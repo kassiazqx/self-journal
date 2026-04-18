@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>写作页日期时间 · 设计看板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'PingFang SC', sans-serif; background: #f0ece4; padding: 24px 16px; }
+  h1 { font-size: 14px; color: #888; margin-bottom: 24px; letter-spacing: 0.5px; }
+
+  .section { margin-bottom: 40px; }
+  .section-title { font-size: 12px; color: #aaa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+
+  /* ── 手机壳 ── */
+  .phone {
+    width: 280px;
+    background: #faf8f4;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .phone-label {
+    font-size: 11px; color: #aaa; text-align: center; margin-top: 8px; margin-bottom: 4px;
+  }
+
+  /* ── 写作页结构 ── */
+  .template-bar {
+    display: flex; align-items: center; gap: 2px;
+    padding: 12px 14px 6px;
+  }
+  .tpl-btn {
+    font-size: 11px; padding: 2px 6px; border-radius: 5px;
+    border: none; background: none; cursor: pointer; color: #ccc;
+    white-space: nowrap;
+  }
+  .tpl-btn.active { color: #c9a96e; font-weight: 500; }
+
+  .guide-row {
+    display: flex; gap: 8px; padding: 6px 14px 8px; align-items: flex-start;
+  }
+  .guide-line {
+    width: 1.5px; background: #c9a96e; opacity: 0.5; border-radius: 1px;
+    flex-shrink: 0; align-self: stretch; min-height: 14px; margin-top: 2px;
+  }
+  .guide-text { font-size: 12px; color: #c9a96e; opacity: 0.8; line-height: 1.65; }
+
+  .textarea-area {
+    padding: 8px 14px 70px;
+    min-height: 200px;
+    font-size: 15px; color: #2d2d2d; line-height: 1.85;
+  }
+  .cursor { display: inline-block; width: 1.5px; height: 18px; background: #aaa; vertical-align: middle; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .people-bar {
+    display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+    background: #fafafa; border-top: 1px solid #f0f0f0; flex-wrap: wrap; min-height: 36px;
+  }
+  .people-label { font-size: 12px; color: #ccc; flex-shrink: 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; border-radius: 99px; font-size: 12px;
+  }
+  .chip-people { background: #e8f0f5; color: #5a7a8a; }
+  .chip-x { font-size: 10px; opacity: 0.6; }
+  .plus-btn {
+    border: 1px dashed #cbd5e1; border-radius: 99px; padding: 1px 8px;
+    font-size: 12px; color: #94a3b8; background: none;
+  }
+
+  .bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px 16px;
+    background: linear-gradient(to top, #faf8f4 70%, transparent);
+  }
+  .btn-awareness {
+    font-size: 12px; color: #c9a96e; background: none; border: none; cursor: pointer;
+  }
+  .btn-done {
+    width: 36px; height: 36px; border-radius: 50%; border: none;
+    background: #c9a96e; color: white; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── 日期时间 pill ── */
+  .datetime-pill {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 99px;
+    font-size: 11px; cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s;
+  }
+  .datetime-pill.default {
+    color: #bbb;
+  }
+  .datetime-pill.default:hover, .datetime-pill.active-pill {
+    background: #f0ece4; border-color: #e5ddd4; color: #888;
+  }
+  .datetime-pill.modified {
+    color: #c9a96e; background: #fdf6ec; border-color: #f0e4cc;
+  }
+  .dt-icon { font-size: 10px; }
+
+  /* ── 自动识别 hint ── */
+  .detect-hint {
+    margin: 0 14px 4px;
+    padding: 5px 10px; border-radius: 8px;
+    background: #fdf6ec; border: 1px solid #f0e4cc;
+    font-size: 11px; color: #c9a96e;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .detect-undo { font-size: 11px; color: #c9a96e; text-decoration: underline; cursor: pointer; }
+
+  /* ── Picker 底部 sheet ── */
+  .picker-sheet {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: white; border-radius: 16px 16px 0 0;
+    padding: 16px 16px 24px;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.1);
+  }
+  .picker-handle {
+    width: 36px; height: 3px; background: #e5e7eb; border-radius: 99px;
+    margin: 0 auto 16px;
+  }
+  .picker-title { font-size: 13px; color: #333; font-weight: 600; margin-bottom: 14px; }
+
+  /* 日期快捷选项 */
+  .date-quick { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .date-quick-btn {
+    padding: 5px 12px; border-radius: 99px; font-size: 12px; border: 1px solid #e5e7eb;
+    background: none; cursor: pointer; color: #555;
+  }
+  .date-quick-btn.selected { background: #c9a96e; color: white; border-color: #c9a96e; }
+
+  /* 日历迷你 */
+  .mini-cal { margin-bottom: 14px; }
+  .cal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: #555; margin-bottom: 8px;
+  }
+  .cal-nav { background: none; border: none; font-size: 14px; color: #aaa; cursor: pointer; padding: 2px 6px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cal-day-label { font-size: 9px; color: #ccc; text-align: center; padding: 2px 0; }
+  .cal-day {
+    font-size: 11px; text-align: center; padding: 4px 2px; border-radius: 6px; cursor: pointer;
+    color: #555;
+  }
+  .cal-day.today { color: #c9a96e; font-weight: 600; }
+  .cal-day.selected { background: #c9a96e; color: white; border-radius: 50%; }
+  .cal-day.empty { color: transparent; }
+  .cal-day.dim { color: #ccc; }
+
+  /* 时间选择 */
+  .time-row { display: flex; align-items: center; gap: 8px; }
+  .time-label { font-size: 12px; color: #888; }
+  .time-input {
+    flex: 1; padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 14px; text-align: center; outline: none;
+    font-family: inherit;
+  }
+  .time-input:focus { border-color: #c9a96e; }
+
+  .picker-confirm {
+    width: 100%; padding: 10px; border-radius: 10px; border: none;
+    background: #c9a96e; color: white; font-size: 14px; cursor: pointer; margin-top: 12px;
+  }
+
+  /* ── 注解 ── */
+  .note {
+    font-size: 11px; color: #aaa; line-height: 1.6;
+    margin-top: 8px; padding: 0 4px;
+    max-width: 280px;
+  }
+  .note strong { color: #888; }
+  .note ul { padding-left: 14px; }
+
+  .badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 4px; margin-right: 4px; vertical-align: middle;
+  }
+  .badge-a { background: #dcfce7; color: #15803d; }
+  .badge-b { background: #fef3c7; color: #92400e; }
+  .badge-c { background: #ede8f5; color: #7a6a9a; }
+
+  .divider { border: none; border-top: 1px solid #e5ddd4; margin: 32px 0; }
+</style>
+</head>
+<body>
+
+<h1>写作页日期时间 · 设计看板 · 2026-04-18</h1>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 方案 A：日期 pill 嵌入模板栏右侧 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">方案 A — 日期时间 pill 嵌入模板栏右侧（推荐）</div>
+  <div class="row">
+
+    <!-- A1: 默认状态 -->
+    <div>
+      <div class="phone">
+        <div class="template-bar">
+          <button class="tpl-btn">感恩</button>
+          <button class="tpl-btn active">情绪</button>
+          <button class="tpl-btn">学习</button>
+          <button class="tpl-btn">行动</button>
+          <button class="tpl-btn">随手记</button>
+          <div class="datetime-pill default" style="margin-left:auto;">
+            <span>今天 14:32</span>
+          </div>
+        </div>
+        <div class="guide-row">
+          <div class="guide-line"></div>
+          <div class="guide-text">此刻你感受到什么情绪？</div>
+        </div>
+        <div class="textarea-area">
+          今天下午开完周会，心里有点<span class="cursor"></span>
+        </div>
+        <div class="people-bar">
+          <span class="people-label">涉及的人</span>
+          <span class="chip chip-people">妈妈 <span class="chip-x">✕</span></span>
+          <button class="plus-btn">＋</button>
+        </div>
+        <div class="bottom-bar">
+          <button class="btn-awareness">✦ 深入觉察</button>
+          <button class="btn-done">✓</button>
+        </div>
+      </div>
+      <div class="phone-label">A1 · 默认（今天，浅灰）</div>
+      <div class="note">pill 默认浅灰色，不抢注意力<br>点击弹出日期时间 sheet</div>
+    </div>
+
+    <!-- A2: 自动识别触发 hint -->
+    <div>
+      <div class="phone">
+        <div class="template-bar">
+          <button class="tpl-btn">感恩</button>
+          <button class="tpl-btn active">情绪</button>
+          <button class="tpl-btn">学习</button>
+          <button class="tpl-btn">行动</button>
+          <button class="tpl-btn">随手记</button>
+          <div class="datetime-pill modified">
+            <span>昨天 21:00</span>
+          </div>
+        </div>
+        <div class="guide-row">
+          <div class="guide-line"></div>
+          <div class="guide-text">此刻你感受到什么情绪？</div>
+        </div>
+        <div class="textarea-area" style="padding-top:8px;">
+          昨晚跟妈妈吵架了，她说我<span class="cursor"></span>
+        </div>
+        <div class="people-bar">
+          <span class="people-label">涉及的人</span>
+          <span class="chip chip-people">妈妈 <span class="chip-x">✕</span></span>
+          <button class="plus-btn">＋</button>
+        </div>
+        <div class="bottom-bar">
+          <button class="btn-awareness">✦ 深入觉察</button>
+          <button class="btn-done">✓</button>
+        </div>
+      </div>
+      <div class="phone-label">A2 · 自动识别关键词后</div>
+      <div class="note">
+        输入「昨晚」后 pill 变金色，无 hint，无打断。<br>
+        pill 颜色变化是唯一反馈。<br><br>
+        <strong>识别规则（取最近且不超过当前时刻）：</strong>
+        <ul>
+          <li>「昨天/昨晚/昨夜」→ 昨天（+时段）</li>
+          <li>「前天」→ 前天</li>
+          <li>「大前天」→ 三天前</li>
+          <li>「现在/刚刚」→ new Date()</li>
+          <li>「早上/上午」→ 今天 09:00</li>
+          <li>「中午」→ 今天 12:00</li>
+          <li>「下午」→ 今天 16:00</li>
+          <li>「傍晚」→ 今天 18:00</li>
+          <li>「晚上/夜里」→ 今天 21:00</li>
+          <li>「凌晨」→ 今天 01:00</li>
+        </ul>
+        多个关键词同时出现：过滤未来时间点，取最近的。
+      </div>
+    </div>
+
+    <!-- A3: 手动改后状态 -->
+    <div>
+      <div class="phone">
+        <div class="template-bar">
+          <button class="tpl-btn">感恩</button>
+          <button class="tpl-btn active">情绪</button>
+          <button class="tpl-btn">学习</button>
+          <button class="tpl-btn">行动</button>
+          <button class="tpl-btn">随手记</button>
+          <div class="datetime-pill modified">
+            <span>4月16日 20:00</span>
+          </div>
+        </div>
+        <div class="guide-row">
+          <div class="guide-line"></div>
+          <div class="guide-text">此刻你感受到什么情绪？</div>
+        </div>
+        <div class="textarea-area">
+          上周三跟朋友聚餐，聊到了工作的事<span class="cursor"></span>
+        </div>
+        <div class="people-bar">
+          <span class="people-label">涉及的人</span>
+          <span class="chip chip-people">朋友 <span class="chip-x">✕</span></span>
+          <button class="plus-btn">＋</button>
+        </div>
+        <div class="bottom-bar">
+          <button class="btn-awareness">✦ 深入觉察</button>
+          <button class="btn-done">✓</button>
+        </div>
+      </div>
+      <div class="phone-label">A3 · 手动改日期后（金色）</div>
+      <div class="note">手动或自动改过日期后，pill 变金色，提示用户「这条记录时间已调整」</div>
+    </div>
+
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════ -->
+<!-- Picker Sheet -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">点击 pill → 日期时间选择器 sheet</div>
+  <div class="row">
+
+    <!-- Sheet: 快捷+日历 -->
+    <div>
+      <div class="phone" style="height:520px; position:relative; overflow:hidden;">
+        <div class="template-bar">
+          <button class="tpl-btn">感恩</button>
+          <button class="tpl-btn active">情绪</button>
+          <button class="tpl-btn">随手记</button>
+          <div class="datetime-pill active-pill" style="margin-left:auto;">
+            <span class="dt-icon">📅</span><span>今天 14:32</span>
+          </div>
+        </div>
+        <div class="guide-row">
+          <div class="guide-line"></div>
+          <div class="guide-text">此刻你感受到什么情绪？</div>
+        </div>
+        <div style="padding: 8px 14px; font-size:14px; color:#2d2d2d; line-height:1.85; opacity:0.4;">
+          今天下午开完周会…
+        </div>
+
+        <!-- Sheet 覆盖 -->
+        <div class="picker-sheet">
+          <div class="picker-handle"></div>
+          <div class="picker-title">记录时间</div>
+
+          <!-- 快捷按钮 -->
+          <div class="date-quick">
+            <button class="date-quick-btn selected">今天</button>
+            <button class="date-quick-btn">昨天</button>
+            <button class="date-quick-btn">前天</button>
+            <button class="date-quick-btn">大前天</button>
+          </div>
+
+          <!-- 迷你日历 -->
+          <div class="mini-cal">
+            <div class="cal-header">
+              <button class="cal-nav">‹</button>
+              <span>2026年 4月</span>
+              <button class="cal-nav">›</button>
+            </div>
+            <div class="cal-grid">
+              <div class="cal-day-label">一</div><div class="cal-day-label">二</div><div class="cal-day-label">三</div><div class="cal-day-label">四</div><div class="cal-day-label">五</div><div class="cal-day-label">六</div><div class="cal-day-label">日</div>
+              <div class="cal-day empty"></div><div class="cal-day empty"></div><div class="cal-day">1</div><div class="cal-day">2</div><div class="cal-day">3</div><div class="cal-day">4</div><div class="cal-day">5</div>
+              <div class="cal-day">6</div><div class="cal-day">7</div><div class="cal-day">8</div><div class="cal-day">9</div><div class="cal-day">10</div><div class="cal-day">11</div><div class="cal-day">12</div>
+              <div class="cal-day">13</div><div class="cal-day">14</div><div class="cal-day">15</div><div class="cal-day">16</div><div class="cal-day">17</div><div class="cal-day selected">18</div><div class="cal-day dim">19</div>
+            </div>
+          </div>
+
+          <!-- 时间 -->
+          <div class="time-row">
+            <span class="time-label">时间</span>
+            <input class="time-input" type="text" value="14:32" style="max-width:90px;">
+            <span style="font-size:12px; color:#bbb;">可直接编辑</span>
+          </div>
+
+          <button class="picker-confirm">确认</button>
+        </div>
+      </div>
+      <div class="phone-label">Picker Sheet · 快捷按钮 + 日历 + 时间</div>
+      <div class="note">
+        <strong>交互逻辑：</strong><br>
+        · 快捷按钮：今天/昨天/前天/大前天，点击立即选中<br>
+        · 日历：点任意日期，高亮选中<br>
+        · 快捷按钮和日历联动（选了日历某天，快捷按钮取消高亮）<br>
+        · 时间：直接在输入框改，格式 HH:MM<br>
+        · 「确认」写回 pill，sheet 关闭
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 方案 B 对比 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">方案 B — 日期时间显示在引导词行右侧（对比参考）</div>
+  <div class="row">
+    <div>
+      <div class="phone">
+        <div class="template-bar">
+          <button class="tpl-btn">感恩</button>
+          <button class="tpl-btn active">情绪</button>
+          <button class="tpl-btn">学习</button>
+          <button class="tpl-btn">行动</button>
+          <button class="tpl-btn">随手记</button>
+        </div>
+        <div class="guide-row">
+          <div class="guide-line"></div>
+          <div class="guide-text">此刻你感受到什么情绪？</div>
+          <div class="datetime-pill default" style="margin-left:auto; font-size:10px;">
+            今天 14:32
+          </div>
+        </div>
+        <div class="textarea-area">
+          今天下午开完周会<span class="cursor"></span>
+        </div>
+        <div class="people-bar">
+          <span class="people-label">涉及的人</span>
+          <button class="plus-btn">＋</button>
+        </div>
+        <div class="bottom-bar">
+          <button class="btn-awareness">✦ 深入觉察</button>
+          <button class="btn-done">✓</button>
+        </div>
+      </div>
+      <div class="phone-label">方案 B · 日期在引导词行右侧</div>
+      <div class="note">
+        缺点：引导词行已有竖线+文字，再加日期显得拥挤；<br>
+        且引导词行各模板不一样长，日期位置不稳定。
+        <br><br>
+        <strong>→ 推荐方案 A</strong>，模板栏右侧空间天然富余。
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 关键词识别规则汇总 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">自动识别规则（复用旧版 inferDatetime 逻辑）</div>
+  <div style="background:white; border-radius:12px; padding:16px; max-width:560px;">
+    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+      <thead>
+        <tr style="color:#aaa;">
+          <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #f0f0f0;">关键词</th>
+          <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #f0f0f0;">日期偏移</th>
+          <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #f0f0f0;">时间</th>
+          <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #f0f0f0;">优先级</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:5px 8px;">今天</td><td>±0</td><td>不变</td><td>最低（默认）</td></tr>
+        <tr style="background:#fafafa;"><td style="padding:5px 8px;">昨天 / 昨晚 / 昨夜</td><td>-1</td><td>昨晚→21:00，其余不变</td><td>中</td></tr>
+        <tr><td style="padding:5px 8px;">前天</td><td>-2</td><td>不变</td><td>中</td></tr>
+        <tr style="background:#fafafa;"><td style="padding:5px 8px;">大前天</td><td>-3</td><td>不变</td><td>中</td></tr>
+        <tr><td style="padding:5px 8px;">早上 / 上午 / 今早 / 今晨</td><td>±0</td><td>09:00</td><td>低</td></tr>
+        <tr style="background:#fafafa;"><td style="padding:5px 8px;">中午</td><td>±0</td><td>12:00</td><td>低</td></tr>
+        <tr><td style="padding:5px 8px;">下午</td><td>±0</td><td>16:00</td><td>低</td></tr>
+        <tr style="background:#fafafa;"><td style="padding:5px 8px;">傍晚</td><td>±0</td><td>18:00</td><td>低</td></tr>
+        <tr><td style="padding:5px 8px;">晚上 / 夜里 / 今晚</td><td>±0</td><td>21:00</td><td>低</td></tr>
+        <tr style="background:#fafafa;"><td style="padding:5px 8px;">凌晨</td><td>±0</td><td>01:00</td><td>低</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px; font-size:11px; color:#aaa; line-height:1.7;">
+      · 日期和时段关键词可叠加：「昨晚」= 昨天 + 21:00<br>
+      · 同一类重复出现取最强偏移（「昨天前天」→ 前天，即 -2）<br>
+      · 识别触发时机：每次输入停顿 800ms 后 debounce 检测<br>
+      · 识别只影响当前写作会话的 selectedDatetime state，不直接写 DB<br>
+      · 用户手动修改过日期后，自动识别不再覆盖（手动优先）
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════ -->
+<!-- 数据流 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">数据流</div>
+  <div style="background:white; border-radius:12px; padding:16px; max-width:480px; font-size:12px; line-height:2; color:#555;">
+    <div>1. mount 时：<code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">selectedDatetime = new Date()</code>（当前时间）</div>
+    <div>2. 用户输入触发 inferDatetime() → 有匹配关键词时更新 selectedDatetime</div>
+    <div>3. pill 展示 selectedDatetime，与「今天当前时间」不同时变金色</div>
+    <div>4. 用户点 pill → 打开 sheet → 手动调整 → 确认 → 更新 selectedDatetime</div>
+    <div>5. 点 ✓ 保存：<code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">created_at = selectedDatetime.toISOString()</code></div>
+    <div style="color:#c9a96e; margin-top:4px;">⚠️ 编辑模式（editEntry）：selectedDatetime 初始值 = editEntry.created_at</div>
+  </div>
+</div>
+
+</body>
+</html>
