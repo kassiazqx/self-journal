@@ -620,6 +620,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-18 · 代码session · 修复写作页↔觉察流导航三连 bug（内容消失/重复创建entry/卡片历史丢失）：根本原因为 HomePage 常驻挂载但 handleDone 提前 setContent('')；修复方案还原 718c1f7 设计——退出觉察流推 editHome screen（编辑模式打开写作页，点✓走 updateEntry 不重复建记录），带 awarenessState 回觉察流从中断位置恢复，觉察流「完成」时通过 writeResetKey 重挂写作页清空；同步卡：docs/sync-cards/2026-04-18-awareness-nav-bugfix-sync.md
 - 2026-04-18 · 代码session · 补漏：输入校验（§4.29）全面落地（RecordDetail 人物/需求新增、SettingsPage 联系人新增、RecordsPage 改措辞路径）；SettingsPage 人物/需求管理新增输入框移至列表顶部；pending_core_needs 三路径处理弹卡片闭环（原逻辑已存在，补校验后完整）；本批次功能至此全部完成，唯 Task 9（group_name 分组）为可选增量
 - 2026-04-18 · 代码session · people_involved + core_needs 批次完整实现（Tasks 1–8）：新建 contactsService.js / coreNeedsService.js；修复全部 RLS INSERT 缺 user_id 问题（seed + add 四个函数，见4.30）；RecordDetail 打开 sheet 时实时重新 loadContacts/loadCoreNeeds；人物 chip 改为渲染时实时计算+dismiss 语义区分；@ 浮层改为窄浮窗（width:200）+仅 canonical+去重；prompts/conversationService/extractSummaryService/reviewLetterService 均传入词库；SettingsPage 新增人物管理/需求管理子页；RecordsPage 新增 pending_core_needs banner；偏差：chip 同步改为「渲染时实时 detect + dismissedPeople 状态」（plan 中为 state 累积），sheet 词库改为「打开时重新加载」（plan 中为 mount 时一次性加载）
 - 2026-04-17 · 架构session · 审查 people_involved + core_needs spec（Q1–Q5全部回答）：新增§2.8（user_contacts一次性加载内存）/§2.9（core_needs词库约束+pending独立表原因）；新增4.27（pending ON DELETE CASCADE确认）/4.28（extractSummaryService maxTokens需改1200，高优先级）/4.29（词条内容prompt injection风险，前端校验长度≤20+禁特殊字符）；两个新RPC（replace_person_name/replace_core_need）安全模式确认正确
