@@ -153,13 +153,17 @@ AI 跨对话记忆 → Supabase user_memory 表（多端同步）
 ### 2.8 user_contacts：人物联系人库
 
 ```
-canonical（规范名称）+ aliases[]（识别别名）存 user_contacts 表。
-新用户首次登录时，从代码硬编码的 PEOPLE_KEYWORD_MAP 自动写入默认联系人（21 条）。
+canonical（规范名称）+ aliases[]（识别别名）+ group_name（分组，nullable）存 user_contacts 表。
+新用户首次登录时，从代码硬编码的 DEFAULT_CONTACTS 自动写入默认联系人（22 条），含 group_name 预填（家人/伴侣/朋友/同事）。
 已有用户迁移：首次打开 app 时检测若 user_contacts 为空则自动写入默认数据。
 
 detectPeople() 改用用户自己的联系人库（进页面时一次性加载到内存），不再使用硬编码 PEOPLE_KEYWORD_MAP。
 @mention 搜索走内存过滤（user_contacts 通常 < 50 条），不重复查 DB。
 选人后 canonical 写入 people_involved 数组。
+
+group_name：联系人关系分类（家人 / 伴侣 / 朋友 / 同事 / 其他）。
+RecordDetail 人物 sheet 按 group_name 分组展示，null 归入「其他」。
+用户可在「我的 → 人物管理」编辑时填写或修改分组。
 ```
 
 **不要改成什么：**

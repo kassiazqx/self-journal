@@ -64,6 +64,7 @@ export default function SettingsPage() {
   const [editingContactId, setEditingContactId] = useState(null)
   const [contactCanonicalDraft, setContactCanonicalDraft] = useState('')
   const [contactAliasesDraft, setContactAliasesDraft]   = useState('')
+  const [contactGroupDraft, setContactGroupDraft]       = useState('')
   const [newContactCanonical, setNewContactCanonical]   = useState('')
 
   // core_needs 词库子页
@@ -773,7 +774,7 @@ export default function SettingsPage() {
                         style={{ width: '100%', padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
                       />
                     </div>
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>识别关键词（空格分隔）</div>
                       <input
                         value={contactAliasesDraft}
@@ -781,11 +782,20 @@ export default function SettingsPage() {
                         style={{ width: '100%', padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
                       />
                     </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>分组（家人 / 伴侣 / 朋友 / 同事 / 其他）</div>
+                      <input
+                        value={contactGroupDraft}
+                        onChange={e => setContactGroupDraft(e.target.value)}
+                        placeholder="选填，如：家人"
+                        style={{ width: '100%', padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
+                      />
+                    </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
                         onClick={async () => {
                           const aliases = contactAliasesDraft.split(/\s+/).map(s => s.trim()).filter(Boolean)
-                          await updateContact(c.id, contactCanonicalDraft.trim(), aliases)
+                          await updateContact(c.id, contactCanonicalDraft.trim(), aliases, contactGroupDraft.trim() || null)
                           await loadContactsData()
                           setEditingContactId(null)
                         }}
@@ -805,6 +815,9 @@ export default function SettingsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: 14, color: '#333' }}>{c.canonical}</span>
+                      {c.group_name && (
+                        <span style={{ fontSize: 11, color: '#c9a96e', marginLeft: 6, background: '#fdf6ec', padding: '1px 6px', borderRadius: 4 }}>{c.group_name}</span>
+                      )}
                       {c.aliases?.length > 0 && (
                         <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>
                           别名：{c.aliases.join(' · ')}
@@ -812,7 +825,7 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <button
-                      onClick={() => { setEditingContactId(c.id); setContactCanonicalDraft(c.canonical); setContactAliasesDraft((c.aliases || []).join(' ')) }}
+                      onClick={() => { setEditingContactId(c.id); setContactCanonicalDraft(c.canonical); setContactAliasesDraft((c.aliases || []).join(' ')); setContactGroupDraft(c.group_name ?? '') }}
                       style={{ fontSize: 12, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}
                     >
                       编辑

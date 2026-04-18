@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计看板：people_involved + core_needs</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #e8e5e0; font-family: -apple-system, 'PingFang SC', sans-serif; padding: 32px 24px; }
+  h1 { font-size: 18px; color: #555; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { font-size: 13px; color: #999; margin-bottom: 32px; }
+
+  .board { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+
+  .section-title {
+    font-size: 11px; font-weight: 600; color: #aaa; letter-spacing: 1px;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+
+  /* 手机壳 */
+  .phone {
+    width: 375px; background: #f5f3ef;
+    border-radius: 32px; overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    border: 6px solid #222;
+    flex-shrink: 0;
+  }
+  .phone-inner { overflow: hidden; position: relative; }
+
+  /* 通用组件 */
+  .header {
+    background: #faf8f4; border-bottom: 1px solid #ede9e2;
+    padding: 14px 18px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .header-title { font-size: 16px; font-weight: 600; color: #333; }
+  .header-back { font-size: 14px; color: #c9a96e; }
+
+  .page-bg { background: #f5f3ef; min-height: 300px; }
+
+  /* ── 1. HomePage @mention ── */
+  .home-input-wrap {
+    background: white; margin: 16px; border-radius: 16px;
+    padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .home-textarea {
+    width: 100%; border: none; outline: none; resize: none;
+    font-size: 15px; color: #333; line-height: 1.7; font-family: inherit;
+    background: transparent; min-height: 90px;
+  }
+  .at-mention-layer {
+    position: absolute; left: 30px; top: 120px; z-index: 10;
+    background: white; border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+    width: 200px; overflow: hidden;
+  }
+  .at-mention-header {
+    padding: 8px 12px; font-size: 11px; color: #aaa; background: #faf8f4;
+    border-bottom: 1px solid #f0ece4;
+  }
+  .at-mention-item {
+    padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+    font-size: 14px; color: #333; cursor: pointer;
+  }
+  .at-mention-item:hover, .at-mention-item.active { background: #fdf6ec; }
+  .at-mention-alias { font-size: 11px; color: #bbb; }
+  .at-mention-item + .at-mention-item { border-top: 1px solid #f5f3ef; }
+  .at-new { color: #c9a96e; }
+
+  /* bottom chip 区 */
+  .bottom-chip-area {
+    border-top: 1px solid #f0ece4; padding: 8px 0 0;
+    display: flex; align-items: center; gap: 6; flex-wrap: wrap; gap: 6px;
+  }
+  .bottom-label { font-size: 11px; color: #bbb; margin-right: 4px; }
+  .person-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #f0e8d4; color: #8a7a5a;
+    border-radius: 20px; padding: 3px 8px 3px 10px;
+    font-size: 12px;
+  }
+  .chip-x {
+    background: none; border: none; color: #b09060;
+    cursor: pointer; font-size: 12px; padding: 0; line-height: 1;
+  }
+
+  /* ── 2. RecordsPage banner ── */
+  .orange-banner {
+    background: #fff3e8; border-bottom: 1px solid #f0d4b0;
+    padding: 10px 16px; display: flex; align-items: center;
+    gap: 10px; cursor: pointer;
+  }
+  .orange-dot { width: 8px; height: 8px; border-radius: 50%; background: #e07850; flex-shrink: 0; }
+  .orange-text { flex: 1; font-size: 13px; color: #c07040; line-height: 1.4; }
+  .orange-arrow { font-size: 13px; color: #c9a96e; flex-shrink: 0; }
+
+  /* 记录卡片 */
+  .record-card {
+    background: white; border-radius: 12px; padding: 12px 14px;
+    margin: 0 16px 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .record-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .record-tpl { font-size: 10px; color: #c9a96e; font-weight: 500; }
+  .record-time { font-size: 10px; color: #ccc; }
+  .record-preview { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 6px; }
+  .record-emotions { display: flex; gap: 4px; }
+  .emotion-tag {
+    font-size: 10px; background: #f0ece4; color: #8a7a6a;
+    padding: 2px 7px; border-radius: 10px;
+  }
+
+  /* ── 3. core_needs 未匹配卡片 ── */
+  .modal-overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.3);
+    display: flex; align-items: flex-end; z-index: 100;
+  }
+  .modal-card {
+    background: white; border-radius: 20px 20px 0 0;
+    padding: 20px 18px 32px; width: 100%;
+  }
+  .modal-handle { width: 36px; height: 4px; background: #e0dbd4; border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 6px; }
+  .modal-desc { font-size: 13px; color: #888; line-height: 1.6; margin-bottom: 16px; }
+  .modal-proposal {
+    background: #fdf6ec; border: 1px solid #f0d4b0;
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  }
+  .proposal-label { font-size: 11px; color: #c9a96e; margin-bottom: 4px; }
+  .proposal-word { font-size: 16px; font-weight: 600; color: #8a6a3a; }
+  .modal-actions { display: flex; flex-direction: column; gap: 8px; }
+  .modal-btn {
+    width: 100%; padding: 13px; border-radius: 10px;
+    font-size: 14px; font-weight: 500; cursor: pointer; border: none;
+    font-family: inherit;
+  }
+  .btn-primary { background: #c9a96e; color: white; }
+  .btn-secondary { background: #f5f3ef; color: #555; }
+  .btn-merge { background: #f0ece4; color: #8a7a5a; }
+
+  /* 合并选择列表 */
+  .merge-list { background: white; border: 1px solid #ede9e2; border-radius: 10px; overflow: hidden; margin-top: 8px; }
+  .merge-item {
+    padding: 11px 14px; font-size: 14px; color: #333;
+    cursor: pointer; border-bottom: 1px solid #f5f3ef;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .merge-item:last-child { border-bottom: none; }
+  .merge-item:hover { background: #fdf6ec; }
+
+  /* ── 4. RecordDetail fields ── */
+  .detail-section { padding: 14px 18px; }
+  .field-label { font-size: 11px; color: #bbb; margin-bottom: 6px; letter-spacing: 0.5px; }
+  .field-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .field-chip {
+    font-size: 12px; background: #f0ece4; color: #8a7a5a;
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .field-chip.need { background: #ede8f5; color: #7a6a9a; }
+  .field-chip.person { background: #e8f0f5; color: #5a7a8a; }
+  .field-chip-add {
+    font-size: 12px; background: none; border: 1px dashed #d0c8bc;
+    color: #bbb; padding: 4px 10px; border-radius: 20px;
+    cursor: pointer;
+  }
+  .field-chip-del {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; background: #e8f0f5; color: #5a7a8a;
+    padding: 4px 6px 4px 10px; border-radius: 20px;
+  }
+  .field-chip-del button { background: none; border: none; color: #8aaabb; cursor: pointer; font-size: 11px; padding: 0; }
+  .divider { height: 1px; background: #ede9e2; margin: 0 18px; }
+
+  /* ── 5. 设置页 ── */
+  .settings-section { padding: 16px 18px 0; }
+  .settings-label { font-size: 11px; color: #aaa; font-weight: 600; letter-spacing: 0.8px; margin-bottom: 10px; }
+  .settings-item {
+    background: white; border-radius: 12px; padding: 12px 14px;
+    margin-bottom: 8px; display: flex; align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .settings-item-left { flex: 1; min-width: 0; }
+  .settings-canonical { font-size: 14px; color: #333; margin-bottom: 2px; }
+  .settings-aliases { font-size: 11px; color: #bbb; }
+  .settings-actions { display: flex; gap: 6px; }
+  .settings-btn {
+    font-size: 12px; color: #c9a96e; background: none; border: none;
+    cursor: pointer; padding: 4px 6px;
+  }
+  .settings-btn.del { color: #e05252; }
+  .settings-add {
+    background: none; border: 1.5px dashed #d0c8bc; border-radius: 12px;
+    padding: 10px 14px; font-size: 13px; color: #bbb; cursor: pointer;
+    width: 100%; font-family: inherit; margin-bottom: 16px; text-align: left;
+  }
+
+  /* 标注 */
+  .note {
+    background: #fffbe6; border: 1px solid #f0e08a;
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; color: #8a7a2a; margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<h1>设计看板：people_involved + core_needs</h1>
+<p class="subtitle">2026-04-17 · 6 个交互场景 · 供确认后写 spec + 交代码 session</p>
+
+<div class="board">
+
+  <!-- ── 场景 1：HomePage @mention ── -->
+  <div>
+    <div class="section-title">场景 1 · 写日记时 @ 触发人物</div>
+    <div class="phone">
+      <div class="phone-inner" style="position:relative;">
+        <div class="header">
+          <span class="header-title">写</span>
+        </div>
+        <div class="page-bg" style="padding: 0 0 16px;">
+          <!-- 模板 chips -->
+          <div style="display:flex;gap:6px;padding:12px 16px 0;overflow-x:auto;">
+            <span style="font-size:11px;background:#fdf6ec;color:#c9a96e;padding:5px 10px;border-radius:16px;white-space:nowrap;">情绪觉察</span>
+            <span style="font-size:11px;background:#f5f3ef;color:#888;padding:5px 10px;border-radius:16px;white-space:nowrap;">学习成长</span>
+            <span style="font-size:11px;background:#f5f3ef;color:#888;padding:5px 10px;border-radius:16px;white-space:nowrap;">随手记</span>
+          </div>
+          <div class="home-input-wrap" style="margin-top:10px;">
+            <!-- 文本区：@宝宝 正在输入中，浮层在文本下方 -->
+            <div class="home-textarea" style="display:block;min-height:60px;">
+              今天和<span style="color:#c9a96e;">@宝宝</span>吃饭，妈妈也来了
+            </div>
+            <!-- @浮层：在输入文字下方，不遮挡正在输入那行 -->
+            <div style="background:white;border:1px solid #ede9e2;border-radius:10px;
+              box-shadow:0 4px 14px rgba(0,0,0,0.10);overflow:hidden;margin-top:4px;">
+              <div class="at-mention-header">匹配「宝宝」</div>
+              <div class="at-mention-item active">
+                <div>
+                  <div style="font-size:14px;color:#333;">男朋友</div>
+                  <div style="font-size:11px;color:#bbb;">别名包含：宝宝 · 小宝</div>
+                </div>
+              </div>
+              <div class="at-mention-item at-new">
+                <span>＋ 新增「宝宝」为新人物</span>
+              </div>
+            </div>
+            <!-- 底部 chip 区 -->
+            <div class="bottom-chip-area" style="margin-top:10px;">
+              <span class="bottom-label">涉及的人</span>
+              <span class="person-chip">妈妈<button class="chip-x">✕</button></span>
+              <button style="font-size:12px;background:none;border:1px dashed #d0c8bc;color:#bbb;padding:3px 9px;border-radius:20px;cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div class="note" style="margin: 0 16px;">
+            ① 浮层出现在输入文字<b>下方</b>，不遮挡正在打的那行<br>
+            ② 搜索逻辑：canonical + aliases 都匹配，弹出 canonical「男朋友」<br>
+            ③ 点选后：文本「@宝宝」→「宝宝」（@ 去掉，别名保留），底部 chip 显示 canonical「男朋友 ✕」<br>
+            ④ detectPeople() 自动识别「妈妈」→ 底部 chip；⑤ ✕ 删除，＋ 手动补充
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 场景 2：RecordsPage A3 banner ── -->
+  <div>
+    <div class="section-title">场景 2 · RecordsPage A3 持久提醒</div>
+    <div class="phone">
+      <div class="phone-inner">
+        <div class="header">
+          <span class="header-title">记录</span>
+          <span style="font-size:20px;color:#888;">🔍</span>
+        </div>
+        <!-- A3 banner -->
+        <div class="orange-banner">
+          <div class="orange-dot"></div>
+          <div class="orange-text">
+            有 2 个新的内心需求待确认<br>
+            <span style="font-size:11px;color:#c9a96e;">点击查看 →</span>
+          </div>
+        </div>
+        <!-- 列表 -->
+        <div style="padding: 12px 0;">
+          <div style="font-size:11px;color:#bbb;padding:0 16px 8px;letter-spacing:.5px;">4月17日 周四</div>
+          <div class="record-card">
+            <div class="record-top">
+              <span class="record-tpl">情绪觉察</span>
+              <span class="record-time">22:14</span>
+            </div>
+            <div class="record-preview">今天和妈妈说了很多，感觉有点被误解，但最后还是释然了…</div>
+            <div class="record-emotions">
+              <span class="emotion-tag">委屈</span>
+              <span class="emotion-tag">释然</span>
+            </div>
+          </div>
+          <div class="record-card">
+            <div class="record-top">
+              <span class="record-tpl">学习成长</span>
+              <span class="record-time">10:03</span>
+            </div>
+            <div class="record-preview">把 FilterBar 做完了，总算搞定了 overlaps 的坑…</div>
+          </div>
+        </div>
+        <div class="note" style="margin: 0 16px;">
+          banner 持续显示直到用户处理完所有待确认项<br>
+          点击 banner → 弹出「未匹配 core_need」卡片
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 场景 3：core_needs 未匹配卡片 ── -->
+  <div>
+    <div class="section-title">场景 3 · core_needs 未匹配弹卡片</div>
+    <div class="phone">
+      <div class="phone-inner" style="position:relative;min-height:560px;">
+        <div class="header">
+          <span class="header-title">记录</span>
+        </div>
+        <div style="padding:12px 0;">
+          <div class="record-card">
+            <div class="record-top"><span class="record-tpl">情绪觉察</span><span class="record-time">22:14</span></div>
+            <div class="record-preview">今天和妈妈说了很多，感觉有点被误解…</div>
+          </div>
+        </div>
+        <!-- 弹出卡片 -->
+        <div class="modal-overlay">
+          <div class="modal-card">
+            <div class="modal-handle"></div>
+            <div class="modal-title">发现了一个新的内心需求</div>
+
+            <!-- 来源 entry（可跳转） -->
+            <div style="background:#f5f3ef;border-radius:10px;padding:10px 12px;margin-bottom:14px;
+              display:flex;align-items:center;gap:10px;cursor:pointer;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:#bbb;margin-bottom:3px;">来自记录 · 4月16日 22:14</div>
+                <div style="font-size:13px;color:#555;line-height:1.5;
+                  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+                  今天和妈妈说了很多，感觉有点被误解，但最后还是释然了…
+                </div>
+              </div>
+              <span style="font-size:13px;color:#c9a96e;flex-shrink:0;">查看 →</span>
+            </div>
+
+            <div class="modal-desc">AI 识别到一个词库里还没有的需求，你来决定怎么处理它。</div>
+            <div class="modal-proposal">
+              <div class="proposal-label">AI 提议</div>
+              <div class="proposal-word">渴望被倾诉</div>
+            </div>
+            <div class="modal-actions">
+              <button class="modal-btn btn-primary">✓ 加入词库</button>
+              <button class="modal-btn btn-secondary" style="text-align:left;font-size:13px;color:#888;padding:10px 13px;">
+                ✎ 改措辞后加入
+                <div style="font-size:11px;color:#ccc;margin-top:2px;">点击后可以编辑词语再保存</div>
+              </button>
+              <button class="modal-btn btn-merge">合并到已有词条 ›</button>
+            </div>
+            <!-- 合并展开示例（通常折叠） -->
+            <div class="merge-list" style="margin-top:8px;">
+              <div style="font-size:11px;color:#aaa;padding:8px 14px;background:#faf8f4;">选择要合并到哪个词条</div>
+              <div class="merge-item">被倾听 <span style="font-size:11px;color:#ccc;">合并后这条记录标记为「被倾听」</span></div>
+              <div class="merge-item">被理解</div>
+              <div class="merge-item">被接纳</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="width:363px;margin-top:10px;">
+      如果一次提取有多个未匹配项，逐条显示（处理完一个再弹下一个）<br>
+      banner 消失条件：所有待处理项都处理完
+    </div>
+  </div>
+
+  <!-- ── 场景 4：RecordDetail people + core_needs ── -->
+  <div>
+    <div class="section-title">场景 4 · RecordDetail 展示 + 编辑</div>
+    <div class="phone">
+      <div class="phone-inner">
+        <div class="header">
+          <span class="header-back">‹ 返回</span>
+          <span class="header-title" style="font-size:13px;">记录详情</span>
+          <span style="width:40px;"></span>
+        </div>
+        <div style="padding:14px 18px;font-size:13px;color:#555;line-height:1.7;background:white;border-bottom:1px solid #f0ece4;">
+          今天和妈妈说了很多，感觉有点被误解，但后来她解释了，我也就释然了。
+        </div>
+
+        <div class="detail-section">
+          <!-- 情绪（已有展示，参考） -->
+          <div class="field-label">情绪</div>
+          <div class="field-chips" style="margin-bottom:14px;">
+            <span class="field-chip">委屈</span>
+            <span class="field-chip">释然</span>
+          </div>
+
+          <!-- 内心需求 -->
+          <div class="field-label">内心需求</div>
+          <div class="field-chips" style="margin-bottom:14px;">
+            <span class="field-chip need">被理解</span>
+            <span class="field-chip need">被倾听</span>
+            <button class="field-chip-add">＋</button>
+          </div>
+
+          <!-- 涉及的人（编辑态） -->
+          <div class="field-label">涉及的人</div>
+          <div class="field-chips">
+            <span class="field-chip-del">妈妈<button>✕</button></span>
+            <button class="field-chip-add">＋</button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="detail-section">
+          <div class="field-label">认知分析</div>
+          <div style="font-size:13px;color:#666;line-height:1.6;">对"被理解"的期望过高，导致轻微误解也会引发强烈的委屈感。</div>
+        </div>
+        <div class="note" style="margin: 8px 16px 16px;">
+          core_needs chip 紫色系；people chip 蓝灰色系<br>
+          ＋ 按钮 → 弹出各自的选择浮层（从词库/联系人里选）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 场景 5：设置页 - 人物管理 ── -->
+  <div>
+    <div class="section-title">场景 5 · 「我的」人物管理</div>
+    <div class="phone">
+      <div class="phone-inner">
+        <div class="header">
+          <span class="header-back">‹ 我的</span>
+          <span class="header-title" style="font-size:14px;">人物管理</span>
+          <span style="width:40px;"></span>
+        </div>
+        <div class="settings-section">
+          <div class="settings-label">我的联系人</div>
+
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <div class="settings-canonical">妈妈</div>
+              <div class="settings-aliases">别名：母亲 · 老妈 · 阿妈</div>
+            </div>
+            <div class="settings-actions">
+              <button class="settings-btn">编辑</button>
+              <button class="settings-btn del">删除</button>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <div class="settings-canonical">男友</div>
+              <div class="settings-aliases">别名：小宝 · 宝贝</div>
+            </div>
+            <div class="settings-actions">
+              <button class="settings-btn">编辑</button>
+              <button class="settings-btn del">删除</button>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-left">
+              <div class="settings-canonical">老板</div>
+              <div class="settings-aliases">别名：上司 · 领导</div>
+            </div>
+            <div class="settings-actions">
+              <button class="settings-btn">编辑</button>
+              <button class="settings-btn del">删除</button>
+            </div>
+          </div>
+
+          <button class="settings-add">＋ 新增人物</button>
+
+          <!-- 编辑态示例 -->
+          <div style="background:white;border-radius:12px;padding:14px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="font-size:12px;color:#aaa;margin-bottom:8px;">编辑人物</div>
+            <input style="width:100%;border:1px solid #e0dbd4;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;font-family:inherit;margin-bottom:8px;" value="男友" placeholder="规范名称">
+            <div style="font-size:11px;color:#bbb;margin-bottom:6px;">识别关键词（用空格分隔）</div>
+            <input style="width:100%;border:1px solid #e0dbd4;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;font-family:inherit;color:#888;" value="小宝  宝贝  老公候选" placeholder="小宝 宝贝">
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button style="flex:1;padding:9px;background:#c9a96e;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">保存</button>
+              <button style="flex:1;padding:9px;background:#f5f3ef;color:#888;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">取消</button>
+            </div>
+          </div>
+
+          <div class="note">
+            改规范名称 → 历史 people_involved 全部级联替换<br>
+            删除 → 只删词条，历史数据保留
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 场景 6：设置页 - core_needs 词库 ── -->
+  <div>
+    <div class="section-title">场景 6 · 「我的」core_needs 词库</div>
+    <div class="phone">
+      <div class="phone-inner">
+        <div class="header">
+          <span class="header-back">‹ 我的</span>
+          <span class="header-title" style="font-size:14px;">内心需求词库</span>
+          <span style="width:40px;"></span>
+        </div>
+        <div class="settings-section">
+          <div class="settings-label">当前词库（20 个词）</div>
+
+          <!-- 词库 chip 展示（可点编辑） -->
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被理解</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被看见</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被接纳</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被爱</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">安全感</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">成就感</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">意义感</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">归属感</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被支持</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被倾听</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">被需要</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">独立自主</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">掌控感</span>
+            <span style="font-size:13px;background:#ede8f5;color:#7a6a9a;padding:6px 12px;border-radius:20px;cursor:pointer;">边界被尊重</span>
+            <span style="font-size:13px;background:white;color:#bbb;border:1px dashed #d0c8bc;padding:6px 12px;border-radius:20px;cursor:pointer;">＋ 新增</span>
+          </div>
+
+          <!-- 单个词条编辑态 -->
+          <div style="background:white;border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="font-size:12px;color:#aaa;margin-bottom:8px;">编辑词条「被理解」</div>
+            <input style="width:100%;border:1px solid #e0dbd4;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;font-family:inherit;margin-bottom:10px;" value="被理解">
+            <div style="display:flex;gap:8px;">
+              <button style="flex:1;padding:9px;background:#c9a96e;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">保存（级联替换历史）</button>
+              <button style="flex:1;padding:9px;background:#fde8e8;color:#e05252;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">删除词条</button>
+            </div>
+          </div>
+
+          <div class="note">
+            改措辞 → 历史 core_needs 全部级联替换<br>
+            删除 → 只删词条，历史数据保留<br>
+            新增 → 出现在 AI 提取的匹配候选列表里
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /board -->
+
+<div style="margin-top:40px;padding:16px 20px;background:white;border-radius:12px;max-width:900px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+  <div style="font-size:13px;font-weight:600;color:#555;margin-bottom:10px;">待确认事项</div>
+  <div style="font-size:13px;color:#888;line-height:2;">
+    ☐ 场景 1：@浮层位置/样式满意吗？底部 chip 行高度/位置 OK？<br>
+    ☐ 场景 2：banner 文案「有 2 个新的内心需求待确认」是否合适？<br>
+    ☐ 场景 3：三个按钮顺序（加入 / 改措辞 / 合并）对吗？合并展开方式 OK？<br>
+    ☐ 场景 4：core_needs 紫色 chip、people 蓝灰 chip，颜色区分合适吗？<br>
+    ☐ 场景 5：人物管理——别名用空格分隔输入 OK？<br>
+    ☐ 场景 6：词库用 chip 平铺点击编辑，还是 list 形式（带编辑/删除按钮）？
+  </div>
+</div>
+
+</body>
+</html>

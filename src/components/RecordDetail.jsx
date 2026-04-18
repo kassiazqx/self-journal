@@ -780,19 +780,36 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                       ＋
                     </button>
                   )}
-                  {/* 联系人 chip（只显示 canonical，过滤已选）*/}
-                  {contacts
-                    .filter(c => !(entry.people_involved ?? []).includes(c.canonical))
-                    .map(c => (
-                      <span key={c.id} onClick={() => handlePersonAdd(c.canonical)}
-                        style={{
-                          padding: '5px 14px', background: '#e8f0f5', color: '#5a7a8a',
-                          borderRadius: 99, fontSize: 14, cursor: 'pointer',
-                        }}>
-                        {c.canonical}
-                      </span>
+                  {/* 联系人按 group_name 分组展示（过滤已选）*/}
+                  {(() => {
+                    const available = contacts.filter(c => !(entry.people_involved ?? []).includes(c.canonical))
+                    const grouped = {}
+                    for (const c of available) {
+                      const g = c.group_name ?? '其他'
+                      if (!grouped[g]) grouped[g] = []
+                      grouped[g].push(c)
+                    }
+                    const GROUP_ORDER = ['家人', '伴侣', '朋友', '同事', '其他']
+                    const sortedGroups = Object.keys(grouped).sort(
+                      (a, b) => (GROUP_ORDER.indexOf(a) === -1 ? 99 : GROUP_ORDER.indexOf(a)) - (GROUP_ORDER.indexOf(b) === -1 ? 99 : GROUP_ORDER.indexOf(b))
+                    )
+                    return sortedGroups.map(group => (
+                      <div key={group} style={{ width: '100%' }}>
+                        <div style={{ fontSize: 11, color: '#bbb', marginBottom: 6, marginTop: 4 }}>{group}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {grouped[group].map(c => (
+                            <span key={c.id} onClick={() => handlePersonAdd(c.canonical)}
+                              style={{
+                                padding: '5px 14px', background: '#e8f0f5', color: '#5a7a8a',
+                                borderRadius: 99, fontSize: 14, cursor: 'pointer',
+                              }}>
+                              {c.canonical}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     ))
-                  }
+                  })()}
                 </div>
               </div>
             </div>
