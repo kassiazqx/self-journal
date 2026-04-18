@@ -70,11 +70,27 @@ export default function MainLayout() {
     goTab('records')
   }
 
-  // ── AwarenessFlow 退出 ──────────────────────────────────────
+  // ── AwarenessFlow 退出（点「上一张」退回写作页）───────────────
   function handleAwarenessExit(awarenessState) {
-    // 如果带 awarenessState（从 RecordDetail 进去的），直接 pop 回详情
-    // 否则回到写作页
-    pop()
+    const entry = screens[screens.length - 1]?.entry
+    if (entry) {
+      // 把 entry 和觉察进度带回，以编辑模式打开写作页
+      // 用户再次点 ✓ 时走 updateEntry 而非 insertEntry，不会重复创建
+      setScreens([{ type: 'editHome', entry, awarenessState }])
+    } else {
+      pop()
+    }
+  }
+
+  // ── editHome 模式：写作页用已有 entry 打开，再次点 ✓ 继续觉察流 ──
+  function handleEditHomeDone(updatedEntry) {
+    const awarenessState = screens[screens.length - 1]?.awarenessState ?? null
+    setRefreshKey(k => k + 1)
+    setScreens([{
+      type: 'awareness',
+      entry: updatedEntry,
+      initialFlowState: awarenessState,
+    }])
   }
 
   // ── RecordsPage 打开详情 ────────────────────────────────────
@@ -204,6 +220,17 @@ export default function MainLayout() {
           onAccepted={() => pop()}
           onIgnored={() => pop()}
           onOpenEntry={entry => push({ type: 'detail', entry })}
+        />
+      )
+    }
+
+    if (screen.type === 'editHome') {
+      return (
+        <HomePage
+          editEntry={screen.entry}
+          onDone={handleEditHomeDone}
+          onCancel={() => { reset(); goTab('records') }}
+          onOpenLetter={letter => push({ type: 'letter', letter })}
         />
       )
     }
