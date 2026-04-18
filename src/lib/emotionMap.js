@@ -116,7 +116,7 @@ const SYNONYM_MAP = {
  *              0.75 = 包含关系（如"克制后的难受"包含"难受"）
  *              0    = 未找到
  */
-export function mapToBase(displayWord) {
+function mapToBase(displayWord) {
   if (!displayWord) return { baseWord: null, confidence: 0 }
 
   const word = displayWord.trim()

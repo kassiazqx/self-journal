@@ -1,6 +1,5 @@
 import { db } from './db'
 
-// 默认联系人数据（来自原 keywordDetection.js PEOPLE_KEYWORD_MAP）
 const DEFAULT_CONTACTS = [
   { canonical: '妈妈', aliases: ['妈妈', '母亲', '老妈', '阿妈'], group_name: '家人' },
   { canonical: '爸爸', aliases: ['爸爸', '父亲', '老爸', '阿爸'], group_name: '家人' },

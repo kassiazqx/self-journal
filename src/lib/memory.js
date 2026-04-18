@@ -106,17 +106,3 @@ export async function resetConversationCount() {
     console.error('[memory] resetConversationCount 失败:', err)
   }
 }
-
-// ─── 快捷方法 ──────────────────────────────────────────────────
-export async function setRollingSummary(content) {
-  return updateMemory({ rolling_summary: content })
-}
-
-export async function setUserProfile(content) {
-  return updateMemory({ user_profile: content })
-}
-
-// ─── 清空记忆（重置用）────────────────────────────────────────
-export async function clearMemory() {
-  return updateMemory({ rolling_summary: null, user_profile: null })
-}

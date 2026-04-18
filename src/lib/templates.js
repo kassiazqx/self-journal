@@ -51,7 +51,7 @@ export const TEMPLATES = [
 ]
 
 // 快速查表（by id）
-export const TEMPLATE_BY_ID = Object.fromEntries(TEMPLATES.map(t => [t.id, t]))
+const TEMPLATE_BY_ID = Object.fromEntries(TEMPLATES.map(t => [t.id, t]))
 
 // 默认模板（id 未知时的兜底）
 export const DEFAULT_TEMPLATE = TEMPLATE_BY_ID['awareness']
