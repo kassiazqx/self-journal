@@ -126,11 +126,14 @@ padding: 4px 14px 2px
 
 宫格下方提示文字：`长按拖动调序 · 最多5张`（字号 10px，颜色 `#bbb`）
 
-**调序：** HTML5 drag-and-drop（`draggable`、`onDragStart`、`onDragOver`、`onDrop`），长按触发（移动端触发 `touchstart` → `setTimeout 500ms` → 激活拖拽模式）。
+**长按进入编辑态：** 移动端 `touchstart` → `setTimeout 500ms` → 激活编辑模式（`isEditing = true`）。编辑态下：
+- 每张图片右上角显示 `✕` 删除按钮（12px 圆形，黑底白字，`position: absolute; top: 4px; right: 4px`）
+- 图片变为可拖拽（HTML5 drag-and-drop：`draggable`、`onDragStart`、`onDragOver`、`onDrop`）
+- 点击宫格区域之外 → 退出编辑态
 
-**点击图片：** 全屏查看（简单 `position: fixed` 遮罩，点击关闭）。
+**点击 ✕：** 从 `imageUrls` 移除该 URL，同时调 `deleteImage(url)` 从 Storage 删除文件。
 
-**删除图片：** 全屏查看状态下右上角显示删除按钮。
+**短按图片（非编辑态）：** 全屏查看（`position: fixed` 遮罩，点击关闭）。
 
 ### 3.3 记录列表页
 
@@ -212,8 +215,8 @@ const [uploading, setUploading] = useState(false) // 上传中状态（防止重
 1. 写作页底部相机图标（SVG 线条）可点击，弹出系统文件选择器
 2. 选图后图片被压缩到 ≤500KB 并上传，宫格出现缩略图
 3. 最多5张，第6张无法添加（+ 按钮不显示）
-4. 长按图片可拖动调序，松手后顺序更新
-5. 点击图片全屏查看，全屏状态下可删除
+4. 长按图片进入编辑态：每张图片右上角出现 ✕ 按钮，同时可拖动调序
+5. 编辑态下点 ✕ 删除图片；点宫格之外退出编辑态；短按图片（非编辑态）全屏查看
 6. 保存后，记录列表卡片右侧出现第一张缩略图 + 线条图标 + 数量
 7. 点进详情页，原始记录流区块：文字下方出现图片宫格
 8. 详情页觉察对话区（ai_prompt / ai_answer 流式文字）位置不变，样式不变
