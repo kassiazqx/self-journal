@@ -92,19 +92,17 @@ export async function uploadImage(file, userId, entryId) {
   // 2. 路径：`${userId}/${entryId}/${Date.now()}_${file.name.replace(/\s/g,'_')}.jpg`
   // 3. const { error } = await db.storage.from(BUCKET).upload(path, compressed, { contentType: 'image/jpeg' })
   // 4. if (error) return null
-  // 5. const { data } = db.storage.from(BUCKET).getPublicUrl(path)
-  // 6. return data.publicUrl
+  // 5. return path  ← 返回 Storage 路径，不是完整 URL
 }
 
-export async function deleteImage(url) {
-  // 从 url 解析 Storage 路径：截取 bucket 名之后的部分
-  // 例：https://.../journal-images/abc/def/xxx.jpg → 'abc/def/xxx.jpg'
-  // const { error } = await db.storage.from(BUCKET).remove([path])
+export async function deleteImage(storagePath) {
+  // 直接传 Storage 路径，不做 URL 解析
+  // const { error } = await db.storage.from(BUCKET).remove([storagePath])
 }
 
-export function getImageUrl(url) {
-  // 当前直接返回 url（未来迁移本地存储时在此做路径映射）
-  return url
+export function getImageUrl(storagePath) {
+  // 唯一知道 Supabase public URL 格式的地方
+  // return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${storagePath}`
 }
 ```
 
@@ -115,15 +113,16 @@ export function getImageUrl(url) {
 ### 5.1 新增 state
 
 ```js
-const [imageUrls, setImageUrls] = useState([])
+const [selectedFiles, setSelectedFiles] = useState([])  // 本地 File 对象（新建时用）
+const [imagePaths, setImagePaths] = useState([])         // Storage 路径（编辑已有记录时用）
 const [uploading, setUploading] = useState(false)
 const [editingImages, setEditingImages] = useState(false)  // 长按进入编辑态
 const [dragIndex, setDragIndex] = useState(null)           // 拖拽源索引
 ```
 
-### 5.2 编辑记录时初始化 imageUrls
+### 5.2 编辑记录时初始化 imagePaths
 
-在现有 `loadDraft` 逻辑处（或 `editEntry` 传入时），读取 `entry.image_urls ?? []` 初始化 `imageUrls`。
+在现有 `loadDraft` 逻辑处（或 `editEntry` 传入时），读取 `entry.image_urls ?? []` 初始化 `imagePaths`。
 
 ### 5.3 相机图标 SVG（底部操作栏左侧）
 
@@ -135,7 +134,7 @@ const [dragIndex, setDragIndex] = useState(null)           // 拖拽源索引
     <input
       type="file" accept="image/*" multiple
       style={{ display: 'none' }}
-      disabled={uploading || imageUrls.length >= MAX_IMAGES}
+      disabled={uploading || imagePaths.length >= MAX_IMAGES}
       onChange={handleImageSelect}
     />
     <svg width="22" height="18" viewBox="0 0 22 18" fill="none"
@@ -162,13 +161,13 @@ const [dragIndex, setDragIndex] = useState(null)           // 拖拽源索引
 async function handleImageSelect(e) {
   const files = Array.from(e.target.files)
   if (!files.length) return
-  const remaining = MAX_IMAGES - imageUrls.length
+  const remaining = MAX_IMAGES - imagePaths.length
   const toUpload = files.slice(0, remaining)  // 超出上限截断
   setUploading(true)
-  const urls = await Promise.all(
+  const paths = await Promise.all(
     toUpload.map(f => uploadImage(f, user.id, entryId))
   )
-  setImageUrls(prev => [...prev, ...urls.filter(Boolean)])
+  setImagePaths(prev => [...prev, ...paths.filter(Boolean)])
   setUploading(false)
   e.target.value = ''  // 重置 input，允许重新选同一张图
 }
@@ -177,7 +176,7 @@ async function handleImageSelect(e) {
 ### 5.5 图片宫格 JSX（有图片时渲染，位于文字输入区下方）
 
 ```jsx
-{imageUrls.length > 0 && (
+{imagePaths.length > 0 && (
   <div
     style={{ padding: '4px 14px 2px' }}
     onClick={e => { if (e.target === e.currentTarget) setEditingImages(false) }}
@@ -187,19 +186,19 @@ async function handleImageSelect(e) {
       gridTemplateColumns: 'repeat(3, 1fr)',
       gap: 3,
     }}>
-      {imageUrls.map((url, i) => (
+      {imagePaths.map((path, i) => (
         <div
-          key={url}
+          key={path}
           style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden', position: 'relative' }}
           draggable={editingImages}
           onDragStart={() => setDragIndex(i)}
           onDragOver={e => e.preventDefault()}
           onDrop={() => {
             if (dragIndex === null || dragIndex === i) return
-            const next = [...imageUrls]
+            const next = [...imagePaths]
             const [moved] = next.splice(dragIndex, 1)
             next.splice(i, 0, moved)
-            setImageUrls(next)
+            setImagePaths(next)
             setDragIndex(null)
           }}
           onTouchStart={() => {
@@ -209,16 +208,16 @@ async function handleImageSelect(e) {
           }}
           onClick={() => {
             if (editingImages) return  // 编辑态下 onClick 不触发全屏
-            // 触发全屏查看（简单实现：setFullscreenImg(url)）
+            // 触发全屏查看（简单实现：setFullscreenImg(path)）
           }}
         >
-          <img src={getImageUrl(url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={getImageUrl(path)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           {editingImages && (
             <button
               onClick={async (e) => {
                 e.stopPropagation()
-                await deleteImage(url)
-                setImageUrls(prev => prev.filter((_, idx) => idx !== i))
+                await deleteImage(path)
+                setImagePaths(prev => prev.filter((_, idx) => idx !== i))
               }}
               style={{
                 position: 'absolute', top: 4, right: 4,
@@ -232,7 +231,7 @@ async function handleImageSelect(e) {
           )}
         </div>
       ))}
-      {imageUrls.length < MAX_IMAGES && !editingImages && (
+      {imagePaths.length < MAX_IMAGES && !editingImages && (
         <label style={{
           aspectRatio: '1/1', borderRadius: 6,
           border: '1.5px dashed #c9a96e', background: 'none',
@@ -254,7 +253,7 @@ async function handleImageSelect(e) {
 
 ### 5.6 保存时写入 image_urls
 
-在现有保存逻辑中，追加 `image_urls: imageUrls` 字段。
+在现有保存逻辑中，追加 `image_urls: imagePaths` 字段。
 
 ---
 
@@ -275,10 +274,10 @@ if (msg.nodeType === 'raw_entry') {
       {(entry.image_urls ?? []).length > 0 && (
         <div style={{ marginBottom: 6 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
-            {(entry.image_urls ?? []).map((url, idx) => (
+            {(entry.image_urls ?? []).map((path, idx) => (
               <div key={idx} style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden' }}
-                onClick={() => setFullscreenImg(url)}>
-                <img src={getImageUrl(url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                onClick={() => setFullscreenImg(getImageUrl(path))}>
+                <img src={getImageUrl(path)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             ))}
           </div>
@@ -370,23 +369,24 @@ RecordsPage 查询时的 `.select()` 需加入 `image_urls`：
 ## 八、成功验收清单
 
 1. 写作页底部相机图标可点击，弹出文件选择器
-2. 选图后自动压缩（≤500KB）并上传，宫格出现缩略图
+2. 选图后本地预览出现缩略图，点 ✓ 后文字立即保存并跳转，图片后台上传
 3. 最多5张，第6张无法添加（+ 格消失）
 4. 长按进入编辑态：每张图右上角出现 ✕，可拖动调序
 5. 编辑态点 ✕ 删除图片；点宫格外退出编辑态
 6. 短按图片（非编辑态）进入全屏查看，点击关闭
-7. 保存后：列表卡片右侧出现第一张缩略图 + 线条图标 + 数量
-8. 进详情页：原始记录流 raw_entry 文字下方出现图片宫格
-9. 详情页觉察对话（ai_prompt / ai_answer 流式文字）位置和样式不变
-10. 编辑已有记录时，原有图片正确加载，可增删调序后保存
-11. 不同屏幕宽度下始终三列
+7. 图片上传失败时，当场弹全局 Toast；App 关闭期间失败则下次打开列表时显示 Banner
+8. 下次进入记录列表时：卡片右侧出现第一张缩略图 + 线条图标 + 数量
+9. 进详情页：原始记录流 raw_entry 文字下方出现图片宫格
+10. 详情页觉察对话（ai_prompt / ai_answer 流式文字）位置和样式不变
+11. 编辑已有记录时，原有图片正确加载，可增删调序后保存
+12. 不同屏幕宽度下始终三列
 
 ---
 
 ## 九、注意事项
 
 - `imageStorage.js` 内部可以用 `db.storage`（因为它在 `lib/`），不要在 HomePage / RecordDetail 里直接调
-- 上传是「选图即上传」，不等到 ✓ 保存才上传；保存时只写 `image_urls` 数组到数据库
-- 删除图片时同时调 `deleteImage(url)` 清理 Storage，防止孤儿文件
+- 上传是「延迟上传」：新建时选图仅存 File 对象到 selectedFiles，点 ✓ 保存文字后后台上传；编辑时同样延迟到保存
+- 删除图片时同时调 `deleteImage(path)` 清理 Storage，防止孤儿文件
 - `entry.image_urls` 可能为 null（旧数据），读取时始终加 `?? []`
 - RecordDetail 需要 `image_urls` 字段，确认 `select('*')` 已覆盖（现有代码第 143 行已用 `select('*')`，无需改动）
