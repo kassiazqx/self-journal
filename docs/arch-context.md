@@ -592,6 +592,13 @@ const isValidVocabWord = (word) =>
 **结论：** 可以正常 UPDATE。`DEFAULT now()` 仅约束 INSERT 时的填充行为，不保护 UPDATE。RLS（`user_id = auth.uid()`）通过即可写入，无需 RPC 绕过。允许设置未来时间（spec 明确允许，如提前规划），服务端不做时间范围校验。
 **优先级：** 已确认，无风险
 
+### 4.32 loadContacts() 返回 null 时 .map() 静默崩溃（已修复）
+
+**风险：** `loadContacts()` 在 app 启动早期（DB 未响应或用户未登录时）可能返回 `null`，原调用方直接 `.map()` 导致 `null.map is not a function` 静默崩溃，筛选 chip 不显示，无报错提示。
+**已修复（2026-04-19）：** 加 `?? []` 空值保护，`loadContacts() ?? []`，返回 null 时降级为空数组，chip 区正常渲染为空。
+**规律：** 所有异步加载列表数据的调用方，必须对返回值做 `?? []` 或 `|| []` 保护，不能假设异步函数一定返回数组。
+**优先级：** 已处理
+
 ---
 
 ## §5 后续扩展约束
@@ -678,7 +685,9 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-19 · 代码session · 修复「我的」Tab 切换不重置子页面：goTab('mine') 时自增 settingsResetKey，SettingsPage 加 key prop 强制重挂载，与 writeResetKey 模式一致；同步卡：docs/sync-cards/2026-04-19-settings-tab-reset-sync.md
 - 2026-04-19 · 产品session · 确认代码session全部完成：Task9 group_name分组/写作页日期时间选择器/搜索筛选人物+需求+5字段文字搜索/死代码清理；commits在本地待push（GitHub暂时连不上）；当前无待执行项
+- 2026-04-19 · 架构session · 死代码清理复盘：确认两处误报（getAwarenessStartTier 是活跃代码被 awarenessFlowState.js 第93行调用；DEFAULT_TEMPLATE 被 HomePage.jsx 第21行 import）；根因为架构审查未亲自 Grep 直接信任 agent 报告；已补强 arch-review skill 触发条件+强制 Grep 规则；新增4.32（loadContacts null→.map()崩溃已修复，?? []保护）；keywordDetection.js 自验后确认删除（commit 6905e6c）
 - 2026-04-18 · 代码session · 架构两问回答：①getPendingCoreNeeds 补显式 user_id 过滤（原仅依赖 RLS，join 侧 journal_entries 已有独立 RLS 无泄露风险，但补显式过滤增强防御）；②awarenessState 传递确认深拷贝安全（serializeFlowState 内部用 JSON.parse/stringify，无共享引用风险）；同步卡：docs/sync-cards/2026-04-18-arch-qa-pending-awareness-sync.md
 - 2026-04-18 · 架构session · 审查写作页日期时间选择 spec（Q1–Q4全部回答）：新增§2.10（inferDatetime→dateUtils.js / DatetimePicker独立组件 / manualOverride随草稿存localStorage）/§4.31（UPDATE created_at确认可行，DEFAULT now()不保护UPDATE）；整体设计无违反§2约束
 - 2026-04-18 · 代码session · 修复写作页↔觉察流导航三连 bug（内容消失/重复创建entry/卡片历史丢失）：根本原因为 HomePage 常驻挂载但 handleDone 提前 setContent('')；修复方案还原 718c1f7 设计——退出觉察流推 editHome screen（编辑模式打开写作页，点✓走 updateEntry 不重复建记录），带 awarenessState 回觉察流从中断位置恢复，觉察流「完成」时通过 writeResetKey 重挂写作页清空；同步卡：docs/sync-cards/2026-04-18-awareness-nav-bugfix-sync.md
