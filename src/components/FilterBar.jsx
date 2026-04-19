@@ -270,7 +270,7 @@ export default function FilterBar({
         {/* 日期（仅 showDate=true） */}
         {showDate && <>
           <button style={chipStyle(showCalendar)}
-            onClick={() => { setShowCalendar(v => !v); setShowEmotionMenu(false); setShowCategoryMenu(false) }}>
+            onClick={() => { setShowCalendar(v => !v); setShowEmotionMenu(false); setShowCategoryMenu(false); setShowPeopleMenu(false); setShowCoreNeedsMenu(false) }}>
             日期 ▾
           </button>
           {selectedDate && (

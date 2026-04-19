@@ -2,7 +2,7 @@
 
 > - 来源：架构审计（2026-04-18）+ 产品确认
 > - 执行方：代码 session
-> - 状态：待执行
+> - 状态：✅ 已完成（2026-04-18，commit 260a5ab + 6905e6c）
 
 ---
 
@@ -32,6 +32,8 @@
 - 如果 `getAwarenessStartTier` 是文件里唯一的函数：**删除整个文件**
 - 如果还有其他被调用的函数：只删 `getAwarenessStartTier` 这一个函数
 
+**⚠️ 执行结果：跳过。** 发现活跃调用方 `awarenessFlowState.js:93`（`import { getAwarenessStartTier }` 在第 1 行，调用在第 93 行），函数保留，未删除。同步卡原描述「函数完全未被调用」有误。
+
 ---
 
 ### 3. 删除 `src/lib/memory.js` 中三个未使用的快捷方法
@@ -58,6 +60,8 @@ export const DEFAULT_TEMPLATE = 'awareness'
 const TEMPLATE_BY_ID = { ... }
 const DEFAULT_TEMPLATE = 'awareness'
 ```
+
+**⚠️ 执行结果：部分完成。** `TEMPLATE_BY_ID` export 已删除（无外部调用方）。`DEFAULT_TEMPLATE` export 必须保留：`HomePage.jsx` 第 21 行有 `import { DEFAULT_TEMPLATE } from '../lib/templates'`，同步卡原描述「两个都去掉」有误。
 
 ---
 
