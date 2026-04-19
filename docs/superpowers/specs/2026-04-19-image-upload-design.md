@@ -4,6 +4,20 @@
 
 ---
 
+## §0A 架构审查问题 · 产品决策记录（2026-04-19）
+
+| 编号 | 问题 | 决策 |
+|---|---|---|
+| Q1 | 孤儿图片策略 | **方案 A 变体：延迟上传 + 后台静默**。点 ✓ 后先保存文字→拿到 entry_id→跳转→后台上传图片→写回 image_urls。无孤儿文件。 |
+| Q2 | deleteImage 路径耦合 | **存 Storage 路径而非 URL**。image_urls 改为存路径（如 `user_id/entry_id/ts_file.jpg`），getImageUrl(path) 负责拼 URL，deleteImage(path) 直接传路径。Supabase URL 格式变化只影响 getImageUrl 一行。 |
+| Q3 | imageUrls 草稿持久化 | **不需要**。延迟上传方案下，草稿阶段 imageUrls 是本地 File 对象引用（不可序列化），刷新后需重新选图。与文字草稿行为一致（文字恢复，图片重选）。 |
+| Q4 | 移动端调序 | **使用 @dnd-kit/sortable**。后续打包为 Capacitor App，HTML5 DnD 在移动端不可靠，现在一步到位用 touch-native 方案。 |
+| Q5 | 失败返回约定 | uploadImage 失败返回 null；调用方过滤 null 后若 urls 全空则 toast 提示"图片上传失败"。deleteImage 返回 void，失败时 console.error。 |
+| Q6 | entry_id 来源 | Q1 方案 A 自然解决：先保存文字拿到 Supabase 生成的 id，再上传图片用此 id 作路径。 |
+| Q7 | bucket public 权衡 | 已知且接受：任何人有路径即可访问图片。未来私密模式再改 signed URL，届时只改 getImageUrl。 |
+
+---
+
 ## §0 背景与范围
 
 允许用户在写作时上传图片，图片与日记条目关联，在记录列表和记录详情中展示。
@@ -32,9 +46,11 @@ ADD COLUMN image_urls text[] DEFAULT '{}';
 ```
 
 字段语义：
-- `text[]` 有序数组，存 Supabase Storage 的 public URL
+- `text[]` 有序数组，存 **Storage 路径**（不是完整 URL）
+- 路径格式：`{user_id}/{entry_id}/{timestamp}_{filename}.jpg`
 - 顺序即展示顺序，调序时直接更新整个数组
 - 空记录为 `[]`（空数组），不为 null
+- `getImageUrl(path)` 负责将路径转为完整 public URL，是唯一知道 URL 格式的地方
 
 ### 1.2 Supabase Storage
 
@@ -64,19 +80,21 @@ journal-images/{user_id}/{entry_id}/{timestamp}_{filename}.jpg
 提供四个纯函数接口，所有图片操作都通过这层，不在 UI 组件里直接调 Supabase Storage。未来迁移到本地存储只改这一个文件。
 
 ```js
-// 压缩并上传图片，返回 public URL
+// 压缩并上传图片，返回 Storage 路径（失败返回 null）
 // file: File 对象，userId/entryId: string
-// 返回: Promise<string>（public URL）
+// 返回: Promise<string | null>
 export async function uploadImage(file, userId, entryId)
 
 // 从 Storage 删除图片
-// url: Storage public URL（从中解析路径）
-// 返回: Promise<void>
-export async function deleteImage(url)
+// storagePath: image_urls 中存的路径字符串
+// 返回: Promise<void>（失败时 console.error，不抛）
+export async function deleteImage(storagePath)
 
-// 从 URL 获取可展示的 URL（当前直接返回 url，未来可做本地路径映射）
+// 将 Storage 路径转为完整可访问 URL
+// 这是唯一知道 Supabase public URL 格式的地方
+// 未来迁移本地存储只改这一个函数
 // 返回: string
-export function getImageUrl(url)
+export function getImageUrl(storagePath)
 
 // 压缩图片（内部工具，也可单独调用）
 // file: File，返回 Blob
@@ -84,10 +102,11 @@ export async function compressImage(file)
 ```
 
 **实现约束：**
-- `uploadImage` 内部先调 `compressImage`，再调 `db`（Storage）上传
-- 上传路径：`{userId}/{entryId}/{Date.now()}_{file.name.replace(/\s/g,'_')}.jpg`
-- 删除时从 URL 解析出 Storage 路径（截取 bucket 名之后的部分）
-- 函数不抛异常，调用方检查返回值
+- `uploadImage` 内部：先 `compressImage`，再上传，返回 Storage 路径（不是完整 URL）
+- 上传路径格式：`${userId}/${entryId}/${Date.now()}_${file.name.replace(/\s/g,'_')}.jpg`
+- `getImageUrl(path)` 拼接公开 URL：`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`
+- `deleteImage(path)` 直接传路径给 `db.storage.from(BUCKET).remove([path])`，不做 URL 解析
+- 函数不抛异常：`uploadImage` 失败返回 `null`，`deleteImage` 失败 `console.error`
 
 ---
 
@@ -128,10 +147,10 @@ padding: 4px 14px 2px
 
 **长按进入编辑态：** 移动端 `touchstart` → `setTimeout 500ms` → 激活编辑模式（`isEditing = true`）。编辑态下：
 - 每张图片右上角显示 `✕` 删除按钮（12px 圆形，黑底白字，`position: absolute; top: 4px; right: 4px`）
-- 图片变为可拖拽（HTML5 drag-and-drop：`draggable`、`onDragStart`、`onDragOver`、`onDrop`）
+- 图片变为可拖拽排序，使用 **`@dnd-kit/sortable`**（touch-native，兼容 iOS/Android/Capacitor）
 - 点击宫格区域之外 → 退出编辑态
 
-**点击 ✕：** 从 `imageUrls` 移除该 URL，同时调 `deleteImage(url)` 从 Storage 删除文件。
+**点击 ✕：** 从 `imagePaths` 移除该路径，同时调 `deleteImage(path)` 从 Storage 删除文件。
 
 **短按图片（非编辑态）：** 全屏查看（`position: fixed` 遮罩，点击关闭）。
 
@@ -184,18 +203,39 @@ padding: 4px 14px 2px
 
 ---
 
-## §4 状态管理
+## §4 状态管理与保存流程
 
 写作页（HomePage）新增状态：
 
 ```js
-const [imageUrls, setImageUrls] = useState([])  // 当前 entry 已上传的 URL 数组
-const [uploading, setUploading] = useState(false) // 上传中状态（防止重复点击）
+const [selectedFiles, setSelectedFiles] = useState([])  // 本地 File 对象（新建时用）
+const [imagePaths, setImagePaths] = useState([])         // Storage 路径（编辑已有记录时用）
+const [uploading, setUploading] = useState(false)
 ```
 
-编辑已有记录时，从 `journal_draft` localStorage 读取已存 `image_urls` 初始化；或在 `loadDraft` 时从 entry 读取。
+**新建日记时保存流程（延迟上传）：**
 
-保存时将 `imageUrls` 写入 `journal_entries.image_urls`（与其他字段一起保存）。
+```
+① 用户选图 → File 对象存入 selectedFiles，ObjectURL 用于本地预览
+② 用户点 ✓ 保存：
+   a. 先保存文字内容到 DB → 拿到 entry_id（Supabase 生成）
+   b. 立刻跳转离开写作页（用户感知"已保存"）
+   c. 后台：await Promise.all(selectedFiles.map(f => uploadImage(f, userId, entry_id)))
+   d. 过滤掉 null（失败的），若有成功的 paths：
+      updateEntry({ id: entry_id, fields: { image_urls: successPaths } })
+   e. 全部失败时：toast "图片上传失败，可进入记录重新添加"
+```
+
+**编辑已有记录时：**
+
+```
+从 entry.image_urls 读取路径列表初始化 imagePaths
+增：选图 → 保存时才上传（同新建流程）
+删：从 imagePaths 移除路径 + 立即调 deleteImage(path)（编辑态实时删除，不等保存）
+保存：写回更新后的 imagePaths 到 DB
+```
+
+**草稿持久化：** 不持久化图片到 localStorage。刷新后文字恢复，图片需重新选择。（延迟上传方案下，草稿阶段图片为本地 File 引用，无法序列化）
 
 ---
 
@@ -215,7 +255,7 @@ const [uploading, setUploading] = useState(false) // 上传中状态（防止重
 1. 写作页底部相机图标（SVG 线条）可点击，弹出系统文件选择器
 2. 选图后图片被压缩到 ≤500KB 并上传，宫格出现缩略图
 3. 最多5张，第6张无法添加（+ 按钮不显示）
-4. 长按图片进入编辑态：每张图片右上角出现 ✕ 按钮，同时可拖动调序
+4. 长按图片进入编辑态：每张图片右上角出现 ✕ 按钮，同时可用 @dnd-kit/sortable 拖动调序（iOS/Android/Web 均可用）
 5. 编辑态下点 ✕ 删除图片；点宫格之外退出编辑态；短按图片（非编辑态）全屏查看
 6. 保存后，记录列表卡片右侧出现第一张缩略图 + 线条图标 + 数量
 7. 点进详情页，原始记录流区块：文字下方出现图片宫格
