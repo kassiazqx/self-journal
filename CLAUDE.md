@@ -105,15 +105,17 @@ src/
 ## 🌿 分支管理规范
 - **所有开发在 `dev` 分支进行**，`main` 只接受发布合并，不直接在 main 上改代码
 - **大改动开始前必须打 checkpoint**：`git tag checkpoint-<功能名>-<日期>`，AI 大幅重构前先执行
-- 上线流程：dev 开发完成 → 用户确认 → `git checkout main && git merge dev` → `git push`（触发 Vercel 自动部署）
+- 上线流程：dev 开发完成 → 用户确认 → `git checkout main && git merge dev && git push && git checkout dev`（触发 Vercel 自动部署）
+- **用户说「帮我上线」= 执行上面这四条命令**，不需要解释，直接执行
 
 ## 🔄 Multi-Session 协作规范
 - **完整规范**：见 `docs/session-protocol.md`
 - **架构上下文**：见 `docs/arch-context.md`（所有 session 冷启动必读）
 - **产品变更 → 同步卡 → 代码 Task 0 确认 → 继续**
 - 代码 session 发现偏差时：停下来报告，不自行修复，等用户确认
-- **每个 Task 开一个新对话框**：不在同一个代码 session 里跑多个 Task，避免上下文积累导致后期质量下滑
-- **每个 Task commit 后必须跑 code-reviewer**：用 superpowers:requesting-code-review skill 审查这个 Task 的 diff，发现问题当场修，不带着问题做下一个 Task
+- **每个 plan 对应一个新对话框**：一个 spec/plan 的所有 Task 在同一个代码 session 里跑完，下一个 plan 再开新的，保持每个功能批次的上下文干净
+- **每个 plan 全部 Task 完成后必须跑 code-reviewer**：用 superpowers:requesting-code-review skill 审查整个 plan 的改动，发现问题当场修，确认没问题再上线
+- **代码 session 开始时加一句**：「完成所有 Task 后，主动用 superpowers:requesting-code-review 做代码审查」
 
 ## 🚦 Git 提交强制流程（每个节点都必须走完）
 
