@@ -34,6 +34,7 @@ export default function MainLayout() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [detailRefreshToken, setDetailRefreshToken] = useState(0)
   const [writeResetKey, setWriteResetKey] = useState(0)
+  const [settingsResetKey, setSettingsResetKey] = useState(0)
 
   // 清理旧版导航栈 localStorage（一次性）
   useEffect(() => {
@@ -51,6 +52,7 @@ export default function MainLayout() {
     reset()
     setActiveTab(id)
     saveActiveTab(id)
+    if (id === 'mine') setSettingsResetKey(k => k + 1)
   }
 
   // ── HomePage 完成写作后 ─────────────────────────────────────
@@ -310,7 +312,7 @@ export default function MainLayout() {
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'mine' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <SettingsPage />
+          <SettingsPage key={settingsResetKey} />
         </div>
 
         {/* 全屏覆盖页 */}
