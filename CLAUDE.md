@@ -53,29 +53,24 @@
 5. 记录详情页（RecordDetail.jsx）—— 展示所有提取字段 + 对话记录
 
 ## 当前文件结构
+> ⚠️ 以下为简要说明，完整真实结构见 `docs/arch-context.md §3`（由代码 session 维护）
+
 ```
 src/
-  App.jsx / main.jsx / index.css
-  contexts/
-    AuthContext.jsx          # 登录状态管理
-  components/
-    MainLayout.jsx           # 底部导航 + AI对话全屏覆盖
-    AIConversation.jsx       # AI对话主界面
-    RecordDetail.jsx         # 记录详情页
-  pages/
-    AuthPage.jsx             # 登录/注册
-    HomePage.jsx             # 首页（写日记）
-    RecordsPage.jsx          # 记录列表
-    SettingsPage.jsx         # 设置页
-  hooks/
-    useSpeechRecognition.js  # 语音输入
-  lib/
-    supabase.js              # Supabase 客户端
-    aiClient.js              # AI调用层（Gemini/Deepseek，支持 maxTokens 参数）
-    prompts.js               # 系统提示词 + 问题库（硬编码，不存DB）
-    memory.js                # AI记忆读写（Supabase user_memory）
-    localDB.js               # ⚠️ 孤儿文件，已被 memory.js 替代，待删除
+  contexts/        # React Context（登录状态等）
+  components/      # 跨页面复用的 UI 组件（MainLayout、RecordDetail 等）
+  pages/           # 页面级组件，每个 Tab / 路由对应一个文件
+  hooks/           # 自定义 React hooks
+  lib/             # 业务逻辑、数据访问、AI 调用（不含 UI）
+docs/              # 所有文档（arch-context、spec、plan、sync-card）
 ```
+
+**目录边界规则（AI 必须遵守）：**
+- `lib/` 只放业务逻辑和数据访问，**不得有任何 JSX / UI 代码**
+- `pages/` 只放页面入口组件，**不得直接 import supabase**（必须通过 lib/ 层）
+- `components/` 放可复用 UI 组件，单次使用的局部组件写在对应 page 文件里即可
+- **不得在 src/ 根目录直接建 .jsx/.js 文件**（除 App.jsx / main.jsx）
+- **新建文件前先确认是否可以放进现有文件**，避免文件碎片化
 
 ## 关键架构决策（已确定，不要轻易改动）
 - AI记忆存 Supabase（多端同步）→ memory.js
@@ -85,12 +80,12 @@ src/
 - 暂不做离线写日记（复杂度高，需求不确定）
 - AI 提取字段：对话结束后静默提取，不展示审阅步骤
 
-## 待处理清单
+## 📋 待处理清单
+- [ ] 新建 `docs/UI_GUIDELINES.md`（主色/圆角/字号/间距，UI 统一设计完成后做）
 - [ ] 静默提取失败时给用户简短反馈
 - [ ] Cloudflare Pages 部署（国内访问无需 VPN）
 - [ ] 安卓语音输入（接入讯飞 API）
 - [ ] 设置页加"清空记忆"按钮
-- [ ] UI 整体重设计（用户有意向重新设计交互布局）
 - [ ] Capacitor APK 打包
 
 ## ⚠️ 工作规范（重要）
