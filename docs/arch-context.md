@@ -275,6 +275,9 @@ src/
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
+│   ├── imageStorage.js         图片 Storage 抽象层（新增，图片功能）
+│   │                           uploadImage / deleteImage / getImageUrl / compressImage
+│   │                           ⚠️ 所有图片操作必须经此层，不得直接调 db.storage（见4.33）
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
@@ -357,6 +360,9 @@ src/
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
+│   ├── imageStorage.js         图片 Storage 抽象层（新增，图片功能）
+│   │                           uploadImage / deleteImage / getImageUrl / compressImage
+│   │                           ⚠️ 所有图片操作必须经此层，不得直接调 db.storage（见4.33）
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
@@ -416,6 +422,7 @@ journal_entries：
     overall_state_score, category_tags(text[]), people_involved(text[]),
     cognitive_analysis, cognitive_distortion_type, current_behavior, handling_rating
   - 预留字段：attachments(jsonb), full_conversation(jsonb)（旧路径）
+  - **新增（图片功能）：** image_urls(text[]) DEFAULT '{}'  ← 有序图片 URL 数组
 
 conversations：
   - id, user_id, entry_id(→journal_entries), letter_id(→review_letters)
@@ -688,6 +695,25 @@ const isValidVocabWord = (word) =>
 **已修复（2026-04-19）：** 加 `?? []` 空值保护，`loadContacts() ?? []`，返回 null 时降级为空数组，chip 区正常渲染为空。
 **规律：** 所有异步加载列表数据的调用方，必须对返回值做 `?? []` 或 `|| []` 保护，不能假设异步函数一定返回数组。
 **优先级：** 已处理
+
+### 4.33 图片上传：imageStorage.js 是唯一合法的 Storage 访问点
+
+**决策（2026-04-19）：** 图片功能引入 `src/lib/imageStorage.js` 作为 Supabase Storage 的抽象层。
+**规则：**
+- 所有图片的上传、删除、URL 获取，必须通过 `imageStorage.js` 的四个函数（`uploadImage` / `deleteImage` / `getImageUrl` / `compressImage`）
+- UI 组件（HomePage / RecordDetail）不得直接调用 `db.storage` 或 supabase storage API
+- 未来迁移到本地相册存储（Capacitor）只需替换 `imageStorage.js` 内部实现，上层零修改
+
+**数据库：** `journal_entries.image_urls text[] DEFAULT '{}'`（有序数组，顺序即展示顺序）
+
+**Storage bucket：** `journal-images`（public），路径规则：`{user_id}/{entry_id}/{timestamp}_{filename}.jpg`
+
+**压缩规则：** 前端 Canvas API 压缩，目标 ≤ 500KB，长边 ≤ 1600px，格式 JPEG。不引入额外依赖。
+
+**不要改成什么：**
+- 不要在 UI 组件里直接写 `db.storage.from('journal-images').upload(...)`
+- 不要把 image_urls 存为相对路径（存完整 public URL，便于 getImageUrl 未来做映射）
+- 不要在保存日记时才上传图片（选完即上传，URL 立即追加到 state）
 
 ---
 
