@@ -243,12 +243,102 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-18（people_involved + core_needs 批次，基于 git HEAD 8b20071）
+**最后更新：** 2026-04-19（搜索筛选增强 + 死代码清理 + Tab重置修复，dev 分支）
+
+### 分支规范（2026-04-19 新增）
+
+```
+所有开发在 dev 分支，main 只接受发布合并。
+代码 session 工作前必须确认在 dev 分支。
+```
 
 ### 文件结构（当前）
 
 ```
 src/
+├── main.jsx / App.jsx / index.css
+├── contexts/
+│   └── AuthContext.jsx         登录状态
+├── hooks/
+│   └── useSpeechRecognition.js 语音输入
+├── lib/
+│   ├── supabase.js             DB客户端（仅供 db.js 使用）
+│   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
+│   ├── aiClient.js             AI调用层（Gemini/Deepseek）
+│   ├── memory.js               AI记忆读写（Supabase user_memory）
+│   │                           ⚠️ setRollingSummary/setUserProfile/clearMemory 已删除（零调用方）
+│   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
+│   ├── conversationService.js  对话保存 + AI 字段提取
+│   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
+│   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
+│   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
+│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
+│   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
+│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
+│   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
+│   ├── storage.js              localStorage 工具
+│   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
+│   ├── dateUtils.js            inferDatetime(text, now) + formatPill() 日期工具（新增）
+│   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
+│   │                           mapToBase() 已改为内部私有（去掉 export）
+│   ├── templates.js            模板配置（含新旧ID兼容）
+│   │                           TEMPLATE_BY_ID 已改为内部私有；DEFAULT_TEMPLATE 仍 export（HomePage 使用）
+│   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
+│   │                           getExtractionPrompt(userCategoryTags, coreNeedsVocab) 双参数（已修复4.21）
+│   ├── reviewLetterService.js  回顾信触发 + 生成
+│   ├── awarenessFlowState.js   觉察流状态机（含 serializeFlowState 深拷贝）
+│   ├── awarenessFlowState.test.js
+│   ├── extractSummaryService.js     摘要索引批量提取服务（maxTokens 已升至 1200，见4.28）
+│   ├── extractSummaryService.test.js
+│   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary + reAnalyzeThread
+│   └── threadService.test.js
+├── components/
+│   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
+│   │                           writeResetKey：觉察流完成时重挂 HomePage
+│   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
+│   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
+│   ├── FilterBar.jsx           搜索框 + 情绪/类型/日期/人物/需求五维筛选（纯UI组件，不查DB）
+│   │                           props: onFilter / categoryOptions / peopleOptions / coreNeedOptions / showDate
+│   │                           文字搜索5字段：content/entry_summary/cognitive_analysis/body_sensations/reflection_insight
+│   │                           数组筛选：.overlaps('emotions'/'category_tags'/'people_involved'/'core_needs')
+│   ├── DatetimePicker.jsx      日期时间选择 sheet（快捷按钮+迷你日历+时分输入，新增）
+│   │                           props: initialDatetime / onConfirm / onClose
+│   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
+│   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
+│   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
+│   └── ReviewLetterDetail.jsx  回顾信详情（只读）
+└── pages/
+    ├── AuthPage.jsx            登录注册
+    ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
+    │                           日期 pill：inferDatetime debounce 800ms + manualOverride + localStorage 持久化
+    │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
+    ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
+    │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
+    │                           🔍 FilterBar 五维筛选（有筛选时隐藏回顾信卡片）
+    │                           🟠 pending_core_needs banner + 处理弹卡片三路径
+    ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
+    ├── ThreadsPage.jsx         脉络三Tab页（已确认/待确认/已归档）
+    │                           含 ＋浮窗（手动创建/AI分析）+ AI分析sheet + defaultTab prop
+    ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）
+    ├── ThreadDetailPage.jsx    脉络详情（mode='confirmed'|'archived'；··· 菜单；编辑关联记录模式）
+    │                           编辑模式：FilterBar 五维筛选（showDate=false）/ 默认列表30条+上滑加载
+    ├── ReviewLetterListPage.jsx 回顾信列表页
+    ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
+    └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
+                                含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
+                                含人物管理子页（canonical+aliases+group_name，RPC级联替换）
+                                含内心需求词库子页（core_needs，RPC级联替换）
+```
+
+**已删除：**
+- `TaggingPage.jsx`（情绪标注流程取消）
+- `ReflectionPage.jsx`（被 AwarenessFlow 替代）
+- `localDB.js`（被 memory.js 替代，已删除）
+- `reflectionQuestions.js`（服务已删 ReflectionPage，已删除）
+- `keywordDetection.js`（被 contactsService + AI提取全量替代，2026-04-18 删除）
+
+**待删除：**
+- `conversationMessages.js`（无生产代码依赖，等第二批确认后删除）
 ├── main.jsx / App.jsx / index.css
 ├── contexts/
 │   └── AuthContext.jsx         登录状态
@@ -685,6 +775,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-19 · 代码session · code-reviewer 发现并修复：FilterBar「日期 ▾」chip 点击时未关闭人物/需求浮层，导致两个浮层同时展开；加两句 setShowPeopleMenu(false)/setShowCoreNeedsMenu(false)；同步卡：docs/sync-cards/2026-04-19-filterbar-calendar-chip-fix.md
 - 2026-04-19 · 代码session · 修复「我的」Tab 切换不重置子页面：goTab('mine') 时自增 settingsResetKey，SettingsPage 加 key prop 强制重挂载，与 writeResetKey 模式一致；同步卡：docs/sync-cards/2026-04-19-settings-tab-reset-sync.md
 - 2026-04-19 · 产品session · 确认已推送dev：搜索筛选增强（人物/需求维度+词库空时自动隐藏入口+文字搜索扩展至5字段）；「我的」Tab切换修复（settingsResetKey强制重挂载）；当前无待执行项
 - 2026-04-19 · 架构session · 死代码清理复盘：确认两处误报（getAwarenessStartTier 是活跃代码被 awarenessFlowState.js 第93行调用；DEFAULT_TEMPLATE 被 HomePage.jsx 第21行 import）；根因为架构审查未亲自 Grep 直接信任 agent 报告；已补强 arch-review skill 触发条件+强制 Grep 规则；新增4.32（loadContacts null→.map()崩溃已修复，?? []保护）；keywordDetection.js 自验后确认删除（commit 6905e6c）
