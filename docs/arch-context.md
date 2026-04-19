@@ -686,7 +686,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-19 · 代码session · 修复「我的」Tab 切换不重置子页面：goTab('mine') 时自增 settingsResetKey，SettingsPage 加 key prop 强制重挂载，与 writeResetKey 模式一致；同步卡：docs/sync-cards/2026-04-19-settings-tab-reset-sync.md
-- 2026-04-19 · 产品session · 确认代码session全部完成：Task9 group_name分组/写作页日期时间选择器/搜索筛选人物+需求+5字段文字搜索/死代码清理；commits在本地待push（GitHub暂时连不上）；当前无待执行项
+- 2026-04-19 · 产品session · 确认已推送dev：搜索筛选增强（人物/需求维度+词库空时自动隐藏入口+文字搜索扩展至5字段）；「我的」Tab切换修复（settingsResetKey强制重挂载）；当前无待执行项
 - 2026-04-19 · 架构session · 死代码清理复盘：确认两处误报（getAwarenessStartTier 是活跃代码被 awarenessFlowState.js 第93行调用；DEFAULT_TEMPLATE 被 HomePage.jsx 第21行 import）；根因为架构审查未亲自 Grep 直接信任 agent 报告；已补强 arch-review skill 触发条件+强制 Grep 规则；新增4.32（loadContacts null→.map()崩溃已修复，?? []保护）；keywordDetection.js 自验后确认删除（commit 6905e6c）
 - 2026-04-18 · 代码session · 架构两问回答：①getPendingCoreNeeds 补显式 user_id 过滤（原仅依赖 RLS，join 侧 journal_entries 已有独立 RLS 无泄露风险，但补显式过滤增强防御）；②awarenessState 传递确认深拷贝安全（serializeFlowState 内部用 JSON.parse/stringify，无共享引用风险）；同步卡：docs/sync-cards/2026-04-18-arch-qa-pending-awareness-sync.md
 - 2026-04-18 · 架构session · 审查写作页日期时间选择 spec（Q1–Q4全部回答）：新增§2.10（inferDatetime→dateUtils.js / DatetimePicker独立组件 / manualOverride随草稿存localStorage）/§4.31（UPDATE created_at确认可行，DEFAULT now()不保护UPDATE）；整体设计无违反§2约束
