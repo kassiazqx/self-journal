@@ -678,6 +678,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-19 · 产品session · 确认代码session全部完成：Task9 group_name分组/写作页日期时间选择器/搜索筛选人物+需求+5字段文字搜索/死代码清理；commits在本地待push（GitHub暂时连不上）；当前无待执行项
 - 2026-04-18 · 代码session · 架构两问回答：①getPendingCoreNeeds 补显式 user_id 过滤（原仅依赖 RLS，join 侧 journal_entries 已有独立 RLS 无泄露风险，但补显式过滤增强防御）；②awarenessState 传递确认深拷贝安全（serializeFlowState 内部用 JSON.parse/stringify，无共享引用风险）；同步卡：docs/sync-cards/2026-04-18-arch-qa-pending-awareness-sync.md
 - 2026-04-18 · 架构session · 审查写作页日期时间选择 spec（Q1–Q4全部回答）：新增§2.10（inferDatetime→dateUtils.js / DatetimePicker独立组件 / manualOverride随草稿存localStorage）/§4.31（UPDATE created_at确认可行，DEFAULT now()不保护UPDATE）；整体设计无违反§2约束
 - 2026-04-18 · 代码session · 修复写作页↔觉察流导航三连 bug（内容消失/重复创建entry/卡片历史丢失）：根本原因为 HomePage 常驻挂载但 handleDone 提前 setContent('')；修复方案还原 718c1f7 设计——退出觉察流推 editHome screen（编辑模式打开写作页，点✓走 updateEntry 不重复建记录），带 awarenessState 回觉察流从中断位置恢复，觉察流「完成」时通过 writeResetKey 重挂写作页清空；同步卡：docs/sync-cards/2026-04-18-awareness-nav-bugfix-sync.md
