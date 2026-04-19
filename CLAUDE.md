@@ -102,11 +102,18 @@ src/
 - 大改动用 Agent 后台跑，小修改直接用 Edit 工具
 - 写大文件用 Write 工具直接写，不要交给 Agent（会 504 超时）
 
+## 🌿 分支管理规范
+- **所有开发在 `dev` 分支进行**，`main` 只接受发布合并，不直接在 main 上改代码
+- **大改动开始前必须打 checkpoint**：`git tag checkpoint-<功能名>-<日期>`，AI 大幅重构前先执行
+- 上线流程：dev 开发完成 → 用户确认 → `git checkout main && git merge dev` → `git push`（触发 Vercel 自动部署）
+
 ## 🔄 Multi-Session 协作规范
 - **完整规范**：见 `docs/session-protocol.md`
 - **架构上下文**：见 `docs/arch-context.md`（所有 session 冷启动必读）
 - **产品变更 → 同步卡 → 代码 Task 0 确认 → 继续**
 - 代码 session 发现偏差时：停下来报告，不自行修复，等用户确认
+- **每个 Task 开一个新对话框**：不在同一个代码 session 里跑多个 Task，避免上下文积累导致后期质量下滑
+- **每个 Task commit 后必须跑 code-reviewer**：用 superpowers:requesting-code-review skill 审查这个 Task 的 diff，发现问题当场修，不带着问题做下一个 Task
 
 ## 🚦 Git 提交强制流程（每个节点都必须走完）
 
@@ -131,6 +138,14 @@ git commit      ← 才可以提交
 ## 注意事项
 - .env 文件不能提交 GitHub（已在 .gitignore）
 - Vercel 环境变量已配置完毕
-- 每次改完：git add → git commit → git push → Vercel 自动部署
+- 每次改完：git add → git commit（在 dev 分支）→ 用户确认上线后 merge main → git push → Vercel 自动部署
 - Gemini 免费版：1500次/天，模型 gemini-flash-latest
 - Supabase maxOutputTokens：对话用450，提取用1200，记忆更新用600
+
+## 📋 待处理清单
+- [ ] 新建 `docs/UI_GUIDELINES.md`（主色/圆角/字号/间距设计规范，UI 设计完成后再做）
+- [ ] 静默提取失败时给用户简短反馈
+- [ ] Cloudflare Pages 部署（国内访问无需 VPN）
+- [ ] 安卓语音输入（接入讯飞 API）
+- [ ] 设置页加"清空记忆"按钮
+- [ ] Capacitor APK 打包
