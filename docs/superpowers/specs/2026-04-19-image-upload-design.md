@@ -12,7 +12,7 @@
 | Q2 | deleteImage 路径耦合 | **存 Storage 路径而非 URL**。image_urls 改为存路径（如 `user_id/entry_id/ts_file.jpg`），getImageUrl(path) 负责拼 URL，deleteImage(path) 直接传路径。Supabase URL 格式变化只影响 getImageUrl 一行。 |
 | Q3 | imageUrls 草稿持久化 | **不需要**。延迟上传方案下，草稿阶段 imageUrls 是本地 File 对象引用（不可序列化），刷新后需重新选图。与文字草稿行为一致（文字恢复，图片重选）。 |
 | Q4 | 移动端调序 | **使用 @dnd-kit/sortable**。后续打包为 Capacitor App，HTML5 DnD 在移动端不可靠，现在一步到位用 touch-native 方案。 |
-| Q5 | 失败返回约定 | uploadImage 失败返回 null；调用方过滤 null 后若 urls 全空则 toast 提示"图片上传失败"。deleteImage 返回 void，失败时 console.error。 |
+| Q5 | 失败返回约定 | uploadImage 失败返回 null；调用方过滤 null 后若 urls 全空则触发全局通知（见 §4.1）。deleteImage 返回 void，失败时 console.error。 |
 | Q6 | entry_id 来源 | Q1 方案 A 自然解决：先保存文字拿到 Supabase 生成的 id，再上传图片用此 id 作路径。 |
 | Q7 | bucket public 权衡 | 已知且接受：任何人有路径即可访问图片。未来私密模式再改 signed URL，届时只改 getImageUrl。 |
 
@@ -223,7 +223,7 @@ const [uploading, setUploading] = useState(false)
    c. 后台：await Promise.all(selectedFiles.map(f => uploadImage(f, userId, entry_id)))
    d. 过滤掉 null（失败的），若有成功的 paths：
       updateEntry({ id: entry_id, fields: { image_urls: successPaths } })
-   e. 全部失败时：toast "图片上传失败，可进入记录重新添加"
+   e. 有任何图片上传失败时：触发全局通知（见 §4.1）
 ```
 
 **编辑已有记录时：**
@@ -236,6 +236,51 @@ const [uploading, setUploading] = useState(false)
 ```
 
 **草稿持久化：** 不持久化图片到 localStorage。刷新后文字恢复，图片需重新选择。（延迟上传方案下，草稿阶段图片为本地 File 引用，无法序列化）
+
+---
+
+### §4.1 图片上传失败通知机制
+
+后台上传在用户离开写作页后继续运行，失败时必须主动通知用户，不依赖用户主动进入详情页发现。
+
+**两层通知策略：**
+
+**层1 — 同会话内立即通知（全局 Toast）**
+
+上传失败时，通过全局通知 Context 触发 Toast，Toast 渲染在 `MainLayout` 顶层，不管用户当前在哪个 Tab 都能看到。
+
+```
+实现方式：
+- 在 App.jsx 或 MainLayout.jsx 新增 notifyContext：
+  { notify: (msg) => void }
+- 写作页 saveEntry() 完成、跳转后，把 notifyContext 的 notify 函数引用传给后台上传任务
+- 后台上传失败时调用 notify("图片上传失败，进入记录可重新添加")
+- MainLayout 顶层监听并显示 Toast（3秒自动消失）
+```
+
+**层2 — App 关闭期间失败（持久化标记）**
+
+若上传时网络断开或用户强制关闭 App：
+
+```
+上传失败时：
+  localStorage.setItem('image_upload_failed', JSON.stringify([
+    ...已有列表,
+    { entryId, createdAt: Date.now() }
+  ]))
+
+RecordsPage 挂载时：
+  const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
+  if (failed.length > 0) {
+    showBanner("有 N 条记录的图片上传失败，点击进入记录重新添加")
+    // 用户点击 banner → 跳转到对应记录
+    // 用户处理后（进入编辑并重新保存）→ 从列表中移除该 entryId
+  }
+```
+
+**通知文案：**
+- Toast（即时）：`"图片上传失败，进入记录可重新添加"`
+- Banner（下次打开）：`"有图片上传失败，点此查看"`
 
 ---
 
@@ -257,7 +302,8 @@ const [uploading, setUploading] = useState(false)
 3. 最多5张，第6张无法添加（+ 按钮不显示）
 4. 长按图片进入编辑态：每张图片右上角出现 ✕ 按钮，同时可用 @dnd-kit/sortable 拖动调序（iOS/Android/Web 均可用）
 5. 编辑态下点 ✕ 删除图片；点宫格之外退出编辑态；短按图片（非编辑态）全屏查看
-6. 保存后，记录列表卡片右侧出现第一张缩略图 + 线条图标 + 数量
+6. 保存后：跳转立即发生，图片后台上传；上传完成后列表卡片出现缩略图 + 线条图标 + 数量
+7. 图片上传失败时：**当场弹全局 Toast 通知**，不需要用户进详情页才发现；App 关闭期间失败则下次打开记录列表时显示 Banner
 7. 点进详情页，原始记录流区块：文字下方出现图片宫格
 8. 详情页觉察对话区（ai_prompt / ai_answer 流式文字）位置不变，样式不变
 9. 编辑已有记录时，原有图片正确加载，可增删调序后保存
