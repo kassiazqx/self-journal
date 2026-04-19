@@ -82,6 +82,7 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 
 ## 📋 待处理清单
 - [ ] 新建 `docs/UI_GUIDELINES.md`（主色/圆角/字号/间距，UI 统一设计完成后做）
+- [ ] `lib/` 内部按职责建子文件夹（data/ / ai/ / utils/），改完所有 import 路径——等项目稳定或下次大重构时顺手做
 - [ ] 静默提取失败时给用户简短反馈
 - [ ] Cloudflare Pages 部署（国内访问无需 VPN）
 - [ ] 安卓语音输入（接入讯飞 API）
