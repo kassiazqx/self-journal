@@ -1,7 +1,7 @@
 // src/components/MainLayout.jsx
 // 4 Tab 导航：写 / 记录 / 洞察 / 我的
 // 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail 等）
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
 import HomePage from '../pages/HomePage'
@@ -35,6 +35,14 @@ export default function MainLayout() {
   const [detailRefreshToken, setDetailRefreshToken] = useState(0)
   const [writeResetKey, setWriteResetKey] = useState(0)
   const [settingsResetKey, setSettingsResetKey] = useState(0)
+  const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
+
+  function notify(msg) {
+    clearTimeout(toastTimerRef.current)
+    setToast(msg)
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500)
+  }
 
   // 清理旧版导航栈 localStorage（一次性）
   useEffect(() => {
@@ -233,6 +241,7 @@ export default function MainLayout() {
           onDone={handleEditHomeDone}
           onCancel={() => { reset(); goTab('records') }}
           onOpenLetter={letter => push({ type: 'letter', letter })}
+          onNotify={notify}
         />
       )
     }
@@ -288,12 +297,32 @@ export default function MainLayout() {
       position: 'relative',
     }}>
 
+      {/* 全局 Toast 通知（图片上传失败等异步事件触发） */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: 56,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.72)',
+          color: 'white',
+          padding: '8px 18px',
+          borderRadius: 20,
+          fontSize: 13,
+          zIndex: 999,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+        }}>
+          {toast}
+        </div>
+      )}
+
       {/* 主内容区（Tab 或全屏覆盖） */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
 
       {/* 所有 Tab 同时挂载，切换时只改 display，避免重复拉取数据 */}
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'write' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <HomePage key={writeResetKey} onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
+          <HomePage key={writeResetKey} onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} onNotify={notify} />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
           <RecordsPage
