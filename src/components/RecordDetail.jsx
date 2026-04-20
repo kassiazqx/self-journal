@@ -11,6 +11,8 @@ import { extractFields } from '../lib/conversationService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import DatetimePicker from './DatetimePicker'
+import React from 'react'
+import { getImageUrl } from '../lib/imageStorage'
 
 function formatDateTime(isoStr) {
   const d = new Date(isoStr)
@@ -130,6 +132,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [showAddNeedInput, setShowAddNeedInput] = useState(false)
   const [addNeedDraft, setAddNeedDraft] = useState('')
   const [showDatetimePicker, setShowDatetimePicker] = useState(false)
+  const [fullscreenImg, setFullscreenImg] = useState(null)
 
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
@@ -506,6 +509,19 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       overflowY: 'auto',
       paddingBottom: 100,
     }}>
+
+      {/* 全屏图片查看 */}
+      {fullscreenImg && (
+        <div
+          onClick={() => setFullscreenImg(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
+            zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img src={fullscreenImg} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+        </div>
+      )}
 
       {/* ── 日期时间 picker sheet ── */}
       {showDatetimePicker && (
@@ -1013,22 +1029,59 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           </div>
 
           {messages.length === 0 ? (
-            /* 没有觉察对话时，只展示原始日记文字 */
-            <div style={{ fontSize: 14, color: '#2d2d2d', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>
-              {entry.content}
-            </div>
+            <React.Fragment>
+              <div style={{ fontSize: 14, color: '#2d2d2d', lineHeight: 1.85, whiteSpace: 'pre-wrap',
+                marginBottom: (entry.image_urls ?? []).length > 0 ? 8 : 0 }}>
+                {entry.content}
+              </div>
+              {(entry.image_urls ?? []).length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+                    {(entry.image_urls ?? []).map((path, idx) => (
+                      <div
+                        key={idx}
+                        style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden', cursor: 'pointer' }}
+                        onClick={() => setFullscreenImg(getImageUrl(path))}
+                      >
+                        <img src={getImageUrl(path)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>点击图片全屏查看</div>
+                </div>
+              )}
+            </React.Fragment>
           ) : (
             messages.map((msg, i) => {
               // 原始日记
               if (msg.nodeType === 'raw_entry') {
+                const imgs = entry.image_urls ?? []
                 return (
-                  <div key={i} style={{
-                    fontSize: 14, color: '#2d2d2d',
-                    lineHeight: 1.85, marginBottom: 20,
-                    whiteSpace: 'pre-wrap',
-                  }}>
-                    {msg.content}
-                  </div>
+                  <React.Fragment key={i}>
+                    <div style={{
+                      fontSize: 14, color: '#2d2d2d',
+                      lineHeight: 1.85, marginBottom: imgs.length > 0 ? 8 : 20,
+                      whiteSpace: 'pre-wrap',
+                    }}>
+                      {msg.content}
+                    </div>
+                    {imgs.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+                          {imgs.map((path, idx) => (
+                            <div
+                              key={idx}
+                              style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden', cursor: 'pointer' }}
+                              onClick={() => setFullscreenImg(getImageUrl(path))}
+                            >
+                              <img src={getImageUrl(path)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>点击图片全屏查看</div>
+                      </div>
+                    )}
+                  </React.Fragment>
                 )
               }
 
