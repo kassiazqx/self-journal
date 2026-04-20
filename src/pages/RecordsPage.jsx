@@ -174,7 +174,7 @@ function LetterCard({ letter, onOpen }) {
 
 const ENTRY_PAGE = 50   // 每次加载的条数
 
-export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
+export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterList, onEdit }) {
   const { user } = useAuth()
   const [allEntries, setAllEntries] = useState([])
   const [allLetters, setAllLetters] = useState([])
@@ -183,7 +183,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const [entryOffset, setEntryOffset] = useState(0)
   const [hasMoreEntries, setHasMoreEntries] = useState(false)
   const loadingMoreRef = useRef(false)
-  const [latestUnreadLetter, setLatestUnreadLetter] = useState(null)
+  const [uploadFailedBanner, setUploadFailedBanner] = useState(false)
 
   // 搜索 + 筛选
   const [showSearch, setShowSearch]         = useState(false)
@@ -193,7 +193,6 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const [filteredEntries, setFilteredEntries] = useState(null) // null = 无筛选，[] = 筛选结果空
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [uploadFailedBanner, setUploadFailedBanner] = useState(false)
   const [uploadFailedCount, setUploadFailedCount] = useState(0)
 
   // pending_core_needs banner + 处理卡片
@@ -209,10 +208,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   // filteredEntries !== null → 筛选模式：只显示筛选出的 journal_entries，不含回顾信
   const items = filteredEntries !== null
     ? filteredEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
-    : [
-        ...allEntries.map(e => ({ ...e, _type: 'entry',  _sortKey: e.created_at })),
-        ...allLetters.map(l => ({ ...l, _type: 'letter', _sortKey: l.period_end })),
-      ].sort((a, b) => new Date(b._sortKey) - new Date(a._sortKey))
+    : allEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
 
   const load = useCallback(async () => {
     if (!user) return
@@ -236,10 +232,6 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
 
     const entries = entriesRes.data ?? []
     const letters = lettersRes.data ?? []
-
-    // 找最新未读回顾信
-    const unread = letters.find(l => !l.is_read)
-    setLatestUnreadLetter(unread ?? null)
 
     setAllEntries(entries)
     setAllLetters(letters)
@@ -537,23 +529,72 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
       {/* 可滚动内容区 */}
       <div style={{ flex: 1, overflowY: 'auto' }} onScroll={filteredEntries === null ? handleScroll : undefined}>
 
-      {/* 未读回顾信横幅 */}
-      {latestUnreadLetter && (
-        <div
-          onClick={() => onOpenLetter(latestUnreadLetter)}
-          style={{
-            background: '#fffdf8', borderBottom: '1px solid #f0e8d4',
-            padding: '12px 18px', display: 'flex', alignItems: 'center',
-            gap: 8, cursor: 'pointer',
-          }}
-        >
-          <span style={{ fontSize: 14 }}>✉</span>
-          <span style={{ flex: 1, fontSize: 13, color: '#8a7a5a' }}>
-            你有一封新的回顾信
-          </span>
-          <span style={{ fontSize: 12, color: '#c9a96e' }}>查看 →</span>
-        </div>
-      )}
+      {/* 回顾信固定入口卡片 */}
+      <div style={{ padding: '12px 16px 0' }}>
+        {allLetters.length > 0 ? (
+          <div
+            onClick={() => onOpenLetterList(allLetters)}
+            style={{
+              background: '#fffdf8',
+              border: '1px solid #f0e8d4',
+              borderLeft: '3px solid #c9a96e',
+              borderRadius: 12, padding: '12px 14px',
+              marginBottom: 8, cursor: 'pointer',
+              position: 'relative',
+            }}
+          >
+            {/* 未读气泡 */}
+            {allLetters.some(l => !l.is_read) && (
+              <span style={{
+                position: 'absolute', top: 10, right: 12,
+                background: '#c9a96e', color: 'white',
+                borderRadius: 10, fontSize: 10,
+                padding: '1px 7px', fontWeight: 500,
+              }}>
+                {allLetters.filter(l => !l.is_read).length} 封未读
+              </span>
+            )}
+            {/* 标题行 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+              <span style={{ fontSize: 12 }}>✉</span>
+              <span style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500 }}>回顾信</span>
+              <span style={{ fontSize: 10, color: '#bbb', marginLeft: 2 }}>
+                共 {allLetters.length} 封
+              </span>
+            </div>
+            {/* 最新一封节选 */}
+            <div style={{
+              fontSize: 13, color: '#555', lineHeight: 1.6, marginBottom: 4,
+              display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>
+              {(allLetters[0]?.content ?? '').slice(0, 60)}
+            </div>
+            {/* 期间 */}
+            <div style={{ fontSize: 10, color: '#bbb' }}>
+              {new Date(allLetters[0]?.period_start).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+              {' - '}
+              {new Date(allLetters[0]?.period_end).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+              {' · '}{allLetters[0]?.entry_ids?.length ?? 0} 条记录
+            </div>
+          </div>
+        ) : (
+          /* 无信时空状态 */
+          <div style={{
+            background: '#faf8f4', border: '1px dashed #e8e2d8',
+            borderRadius: 12, padding: '12px 14px',
+            marginBottom: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+              <span style={{ fontSize: 12 }}>✉</span>
+              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>回顾信</span>
+            </div>
+            <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.6 }}>
+              记录满 10 篇后自动生成第一封回顾信
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 按日期分组的时间流 */}
       <div style={{ padding: '12px 16px' }}>
@@ -575,20 +616,12 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
                 {group.date}
               </div>
               {group.items.map(item => (
-                item._type === 'entry' ? (
-                  <EntryCard
-                    key={item.id}
-                    entry={item}
-                    onOpen={onOpenDetail}
-                    onLongPress={e => { setActionEntry(e); setConfirmDelete(false) }}
-                  />
-                ) : (
-                  <LetterCard
-                    key={item.id}
-                    letter={item}
-                    onOpen={onOpenLetter}
-                  />
-                )
+                <EntryCard
+                  key={item.id}
+                  entry={item}
+                  onOpen={onOpenDetail}
+                  onLongPress={e => { setActionEntry(e); setConfirmDelete(false) }}
+                />
               ))}
             </div>
           ))

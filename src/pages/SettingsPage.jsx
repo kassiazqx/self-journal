@@ -527,7 +527,7 @@ export default function SettingsPage() {
                 onChange={() => {
                   const updated = { ...letterPrefs, type: opt.value }
                   setLetterPrefs(updated)
-                  saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(user.id, patch))
+                  saveUserLetterPrefs(user.id, updated, () => {})
                 }}
               />
               {opt.label}

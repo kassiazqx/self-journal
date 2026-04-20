@@ -111,7 +111,45 @@
 </div>
 ```
 
-**注意**：`allLetters` 已按 `period_end` 降序排列（最新在前），`allLetters[0]` 就是最新一封。`onOpenLetterList` 需要从 props 接入——检查 `RecordsPage` 的 props 中是否已有此项；若没有，需在 MainLayout 里补传。
+**注意**：`allLetters` 已按 `period_end` 降序排列（最新在前），`allLetters[0]` 就是最新一封。
+
+**⚠️ 架构审查已确认：`onOpenLetterList` 在 RecordsPage 缺失，必须补两处。**
+
+**Step 4：RecordsPage 函数签名加 prop**
+
+```js
+// 改前
+export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit })
+
+// 改后
+export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterList, onEdit })
+```
+
+**Step 5：MainLayout.jsx 两处 `<RecordsPage>` 补传（两处都要改）**
+
+第一处（switch/case 分支，约第 269 行）：
+```jsx
+<RecordsPage
+  key={refreshKey}
+  onOpenDetail={handleOpenDetail}
+  onOpenLetter={handleOpenLetter}
+  onOpenLetterList={handleOpenLetterList}  // ← 新增
+  onEdit={handleEditEntry}
+/>
+```
+
+第二处（同时挂载 div 分支，约第 328 行）：
+```jsx
+<RecordsPage
+  key={refreshKey}
+  onOpenDetail={handleOpenDetail}
+  onOpenLetter={handleOpenLetter}
+  onOpenLetterList={handleOpenLetterList}  // ← 新增
+  onEdit={handleEditEntry}
+/>
+```
+
+`handleOpenLetterList` 函数已在 MainLayout.jsx 第 117 行存在，直接引用即可。
 
 ---
 
@@ -207,12 +245,14 @@ style={{
   {onEdit && (
     <span
       onClick={() => onEdit(entry)}
-      style={{ cursor: 'pointer', fontSize: 14, color: '#c9a96e', lineHeight: 1 }}
+      style={{ cursor: 'pointer', fontSize: 14, color: '#c9a96e', lineHeight: 1, padding: '6px 8px', margin: '-6px -8px' }}
     >
       ✎
     </span>
   )}
 </div>
+
+> ⚠️ `padding` + `margin` 补偿必须保留，否则触摸区仅 14×14px，违反 §8 约束。
 ```
 
 ---

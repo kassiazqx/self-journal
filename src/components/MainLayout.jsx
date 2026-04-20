@@ -270,6 +270,7 @@ export default function MainLayout() {
             key={refreshKey}
             onOpenDetail={handleOpenDetail}
             onOpenLetter={handleOpenLetter}
+            onOpenLetterList={handleOpenLetterList}
             onEdit={handleEditEntry}
           />
         )
@@ -329,6 +330,7 @@ export default function MainLayout() {
             key={refreshKey}
             onOpenDetail={handleOpenDetail}
             onOpenLetter={handleOpenLetter}
+            onOpenLetterList={handleOpenLetterList}
             onEdit={handleEditEntry}
           />
         </div>

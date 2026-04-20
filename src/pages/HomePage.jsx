@@ -156,6 +156,27 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   useEffect(() => () => { if (letterReadTimer) clearTimeout(letterReadTimer) }, [letterReadTimer])
 
+  // 键盘弹起时底部栏贴键盘
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
+  const vvRef = useRef(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    vvRef.current = vv
+    function update() {
+      const navEl = document.querySelector('nav')
+      const navH = navEl ? navEl.getBoundingClientRect().height : 0
+      const keyboardHeight = window.innerHeight - vv.height - navH
+      setKeyboardOffset(Math.max(0, keyboardHeight))
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+
   // 组件卸载时释放 ObjectURL，防止内存泄漏
   useEffect(() => {
     return () => { selectedPreviews.forEach(url => URL.revokeObjectURL(url)) }
@@ -821,10 +842,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       {/* ── 涉及的人 chip 区（浮动栏上方）── */}
       {/* ── 底部浮动栏（含人物 chip）── */}
       <div
-        className="absolute bottom-0 left-0 right-0"
+        className="absolute left-0 right-0"
         style={{
+          bottom: keyboardOffset,
           padding: '8px 18px 22px',
           background: 'linear-gradient(transparent, #faf8f4 38%)',
+          transition: 'bottom 0.1s',
         }}
       >
         <div className="flex items-center gap-2">

@@ -549,17 +549,6 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         >
           ← 返回
         </button>
-        {onEdit && (
-          <button
-            onClick={() => onEdit(entry)}
-            style={{
-              background: 'none', border: 'none',
-              color: '#c9a96e', cursor: 'pointer', fontSize: 13,
-            }}
-          >
-            编辑
-          </button>
-        )}
       </div>
 
       <div style={{ padding: '16px 18px 0' }}>
@@ -1023,9 +1012,18 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         <div style={{ borderTop: '1px solid #ede9e2', paddingTop: 14 }}>
           <div style={{
             fontSize: 11, color: '#ccc', marginBottom: 14,
-            textAlign: 'center', letterSpacing: '0.5px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 8, letterSpacing: '0.5px',
           }}>
             ── 原始记录流 ──
+            {onEdit && (
+              <span
+                onClick={() => onEdit(entry)}
+                style={{ cursor: 'pointer', fontSize: 14, color: '#c9a96e', lineHeight: 1, padding: '6px 8px', margin: '-6px -8px' }}
+              >
+                ✎
+              </span>
+            )}
           </div>
 
           {messages.length === 0 ? (
