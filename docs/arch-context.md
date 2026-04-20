@@ -715,6 +715,19 @@ const isValidVocabWord = (word) =>
 - 不要把 image_urls 存为相对路径（存完整 public URL，便于 getImageUrl 未来做映射）
 - 不要在保存日记时才上传图片（选完即上传，URL 立即追加到 state）
 
+### 4.34 图片上传孤儿文件风险（待产品决策）
+
+**风险：** spec 设计为「选完即上传」——用户选图后立即压缩上传到 Storage，但 `image_urls` 写入 DB 发生在点 ✓ 保存时。若用户选图后放弃草稿（关 App / 返回不保存），URL 永远不写入 DB，文件永久留在 Storage（孤儿文件）。日记类 App 草稿放弃场景很常见，Storage free tier 仅 1GB。
+
+**三个方案（产品决策）：**
+- **方案 A（推荐）：保存时才上传** — 选图后本地预览（`URL.createObjectURL`），点 ✓ 时先上传再存 DB。无孤儿文件，但保存时有短暂等待。
+- **方案 B：localStorage 孤儿清理表** — 立即上传，同时写入 localStorage 待确认列表；保存时清空；App 重启时清理残留 URL。实现复杂，localStorage 清缓存后失效。
+- **方案 C：接受孤儿（原型阶段）** — 不处理，未来 Edge Function 定期 GC。
+
+**当前状态：** 待产品 session 在 spec §0A Q1 中确认方案后，再开始实现。
+
+**关联：** 选方案 A 时，entryId 在上传前已存在（先保存 entry 拿 id 再上传），Q6 entryId 问题自然消解。选方案 B/C 时，新建 entry 需要客户端提前生成 UUID 并在保存时显式传入。
+
 ---
 
 ## §5 后续扩展约束
@@ -801,6 +814,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-19 · 架构session · 审查图片上传 spec：发现5个待确认问题（Q1孤儿图片策略/Q2 deleteImage URL路径耦合/Q3 imageUrls草稿持久化/Q4移动端DnD兼容性/Q5失败返回约定）；新增§4.34（孤儿图片风险）；Q1/Q3/Q4需产品决策后才能开始实现；已更新spec §0A
 - 2026-04-19 · 代码session · code-reviewer 发现并修复：FilterBar「日期 ▾」chip 点击时未关闭人物/需求浮层，导致两个浮层同时展开；加两句 setShowPeopleMenu(false)/setShowCoreNeedsMenu(false)；同步卡：docs/sync-cards/2026-04-19-filterbar-calendar-chip-fix.md
 - 2026-04-19 · 代码session · 修复「我的」Tab 切换不重置子页面：goTab('mine') 时自增 settingsResetKey，SettingsPage 加 key prop 强制重挂载，与 writeResetKey 模式一致；同步卡：docs/sync-cards/2026-04-19-settings-tab-reset-sync.md
 - 2026-04-19 · 产品session · 确认已推送dev：搜索筛选增强（人物/需求维度+词库空时自动隐藏入口+文字搜索扩展至5字段）；「我的」Tab切换修复（settingsResetKey强制重挂载）；当前无待执行项
