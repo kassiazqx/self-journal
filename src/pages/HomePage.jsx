@@ -26,6 +26,22 @@ import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } f
 import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
 import DatetimePicker from '../components/DatetimePicker'
 import { inferDatetime, formatPill } from '../lib/dateUtils'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
@@ -66,8 +82,49 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_KEY) } catch (_) {}
 }
 
+// ─── 图片宫格单项（支持拖拽） ─────────────────────────────────────
+// 必须定义在模块顶层，不能放 HomePage 函数体内（re-render 会重建组件类型）
+function SortableImageItem({ id, previewSrc, editingImages, onDelete, onFullscreen }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = {
+    aspectRatio: '1/1',
+    borderRadius: 6,
+    overflow: 'hidden',
+    position: 'relative',
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.7 : 1,
+    cursor: editingImages ? 'grab' : 'pointer',
+    touchAction: editingImages ? 'none' : 'auto',
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...(editingImages ? { ...attributes, ...listeners } : {})}
+      onClick={() => { if (!editingImages) onFullscreen() }}
+    >
+      <img src={previewSrc} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      {editingImages && (
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onDelete() }}
+          style={{
+            position: 'absolute', top: 4, right: 4,
+            width: 18, height: 18, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.6)', color: 'white',
+            border: 'none', fontSize: 11, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            lineHeight: 1, zIndex: 1,
+          }}
+        >✕</button>
+      )}
+    </div>
+  )
+}
+
 // ─── 主组件 ──────────────────────────────────────────────────────
-export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) {
+export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, onNotify }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
 
@@ -101,6 +158,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
   useEffect(() => () => { if (letterReadTimer) clearTimeout(letterReadTimer) }, [letterReadTimer])
 
+  // 组件卸载时释放 ObjectURL，防止内存泄漏
+  useEffect(() => {
+    return () => { selectedPreviews.forEach(url => URL.revokeObjectURL(url)) }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
   // 当前激活模板
   const [template, setTemplate] = useState(() =>
     isEditMode ? resolveTemplate(editEntry.template_type) : DEFAULT_TEMPLATE
@@ -115,6 +177,22 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
 
   // 保存中状态（防重复点击）
   const [saving, setSaving] = useState(false)
+
+  // ── 图片上传 ────────────────────────────────────────────────────
+  const MAX_IMAGES = 5
+  const [selectedFiles, setSelectedFiles] = useState([])
+  const [selectedPreviews, setSelectedPreviews] = useState([])
+  const [imagePaths, setImagePaths] = useState(editEntry?.image_urls ?? [])
+  const [uploading, setUploading] = useState(false)
+  const [editingImages, setEditingImages] = useState(false)
+  const [fullscreenSrc, setFullscreenSrc] = useState(null)
+  const touchTimerRef = useRef(null)
+
+  const totalImages = imagePaths.length + selectedFiles.length
+  const imageItems = [
+    ...imagePaths.map(p => ({ id: p, previewSrc: getImageUrl(p), type: 'path' })),
+    ...selectedPreviews.map((src, i) => ({ id: `new-${i}`, previewSrc: src, type: 'file', fileIndex: i })),
+  ]
 
   // 日期时间选择（仅新建模式）
   const [selectedDatetime, setSelectedDatetime] = useState(() => new Date())
@@ -294,27 +372,48 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     setSaving(true)
 
     const trimmed = content.trim()
-
-    // 实时计算 people_involved（文本识别 + 手动选 - 已 dismiss）
     const autoDetected = detectPeopleFromText(trimmed, contacts)
     const allPeople = [...new Set([...selectedPeople, ...autoDetected])]
       .filter(p => !dismissedPeople.has(p))
 
     if (isEditMode) {
-      // 编辑模式：后台 UPDATE，立即回调
       const fields = {
         content: trimmed,
         template_type: template.id,
         people_involved: allPeople,
+        image_urls: imagePaths,
       }
       const updatedEntry = { ...editEntry, ...fields }
-      onDone?.(updatedEntry, false)  // 编辑不进觉察流
-      updateEntry({ id: editEntry.id, userId: user.id, fields })
-        .then(({ error }) => { if (error) console.error('[edit]', error) })
+      onDone?.(updatedEntry, false)
+
+      const entryId = editEntry.id
+      const userId = user.id
+      const filesToUpload = [...selectedFiles]
+      const existingPaths = [...imagePaths]
+      const notifyFn = onNotify
+
+      updateEntry({ id: entryId, userId, fields })
+        .then(async ({ error }) => {
+          if (error) { console.error('[edit]', error); return }
+          if (!filesToUpload.length) return
+          const newPaths = await Promise.all(
+            filesToUpload.map(f => uploadImage(f, userId, entryId))
+          )
+          const successPaths = newPaths.filter(Boolean)
+          const failedCount = newPaths.length - successPaths.length
+          if (successPaths.length > 0) {
+            await updateEntry({
+              id: entryId, userId,
+              fields: { image_urls: [...existingPaths, ...successPaths] },
+            })
+          }
+          if (failedCount > 0) notifyFn?.('图片上传失败，进入记录可重新添加')
+        })
+        .catch(console.error)
       return
     }
 
-    // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步 INSERT
+    // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步上传图片
     const optimisticEntry = {
       id: crypto.randomUUID(),
       user_id: user.id,
@@ -327,12 +426,38 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     clearDraft()
     const gotoAwareness = template.awarenessStart !== null
     setSaving(false)
-    onDone?.(optimisticEntry, gotoAwareness)  // 立即跳转，不等 DB
+    onDone?.(optimisticEntry, gotoAwareness)
 
-    // 后台写入 DB（fire-and-forget，用 optimisticEntry 里的 id）
+    const entryId = optimisticEntry.id
+    const userId = user.id
+    const filesToUpload = [...selectedFiles]
+    const notifyFn = onNotify
+
     insertEntry(optimisticEntry)
       .then(({ error }) => { if (error) console.error('[insert]', error) })
-  }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts, selectedPeople])
+
+    if (filesToUpload.length > 0) {
+      ;(async () => {
+        const paths = await Promise.all(
+          filesToUpload.map(f => uploadImage(f, userId, entryId))
+        )
+        const successPaths = paths.filter(Boolean)
+        const failedCount = paths.length - successPaths.length
+        if (successPaths.length > 0) {
+          await updateEntry({ id: entryId, userId, fields: { image_urls: successPaths } })
+        }
+        if (failedCount > 0) {
+          notifyFn?.('图片上传失败，进入记录可重新添加')
+          try {
+            const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
+            failed.push({ entryId, createdAt: Date.now() })
+            localStorage.setItem('image_upload_failed', JSON.stringify(failed))
+          } catch (_) {}
+        }
+      })()
+    }
+  }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts,
+      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
@@ -352,6 +477,57 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
     clearDraft()
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
   }, [content, saving, template, user, onDone])
+
+  // ── 图片选择 ──────────────────────────────────────────────────
+  const handleImageSelect = (e) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const remaining = MAX_IMAGES - totalImages
+    const toAdd = files.slice(0, remaining)
+    const newPreviews = toAdd.map(f => URL.createObjectURL(f))
+    setSelectedFiles(prev => [...prev, ...toAdd])
+    setSelectedPreviews(prev => [...prev, ...newPreviews])
+    e.target.value = ''
+  }
+
+  // ── 删除图片 ──────────────────────────────────────────────────
+  const handleDeleteImage = async (item) => {
+    if (item.type === 'path') {
+      await deleteImage(item.id)
+      setImagePaths(prev => prev.filter(p => p !== item.id))
+    } else {
+      const idx = item.fileIndex
+      URL.revokeObjectURL(selectedPreviews[idx])
+      setSelectedFiles(prev => prev.filter((_, i) => i !== idx))
+      setSelectedPreviews(prev => prev.filter((_, i) => i !== idx))
+    }
+  }
+
+  // ── 拖拽调序 ─────────────────────────────────────────────────
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = imageItems.findIndex(item => item.id === active.id)
+    const newIndex = imageItems.findIndex(item => item.id === over.id)
+    const reordered = arrayMove(imageItems, oldIndex, newIndex)
+    const newPaths = reordered.filter(it => it.type === 'path').map(it => it.id)
+    const newFileOrder = reordered.filter(it => it.type === 'file').map(it => it.fileIndex)
+    setImagePaths(newPaths)
+    setSelectedFiles(prev => newFileOrder.map(i => prev[i]))
+    setSelectedPreviews(prev => newFileOrder.map(i => prev[i]))
+  }
+
+  // ── 长按进入编辑态 ────────────────────────────────────────────
+  const handleImageTouchStart = () => {
+    touchTimerRef.current = setTimeout(() => setEditingImages(true), 500)
+  }
+  const handleImageTouchEnd = () => { clearTimeout(touchTimerRef.current) }
+
+  // ── @dnd-kit sensors ──────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  )
 
   // ── 渲染 ──────────────────────────────────────────────────────
   return (
@@ -585,6 +761,62 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
         })()}
       </div>
 
+      {/* ── 图片宫格（有图时渲染，位于输入区与底部浮动栏之间） ── */}
+      {imageItems.length > 0 && (
+        <div
+          style={{ padding: '4px 18px 2px' }}
+          onTouchStart={handleImageTouchStart}
+          onTouchEnd={handleImageTouchEnd}
+          onMouseLeave={() => clearTimeout(touchTimerRef.current)}
+          onClick={e => { if (e.target === e.currentTarget) setEditingImages(false) }}
+        >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={imageItems.map(it => it.id)} strategy={rectSortingStrategy}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+                {imageItems.map(item => (
+                  <SortableImageItem
+                    key={item.id}
+                    id={item.id}
+                    previewSrc={item.previewSrc}
+                    editingImages={editingImages}
+                    onDelete={() => handleDeleteImage(item)}
+                    onFullscreen={() => setFullscreenSrc(item.previewSrc)}
+                  />
+                ))}
+                {totalImages < MAX_IMAGES && !editingImages && (
+                  <label style={{
+                    aspectRatio: '1/1', borderRadius: 6,
+                    border: '1.5px dashed #c9a96e', background: 'none',
+                    color: '#c9a96e', fontSize: 20, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                      disabled={uploading} onChange={handleImageSelect} />
+                    ＋
+                  </label>
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+          <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>
+            长按拖动调序 · 最多{MAX_IMAGES}张
+          </div>
+        </div>
+      )}
+
+      {/* ── 全屏图片查看 ── */}
+      {fullscreenSrc && (
+        <div
+          onClick={() => setFullscreenSrc(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
+            zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img src={fullscreenSrc} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+        </div>
+      )}
+
       {/* ── 涉及的人 chip 区（浮动栏上方）── */}
       {/* ── 底部浮动栏（含人物 chip）── */}
       <div
@@ -595,6 +827,28 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter }) 
         }}
       >
         <div className="flex items-center gap-2">
+          {/* 最左：相机图标 */}
+          <label
+            style={{
+              cursor: totalImages >= MAX_IMAGES ? 'not-allowed' : 'pointer',
+              opacity: uploading || totalImages >= MAX_IMAGES ? 0.4 : 1,
+              flexShrink: 0,
+            }}
+          >
+            <input
+              type="file" accept="image/*" multiple
+              style={{ display: 'none' }}
+              disabled={uploading || totalImages >= MAX_IMAGES}
+              onChange={handleImageSelect}
+            />
+            <svg width="22" height="18" viewBox="0 0 22 18" fill="none"
+              stroke="#bbb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="4" width="20" height="13" rx="2.5"/>
+              <circle cx="11" cy="10.5" r="3.5"/>
+              <path d="M7.5 4L8.8 1.5h4.4L14.5 4"/>
+            </svg>
+          </label>
+
           {/* 左：✦ 深入觉察 + 语音 */}
           <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
             <button
