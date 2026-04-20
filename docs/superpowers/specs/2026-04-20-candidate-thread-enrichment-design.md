@@ -36,6 +36,16 @@
 
 ## §3 数据层改动
 
+### 3.0 数据库迁移（Task 0，必须先执行，阻塞实现）
+
+在 Supabase SQL Editor 执行：
+
+```sql
+ALTER TABLE threads ADD COLUMN trigger_source text;
+```
+
+> ⚠️ trigger_source 不在当前 threads 表结构中。不执行此迁移，代码 session insert({ trigger_source: 'review', ... }) 会报 `column does not exist` 错误，整条 thread 创建失败。
+
 ### 3.1 JSON schema 扩展（`prompts.js`）
 
 `getReviewLetterPrompt` 末尾的 JSON schema 改为：
@@ -68,6 +78,7 @@ prompt 里需说明：`related_entry_indices` 填的是上方日记摘要数组�
 |---|---|---|
 | `trigger_source` | `'review'` | 标识来源，CandidateDetailPage 用此字段判断标签 |
 | `arc_summary` | AI 返回的 `discovery_reason` | 发现理由 |
+| `arc_updated_at` | `new Date().toISOString()` | 与 threadService.js 写 arc_summary 的模式保持一致 |
 
 ### 3.3 thread_entries 新增行
 
@@ -107,13 +118,16 @@ await Promise.all(
 ```
 for each t in toCreate:
   1. insert thread → select id back
-  2. compute related entry ids: t.related_entry_indices → entries[i].id（过滤越界）
-  3. if related entry ids exist: batch insert thread_entries
+  2. compute related entry ids:
+       const relatedEntryIds = (t.related_entry_indices ?? [])
+         .filter(i => i >= 0 && i < entries.length)  // 过滤越界
+         .map(i => entries[i].id)                     // entries 与 prompt 传入的同一批对象，index 对齐
+  3. if relatedEntryIds.length > 0: batch insert thread_entries
 ```
 
 **错误处理：**
-- `arc_summary` / `trigger_source` 写入失败：不抛出，脉络已创建，只是少了展示字段，不影响核心功能
-- `thread_entries` 写入失败：console.error，不抛出，用户接受脉络后还可以通过 AI 召回补关联
+- thread INSERT 失败 → console.error，跳过这一条，继续串行循环下一条（thread 未创建，无中间态）
+- thread_entries INSERT 失败 → console.error，不抛出，thread 已创建，用户接受后可通过 AI 召回补关联
 
 ---
 

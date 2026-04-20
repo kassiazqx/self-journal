@@ -746,6 +746,35 @@ const isValidVocabWord = (word) =>
 
 ---
 
+### 4.36 threads 表缺少 trigger_source 列（需迁移）
+
+**风险：** `trigger_source` 字段不在当前 threads 表结构中（supabase-manual-sql.md 和 §3 均无此字段）。候选脉络补全 spec §3.2 要求写入 `trigger_source: 'review'`，若未执行迁移，代码 session 的 insert 会报 `column trigger_source does not exist`，整条 thread 创建失败。
+
+**必须先执行 Task 0 SQL：**
+```sql
+ALTER TABLE threads ADD COLUMN trigger_source text;
+```
+
+**字段语义：** open text 而非 enum，未来新来源（手动分析、AI 召回）不需要改约束。现有旧候选脉络 `trigger_source` 为 null，`CandidateDetailPage` 已有 `trigger_source === 'review'` 判断，null 时降级显示「手动分析」，无需回填。
+
+**关联 spec：** `docs/superpowers/specs/2026-04-20-candidate-thread-enrichment-design.md §3.0`
+
+---
+
+### 4.37 reviewLetterService.js Step 7 串行化原因
+
+**背景：** 当前 Step 7 用 `Promise.all` 并行 insert candidates，无法取回 thread id，因此无法写 `thread_entries`。
+
+**决策：** 改为 `for...of` 串行循环，每条 insert 后 `.select('id').single()` 取回 id，再 batch insert 对应的 `thread_entries`。
+
+**关联记录映射规则：** `related_entry_indices`（0-based，对应传入 prompt 的 entries 数组）→ 过滤越界 → `.map(i => entries[i].id)`。entries 数组与 prompt 构建时使用的同一批对象，index 天然对齐，无需二次查询。
+
+**错误处理分层：**
+- thread INSERT 失败 → console.error，跳过这一条，继续下一条（无中间态）
+- thread_entries INSERT 失败 → console.error，不影响 thread 已创建状态（可降级）
+
+---
+
 ## §5 后续扩展约束
 
 > 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。
@@ -830,6 +859,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-20 · 架构session · 审查候选脉络信息补全 spec：发现1个阻塞性问题（trigger_source 列缺失，必须 ALTER TABLE，已补 spec §3.0 Task 0）；2个建议（arc_updated_at 同步写入/错误处理措辞）；1个逻辑澄清（related_entry_indices 映射代码示例）；spec 已更新；新增§4.36（trigger_source 迁移）/§4.37（串行化+错误处理分层）
 - 2026-04-20 · 代码session · 图片上传批次 Tasks 5–6 完成：RecordsPage 缩略图+分页+筛选均含 image_urls / EntryCard 右侧缩略图+相机 SVG+计数 / 上传失败跨会话 Banner；EditEntryPage 图片编辑（加载/查看/删除/新增），删除采用两阶段提交（先写 DB 再删 Storage，见§4.35），handleSave 加 try/catch/finally；写作页 ✕ 按钮改为常驻显示，加指纹去重防重复选图；同步卡：docs/sync-cards/2026-04-20-image-upload-tasks5-6-sync.md
 - 2026-04-19 · 架构session · 审查图片上传 spec：发现5个待确认问题（Q1孤儿图片策略/Q2 deleteImage URL路径耦合/Q3 imageUrls草稿持久化/Q4移动端DnD兼容性/Q5失败返回约定）；新增§4.34（孤儿图片风险）；Q1/Q3/Q4需产品决策后才能开始实现；已更新spec §0A
 - 2026-04-19 · 代码session · code-reviewer 发现并修复：FilterBar「日期 ▾」chip 点击时未关闭人物/需求浮层，导致两个浮层同时展开；加两句 setShowPeopleMenu(false)/setShowCoreNeedsMenu(false)；同步卡：docs/sync-cards/2026-04-19-filterbar-calendar-chip-fix.md
