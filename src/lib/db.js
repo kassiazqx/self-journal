@@ -23,4 +23,7 @@ export const db = {
 
   // RPC 调用
   rpc: (fn, args) => supabase.rpc(fn, args),
+
+  // Storage（imageStorage.js 是唯一合法调用点，不要在 UI 组件里直接用）
+  storage: supabase.storage,
 }
