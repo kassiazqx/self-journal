@@ -728,6 +728,22 @@ const isValidVocabWord = (word) =>
 
 **关联：** 选方案 A 时，entryId 在上传前已存在（先保存 entry 拿 id 再上传），Q6 entryId 问题自然消解。选方案 B/C 时，新建 entry 需要客户端提前生成 UUID 并在保存时显式传入。
 
+**已实施：** 最终采用混合方案：
+- HomePage（新建）：乐观插入 entry → 后台异步上传 → 写回 image_urls（延迟上传）；失败写 localStorage 留 banner 提醒
+- EditEntryPage（编辑）：删除图片延迟到保存后执行（先写回 image_urls，再删 Storage），防止 Cancel 产生孤儿文件；上传新图在 handleSave 内同步完成
+
+---
+
+### 4.35 EditEntryPage 图片操作的两阶段提交
+
+**决策：** `handleDeleteExisting` 不立即删 Storage，而是把路径写入 `pathsToDeleteRef`（useRef），`handleSave` 在写回新的 `image_urls` 成功后才批量删。
+
+**为什么：** 若立即删 Storage，用户点「取消」后 DB 仍有旧路径（404），形成孤儿引用。两阶段顺序（写 DB → 删 Storage）确保任一步骤失败都不会丢数据：
+- 若 DB 写失败 → Storage 未删，旧状态完整保留
+- 若 Storage 删失败 → DB 已是最新，仅残留孤儿文件（可接受），不影响用户看到的内容
+
+**不要改成：** 立即删 Storage，或用 `useState` 存 pathsToDelete（会触发不必要重渲染）。
+
 ---
 
 ## §5 后续扩展约束
@@ -814,6 +830,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-20 · 代码session · 图片上传批次 Tasks 5–6 完成：RecordsPage 缩略图+分页+筛选均含 image_urls / EntryCard 右侧缩略图+相机 SVG+计数 / 上传失败跨会话 Banner；EditEntryPage 图片编辑（加载/查看/删除/新增），删除采用两阶段提交（先写 DB 再删 Storage，见§4.35），handleSave 加 try/catch/finally；写作页 ✕ 按钮改为常驻显示，加指纹去重防重复选图；同步卡：docs/sync-cards/2026-04-20-image-upload-tasks5-6-sync.md
 - 2026-04-19 · 架构session · 审查图片上传 spec：发现5个待确认问题（Q1孤儿图片策略/Q2 deleteImage URL路径耦合/Q3 imageUrls草稿持久化/Q4移动端DnD兼容性/Q5失败返回约定）；新增§4.34（孤儿图片风险）；Q1/Q3/Q4需产品决策后才能开始实现；已更新spec §0A
 - 2026-04-19 · 代码session · code-reviewer 发现并修复：FilterBar「日期 ▾」chip 点击时未关闭人物/需求浮层，导致两个浮层同时展开；加两句 setShowPeopleMenu(false)/setShowCoreNeedsMenu(false)；同步卡：docs/sync-cards/2026-04-19-filterbar-calendar-chip-fix.md
 - 2026-04-19 · 代码session · 修复「我的」Tab 切换不重置子页面：goTab('mine') 时自增 settingsResetKey，SettingsPage 加 key prop 强制重挂载，与 writeResetKey 模式一致；同步卡：docs/sync-cards/2026-04-19-settings-tab-reset-sync.md
