@@ -105,20 +105,18 @@ function SortableImageItem({ id, previewSrc, editingImages, onDelete, onFullscre
       onClick={() => { if (!editingImages) onFullscreen() }}
     >
       <img src={previewSrc} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-      {editingImages && (
-        <button
-          onPointerDown={e => e.stopPropagation()}
-          onClick={e => { e.stopPropagation(); onDelete() }}
-          style={{
-            position: 'absolute', top: 4, right: 4,
-            width: 18, height: 18, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.6)', color: 'white',
-            border: 'none', fontSize: 11, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            lineHeight: 1, zIndex: 1,
-          }}
-        >✕</button>
-      )}
+      <button
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => { e.stopPropagation(); onDelete() }}
+        style={{
+          position: 'absolute', top: 4, right: 4,
+          width: 18, height: 18, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.6)', color: 'white',
+          border: 'none', fontSize: 11, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          lineHeight: 1, zIndex: 1,
+        }}
+      >✕</button>
     </div>
   )
 }
@@ -482,8 +480,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const handleImageSelect = (e) => {
     const files = Array.from(e.target.files ?? [])
     if (!files.length) return
+    // 去重：用 name+size+lastModified 作指纹，过滤已选的同一张图
+    const existingKeys = new Set(selectedFiles.map(f => `${f.name}_${f.size}_${f.lastModified}`))
+    const deduped = files.filter(f => !existingKeys.has(`${f.name}_${f.size}_${f.lastModified}`))
     const remaining = MAX_IMAGES - totalImages
-    const toAdd = files.slice(0, remaining)
+    const toAdd = deduped.slice(0, remaining)
     const newPreviews = toAdd.map(f => URL.createObjectURL(f))
     setSelectedFiles(prev => [...prev, ...toAdd])
     setSelectedPreviews(prev => [...prev, ...newPreviews])

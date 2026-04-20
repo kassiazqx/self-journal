@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
+import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -39,6 +40,16 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState(null) // null = 加载中
   const [saving, setSaving] = useState(false)
+
+  // 图片：已有路径（从 entry.image_urls 初始化） + 新选文件
+  const [imagePaths, setImagePaths] = useState(entry.image_urls ?? [])
+  const [newFiles, setNewFiles] = useState([])
+  const [newPreviews, setNewPreviews] = useState([])
+  const [fullscreenImg, setFullscreenImg] = useState(null)
+  const MAX_IMAGES = 5
+  const totalImages = imagePaths.length + newFiles.length
+  // 延迟删除：保存时才真正删 Storage，Cancel 时不删（避免孤儿文件）
+  const pathsToDeleteRef = useRef([])
 
   // contentMap: { [msg.id]: string } 保存所有可编辑字段的当前值
   const [contentMap, setContentMap] = useState({})
@@ -75,45 +86,84 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     load()
   }, [entry.id])
 
+  // 卸载时释放 ObjectURL，防止内存泄漏
+  useEffect(() => {
+    return () => { newPreviews.forEach(url => URL.revokeObjectURL(url)) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 删除已有图片（记录路径，保存时才真正删 Storage）
+  function handleDeleteExisting(path) {
+    pathsToDeleteRef.current = [...pathsToDeleteRef.current, path]
+    setImagePaths(prev => prev.filter(p => p !== path))
+  }
+
+  // 删除新选图片（释放 ObjectURL）
+  function handleDeleteNew(idx) {
+    URL.revokeObjectURL(newPreviews[idx])
+    setNewFiles(prev => prev.filter((_, i) => i !== idx))
+    setNewPreviews(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // 选择新图片
+  function handleImageSelect(e) {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const existingKeys = new Set(newFiles.map(f => `${f.name}_${f.size}_${f.lastModified}`))
+    const deduped = files.filter(f => !existingKeys.has(`${f.name}_${f.size}_${f.lastModified}`))
+    const remaining = MAX_IMAGES - totalImages
+    const toAdd = deduped.slice(0, remaining)
+    const previews = toAdd.map(f => URL.createObjectURL(f))
+    setNewFiles(prev => [...prev, ...toAdd])
+    setNewPreviews(prev => [...prev, ...previews])
+    e.target.value = ''
+  }
+
   async function handleSave() {
     if (saving) return
     setSaving(true)
 
-    const hasFlow = messages && messages.length > 0
+    try {
+      const hasFlow = messages && messages.length > 0
 
-    if (!hasFlow) {
-      // 无觉察流：只更新 journal_entries.content，不碰 AI 字段
-      const newContent = (contentMap['__raw__'] ?? '').trim()
-      await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } })
-    } else {
-      // 有觉察流：更新两个地方，不碰 AI 字段
-      const updatedMessages = messages.map(msg => {
-        if (msg.id in contentMap) {
-          return { ...msg, content: contentMap[msg.id] }
-        }
-        return msg
-      })
+      if (!hasFlow) {
+        const newContent = (contentMap['__raw__'] ?? '').trim()
+        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } })
+      } else {
+        const updatedMessages = messages.map(msg => {
+          if (msg.id in contentMap) return { ...msg, content: contentMap[msg.id] }
+          return msg
+        })
+        const rawMsg = updatedMessages.find(m => m.nodeType === 'raw_entry')
+        const newContent = (rawMsg?.content ?? entry.content ?? '').trim()
+        await Promise.all([
+          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } }),
+          db.from('conversations').upsert(
+            { user_id: user.id, entry_id: entry.id, context_type: 'entry',
+              messages: updatedMessages, updated_at: new Date().toISOString() },
+            { onConflict: 'entry_id,context_type' }
+          ),
+        ])
+      }
 
-      const rawMsg = updatedMessages.find(m => m.nodeType === 'raw_entry')
-      const newContent = (rawMsg?.content ?? entry.content ?? '').trim()
+      // 上传新图片，写回 image_urls（含删除的路径不再写入，保证删除生效）
+      const uploadedPaths = newFiles.length > 0
+        ? (await Promise.all(newFiles.map(f => uploadImage(f, user.id, entry.id)))).filter(Boolean)
+        : []
+      const finalPaths = [...imagePaths, ...uploadedPaths]
+      await updateEntry({ id: entry.id, userId: user.id, fields: { image_urls: finalPaths } })
 
-      await Promise.all([
-        updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } }),
-        db.from('conversations').upsert(
-          {
-            user_id: user.id,
-            entry_id: entry.id,
-            context_type: 'entry',
-            messages: updatedMessages,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'entry_id,context_type' }
-        ),
-      ])
+      // image_urls 写回成功后，才真正删 Storage（防止孤儿文件）
+      if (pathsToDeleteRef.current.length > 0) {
+        await Promise.all(pathsToDeleteRef.current.map(p => deleteImage(p)))
+        pathsToDeleteRef.current = []
+      }
+
+      onDone?.()
+    } catch (err) {
+      console.error('[EditEntryPage handleSave]', err)
+    } finally {
+      setSaving(false)
     }
-
-    setSaving(false)
-    onDone?.()
   }
 
   const isLoading = messages === null
@@ -121,6 +171,18 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
       background: '#faf8f4' }}>
+
+      {fullscreenImg && (
+        <div
+          onClick={() => setFullscreenImg(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
+            zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img src={fullscreenImg} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+        </div>
+      )}
 
       {/* 顶部导航 */}
       <div style={{
@@ -242,6 +304,67 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
             return null
           })}
+
+          {/* ── 图片管理区 ── */}
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0ece4' }}>
+            <div style={{ fontSize: 11, color: '#bbb', marginBottom: 8 }}>图片</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+              {/* 已有图片 */}
+              {imagePaths.map((path) => (
+                <div key={path} style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden', position: 'relative' }}
+                  onClick={() => setFullscreenImg(getImageUrl(path))}>
+                  <img src={getImageUrl(path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDeleteExisting(path) }}
+                    style={{
+                      position: 'absolute', top: 4, right: 4,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', color: 'white',
+                      border: 'none', fontSize: 11, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >✕</button>
+                </div>
+              ))}
+
+              {/* 新选图片（未上传） */}
+              {newPreviews.map((src, idx) => (
+                <div key={`new-${idx}`} style={{ aspectRatio: '1/1', borderRadius: 6, overflow: 'hidden', position: 'relative' }}
+                  onClick={() => setFullscreenImg(src)}>
+                  <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDeleteNew(idx) }}
+                    style={{
+                      position: 'absolute', top: 4, right: 4,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', color: 'white',
+                      border: 'none', fontSize: 11, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >✕</button>
+                  <div style={{
+                    position: 'absolute', bottom: 2, left: 2,
+                    fontSize: 8, color: 'rgba(255,255,255,0.7)',
+                    background: 'rgba(0,0,0,0.4)', borderRadius: 3, padding: '1px 3px',
+                  }}>待上传</div>
+                </div>
+              ))}
+
+              {/* ＋ 格 */}
+              {totalImages < MAX_IMAGES && (
+                <label style={{
+                  aspectRatio: '1/1', borderRadius: 6,
+                  border: '1.5px dashed #c9a96e', background: 'none',
+                  color: '#c9a96e', fontSize: 20, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                    onChange={handleImageSelect} />
+                  ＋
+                </label>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
+import { getImageUrl } from '../lib/imageStorage'
 import { deleteEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { checkAndGenerateLetter } from '../lib/reviewLetterService'
@@ -55,6 +56,9 @@ function EntryCard({ entry, onOpen, onLongPress }) {
     onOpen(entry)
   }
 
+  const imageUrls = entry.image_urls ?? []
+  const hasThumbnail = imageUrls.length > 0
+
   return (
     <div
       onClick={handleClick}
@@ -69,35 +73,59 @@ function EntryCard({ entry, onOpen, onLongPress }) {
         marginBottom: 8, cursor: 'pointer',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         WebkitUserSelect: 'none', userSelect: 'none',
+        display: 'flex', gap: 10, alignItems: 'flex-start',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: 4 }}>
-        <span style={{ fontSize: 10, color: tpl.color, fontWeight: 500 }}>
-          {tpl.label}
-        </span>
-        <span style={{ fontSize: 10, color: '#ccc' }}>{formatTime(entry.created_at)}</span>
-      </div>
-      <div style={{
-        fontSize: 13, color: '#555', lineHeight: 1.6,
-        marginBottom: emotions.length ? 8 : 0,
-        display: '-webkit-box', WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical', overflow: 'hidden',
-      }}>
-        {preview}
-      </div>
-      {emotions.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {emotions.slice(0, 3).map(w => (
-            <span key={w} style={{
-              fontSize: 10, background: '#f0ece4', color: '#8a7a6a',
-              padding: '2px 7px', borderRadius: 10,
-            }}>{w}</span>
-          ))}
-          {emotions.length > 3 && (
-            <span style={{ fontSize: 10, color: '#bbb' }}>…</span>
-          )}
+      {/* 左侧文字区 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: tpl.color, fontWeight: 500 }}>
+            {tpl.label}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            {hasThumbnail && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#bbb' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+                {imageUrls.length}
+              </span>
+            )}
+            <span style={{ fontSize: 10, color: '#ccc' }}>{formatTime(entry.created_at)}</span>
+          </div>
         </div>
+        <div style={{
+          fontSize: 13, color: '#555', lineHeight: 1.6,
+          marginBottom: emotions.length ? 8 : 0,
+          display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>
+          {preview}
+        </div>
+        {emotions.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {emotions.slice(0, 3).map(w => (
+              <span key={w} style={{
+                fontSize: 10, background: '#f0ece4', color: '#8a7a6a',
+                padding: '2px 7px', borderRadius: 10,
+              }}>{w}</span>
+            ))}
+            {emotions.length > 3 && (
+              <span style={{ fontSize: 10, color: '#bbb' }}>…</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 右侧缩略图 */}
+      {hasThumbnail && (
+        <img
+          src={getImageUrl(imageUrls[0])}
+          alt=""
+          style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+        />
       )}
     </div>
   )
@@ -165,6 +193,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   const [filteredEntries, setFilteredEntries] = useState(null) // null = 无筛选，[] = 筛选结果空
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [uploadFailedBanner, setUploadFailedBanner] = useState(false)
+  const [uploadFailedCount, setUploadFailedCount] = useState(0)
 
   // pending_core_needs banner + 处理卡片
   const [pendingCount, setPendingCount]   = useState(0)
@@ -193,7 +223,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
 
     const [entriesRes, lettersRes] = await Promise.all([
       db.from('journal_entries')
-        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
+        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(0, ENTRY_PAGE - 1),
@@ -228,7 +258,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     loadingMoreRef.current = true
     setLoadingMore(true)
     const { data } = await db.from('journal_entries')
-      .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence')
+      .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(entryOffset, entryOffset + ENTRY_PAGE - 1)
@@ -249,6 +279,17 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
   }
 
   useEffect(() => { load() }, [load])
+
+  // 检查跨会话图片上传失败标记
+  useEffect(() => {
+    try {
+      const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
+      if (failed.length > 0) {
+        setUploadFailedCount(failed.length)
+        setUploadFailedBanner(true)
+      }
+    } catch (_) {}
+  }, [])
 
   // 加载 core_needs 词库（供「合并到已有词条」）
   useEffect(() => {
@@ -370,7 +411,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
     }
 
     let query = db.from('journal_entries')
-      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, people_involved, core_needs, template_type')
+      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, people_involved, core_needs, template_type, image_urls')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -448,6 +489,27 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onEdit }) {
             placeholder="搜索记录内容、认知、洞见…"
             showDate={true}
           />
+        )}
+
+        {/* 图片上传失败 Banner（跨会话持久化） */}
+        {uploadFailedBanner && (
+          <div style={{
+            background: '#fff8f0', border: '1px solid #f0d8b8',
+            borderRadius: 10, margin: '8px 14px 0',
+            padding: '10px 14px', display: 'flex',
+            justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span style={{ fontSize: 12, color: '#a07040' }}>
+              有{uploadFailedCount > 1 ? ` ${uploadFailedCount} 条` : ''}图片上传失败，进入记录重新添加
+            </span>
+            <button
+              onClick={() => {
+                localStorage.removeItem('image_upload_failed')
+                setUploadFailedBanner(false)
+              }}
+              style={{ background: 'none', border: 'none', color: '#bbb', fontSize: 16, cursor: 'pointer', padding: '0 4px' }}
+            >✕</button>
+          </div>
         )}
 
         {/* pending_core_needs 橙色 banner */}
