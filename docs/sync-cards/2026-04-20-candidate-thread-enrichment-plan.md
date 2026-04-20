@@ -166,6 +166,6 @@ for (const t of toCreate) {
 
 - `trigger_source` 列必须先迁移，否则 insert 整条失败（不是部分失败）
 - `arc_summary` 字段在 threads 表已存在（第二批已建），不需要迁移
-- `arc_updated_at` 字段需确认是否在 threads 表中存在；若不存在可省略，不影响核心功能
+- `arc_updated_at` 字段在 threads 表中已存在（第二批建表时新增），必须写入
 - 旧的候选脉络（已存在的）不回填，保持现状
 - `link` action 本次不处理，filter 只保留 `action === 'create'`（现状不变）

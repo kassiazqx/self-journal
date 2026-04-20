@@ -284,15 +284,20 @@ export function getReviewLetterPrompt(entriesSummary) {
 \`\`\`json
 {
   "suggested_threads": [
-    { "action": "link", "thread_id": "已有脉络的uuid或null", "thread_name": "脉络名称" },
-    { "action": "create", "thread_id": null, "thread_name": "建议新建的脉络名称" }
+    {
+      "action": "create",
+      "thread_id": null,
+      "thread_name": "建议新建的脉络名称",
+      "discovery_reason": "2-3句话说明为什么注意到这条模式，引用用户原文中的词或场景，不泛泛而谈",
+      "related_entry_indices": [0, 2]
+    }
   ]
 }
 \`\`\`
-action 说明：
-- "link" = 与已有脉络关联（thread_id 填已有脉络的 uuid）
-- "create" = 建议新建脉络候选（thread_id 填 null）
-如果没有可关联或建议新建的脉络，returned "suggested_threads": []
+字段说明：
+- discovery_reason：2-3句，引用用户原文中出现的词汇和场景，不泛泛而谈
+- related_entry_indices：上方日记摘要数组的序号（0-based，第0条 = 第1篇日记），可填多个
+如果没有可建议新建的脉络，返回 "suggested_threads": []
 
 以下是用户的日记摘要：
 

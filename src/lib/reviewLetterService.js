@@ -140,16 +140,48 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   // Step 7: 把 suggested_threads 写入 threads 表（创建 candidate 脉络）
   const toCreate = (insights.suggested_threads ?? [])
     .filter(t => t.action === 'create' && t.thread_name?.trim())
-  if (toCreate.length > 0) {
-    await Promise.all(
-      toCreate.map(t =>
-        db.from('threads').insert({
-          user_id: userId,
-          name: t.thread_name.trim(),
-          status: 'candidate',
-        })
+
+  for (const t of toCreate) {
+    // 1. 插入 thread，取回 id
+    const { data: newThread, error: threadErr } = await db.from('threads')
+      .insert({
+        user_id: userId,
+        name: t.thread_name.trim(),
+        status: 'candidate',
+        trigger_source: 'review',
+        arc_summary: t.discovery_reason?.trim() || null,
+        arc_updated_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single()
+
+    if (threadErr || !newThread) {
+      console.error('[reviewLetter] 候选脉络创建失败:', threadErr?.message)
+      continue  // 跳过这一条，不影响其他脉络
+    }
+
+    // 2. 计算关联 entry ids（过滤越界）
+    const relatedEntryIds = (t.related_entry_indices ?? [])
+      .filter(i => i >= 0 && i < entries.length)
+      .map(i => entries[i].id)
+
+    if (relatedEntryIds.length === 0) continue
+
+    // 3. 批量写入 thread_entries
+    const { error: teErr } = await db.from('thread_entries')
+      .insert(
+        relatedEntryIds.map(entryId => ({
+          thread_id: newThread.id,
+          entry_id: entryId,
+          added_by: 'ai',
+          removed_by_user: false,
+        }))
       )
-    )
+
+    if (teErr) {
+      console.error('[reviewLetter] thread_entries 写入失败:', teErr.message)
+      // 不抛出：thread 已创建，降级可接受
+    }
   }
 
   return true

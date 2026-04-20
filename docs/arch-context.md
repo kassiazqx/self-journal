@@ -859,6 +859,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-20 · 架构session · 审查 RecordDetail「编辑」入口迁移：header 按钮移至原始记录流标题行右侧 ✎；指出裸 span 触摸区仅 13×13px 违反 §8；修复：padding:6px 8px + margin:-6px -8px 补偿达 ~25×25px；onEdit 调用签名不变，无架构影响
+- 2026-04-20 · 代码session · 候选脉络信息补全 Tasks 1–2 完成：prompts.js getReviewLetterPrompt JSON schema 扩展（新增 discovery_reason/related_entry_indices，删除 link action）；reviewLetterService Step 7 由 Promise.all 改为 for...of 串行循环，insert 时写入 trigger_source/arc_summary/arc_updated_at，并根据 related_entry_indices 批量写 thread_entries；build 通过；因条目不足暂跳过 live 测试，待 generateLetterNow() 手动验证
 - 2026-04-20 · 架构session · 审查候选脉络信息补全 spec：发现1个阻塞性问题（trigger_source 列缺失，必须 ALTER TABLE，已补 spec §3.0 Task 0）；2个建议（arc_updated_at 同步写入/错误处理措辞）；1个逻辑澄清（related_entry_indices 映射代码示例）；spec 已更新；新增§4.36（trigger_source 迁移）/§4.37（串行化+错误处理分层）
 - 2026-04-20 · 代码session · 图片上传批次 Tasks 5–6 完成：RecordsPage 缩略图+分页+筛选均含 image_urls / EntryCard 右侧缩略图+相机 SVG+计数 / 上传失败跨会话 Banner；EditEntryPage 图片编辑（加载/查看/删除/新增），删除采用两阶段提交（先写 DB 再删 Storage，见§4.35），handleSave 加 try/catch/finally；写作页 ✕ 按钮改为常驻显示，加指纹去重防重复选图；同步卡：docs/sync-cards/2026-04-20-image-upload-tasks5-6-sync.md
 - 2026-04-19 · 架构session · 审查图片上传 spec：发现5个待确认问题（Q1孤儿图片策略/Q2 deleteImage URL路径耦合/Q3 imageUrls草稿持久化/Q4移动端DnD兼容性/Q5失败返回约定）；新增§4.34（孤儿图片风险）；Q1/Q3/Q4需产品决策后才能开始实现；已更新spec §0A
