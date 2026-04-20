@@ -58,14 +58,35 @@
 [取消]   [确认删除]
 ```
 
-确认后：
-1. 依次调 `deleteEntry` 删除所有选中条目
-2. 退出多选模式
-3. 刷新列表
+确认后执行顺序：
 
-> 📌 **未来兼容回收站**：届时改为软删除（设 `deleted_at`），确认文字改为「移入回收站」，本次不做，接口预留（统一走 `deleteEntry` 函数，届时只改该函数内部实现）
+```
+1. 收集所有选中 entry 的 image_urls（paths）
+2. 并发清理 Storage：await Promise.all(pathsToDelete.map(p => deleteImage(p)))
+   → deleteImage 失败只 console.error，不阻塞后续步骤（孤儿文件可接受降级）
+3. 单次批量 DB 删除：await deleteEntries({ ids: [...selectedIds], userId })
+4. 退出多选模式
+5. 刷新列表
+```
 
-### 1.4 涉及改动（RecordsPage.jsx）
+> 📌 **未来兼容回收站**：届时改 `deleteEntries` 内部为软删除（设 `deleted_at`），确认文字改为「移入回收站」，调用方不变
+
+### 1.4 涉及改动
+
+**`src/lib/journalService.js` — 新增批量删除函数：**
+
+```js
+export function deleteEntries({ ids, userId }) {
+  return db.from('journal_entries')
+    .delete()
+    .in('id', ids)
+    .eq('user_id', userId)   // RLS 双保险
+}
+```
+
+原子性：全删或全不删，不存在部分失败。`thread_entries` / `conversations` / `pending_core_needs` 的 CASCADE 在同一事务内执行，仍然正确。
+
+**`src/pages/RecordsPage.jsx`：**
 
 | 位置 | 改动 |
 |---|---|
@@ -74,11 +95,12 @@
 | 日期组标题 | 新增「全选当天」checkbox；计算当天是否全选/部分选 |
 | 顶部 header | 多选模式时替换为「取消 / 已选N条 / 删除」行 |
 | 长按 handler | `onLongPress` 改为调 `setIsSelecting(true)` + 把当前条目加入 `selectedIds` |
-| 删除确认 sheet | 新增，替换原来的单条确认弹窗（原弹窗逻辑可复用样式） |
+| FilterBar | 进入多选模式时自动收起 FilterBar（`setShowFilter(false)`），并清空当前筛选结果恢复全量视图，确保 `selectedIds` 始终与当前视图一致 |
+| 删除确认 sheet | 新增，替换原来的单条确认弹窗 |
 
 **不改动：**
-- `deleteEntry`（journalService.js）：逻辑不变
-- 时间流渲染逻辑、筛选逻辑、无限滚动逻辑：均不改
+- `deleteEntry`（journalService.js）：单条删除保留，供 RecordDetail 详情页删除使用
+- 时间流渲染逻辑、无限滚动逻辑：均不改
 
 ---
 
