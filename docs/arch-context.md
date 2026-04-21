@@ -782,6 +782,16 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 - thread INSERT 失败 → console.error，跳过这一条，继续下一条（无中间态）
 - thread_entries INSERT 失败 → console.error，不影响 thread 已创建状态（可降级）
 
+### 4.39 covered_by_letter_id 是回顾信去重的唯一来源（已确立，2026-04-21）
+
+**决策：** `generateReviewLetter` 和 `checkAndGenerateLetter` 均不使用时间范围过滤（`.gt('created_at', periodStart)` / `.lte('created_at', periodEnd)`），只依赖 `covered_by_letter_id IS NULL` 判断哪些条目未被覆盖。
+
+**原因：** 时间过滤会漏掉补记的旧日期条目——`created_at` 早于 `period_end` 但 `covered_by_letter_id` 仍为 NULL 的条目，在旧逻辑下被排除但实际未被覆盖。
+
+**去重保证：** Step 6 生成后立即回写 `covered_by_letter_id = letter.id`，只要回写成功，该批条目永远不会再被选中。回写失败仅影响下次计数，不影响信的内容正确性（已 console.error）。
+
+**规律：** 任何查询「未覆盖条目」的地方，过滤条件必须是 `.is('covered_by_letter_id', null)`，不加时间约束。
+
 ---
 
 ## §5 后续扩展约束
