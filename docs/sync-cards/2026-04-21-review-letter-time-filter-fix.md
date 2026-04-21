@@ -1,6 +1,6 @@
 # 同步卡：回顾信生成时间过滤器修复
 
-> **状态：⏳ 待实现**
+> **状态：✅ 已完成**（commit fa39d6f）
 > Plan：`docs/superpowers/plans/2026-04-21-review-letter-time-filter-fix.md`
 
 ---
