@@ -1,6 +1,6 @@
 # 同步卡：Bug 修复批次 · 架构审查
 
-> **状态：⏳ 待实现**
+> **状态：✅ 已实现（代码已存在，2026-04-21 确认）**
 > Plan：`docs/superpowers/plans/2026-04-21-bug-fixes-people-letter-time.md`
 
 ---
