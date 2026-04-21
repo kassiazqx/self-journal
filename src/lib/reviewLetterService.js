@@ -61,7 +61,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
   // Step 1: 取最近 6~8 条 covered_by_letter_id IS NULL 的 entry（排除随手记）
   const { data: entries } = await db.from('journal_entries')
-    .select('id, entry_summary, theme_hints, core_needs, created_at')
+    .select('id, content, full_conversation, entry_summary, current_thought, body_sensations, core_needs, cognitive_analysis, reflection_insight, created_at')
     .eq('user_id', userId)
     .is('covered_by_letter_id', null)
     .neq('template_type', 'freewrite')
@@ -89,19 +89,41 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
     // 重新读取，拿到最新摘要
     const { data: refreshed } = await db.from('journal_entries')
-      .select('id, entry_summary, theme_hints, core_needs, created_at')
+      .select('id, content, full_conversation, entry_summary, current_thought, body_sensations, core_needs, cognitive_analysis, reflection_insight, created_at')
       .in('id', entries.map(e => e.id))
       .order('created_at', { ascending: true })
     if (refreshed) entries.splice(0, entries.length, ...refreshed)
   }
 
-  // Step 3: 构建摘要数组传 AI（不传原始 content）
-  const entriesSummary = entries.map(e => ({
-    date: e.created_at.slice(0, 10),
-    entry_summary: e.entry_summary,
-    theme_hints: e.theme_hints,
-    core_needs: e.core_needs,
-  }))
+  // Step 3: 构建富内容数组传 AI（原文 + 觉察卡片答案 + 对话用户消息）
+  const entriesSummary = entries.map(e => {
+    const parts = []
+
+    // ① 原始日记全文
+    if (e.content) parts.push(`日记原文：\n${e.content}`)
+
+    // ② 觉察卡片用户填写的答案（有值才加）
+    const reflections = []
+    if (e.current_thought)    reflections.push(`当下念头：${e.current_thought}`)
+    if (e.body_sensations)    reflections.push(`身体感受：${e.body_sensations}`)
+    if (e.core_needs?.length) reflections.push(`核心需求：${e.core_needs.join('、')}`)
+    if (e.cognitive_analysis) reflections.push(`认知：${e.cognitive_analysis}`)
+    if (e.reflection_insight) reflections.push(`洞见：${e.reflection_insight}`)
+    if (reflections.length)   parts.push(reflections.join('\n'))
+
+    // ③ AI 对话里用户真实说的话（跳过第 0 条——那条是系统自动发的日记原文）
+    const userReplies = (e.full_conversation ?? [])
+      .filter(m => m.role === 'user')
+      .slice(1)
+      .map(m => m.content)
+      .filter(Boolean)
+    if (userReplies.length) parts.push(`对话中说的：\n${userReplies.join('\n')}`)
+
+    return {
+      date: e.created_at.slice(0, 10),
+      richContent: parts.join('\n\n'),
+    }
+  })
 
   const timeGreeting = getTimeGreeting()
   const prompt = getReviewLetterPrompt({ entriesSummary, timeGreeting })
