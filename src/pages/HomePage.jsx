@@ -19,7 +19,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
-import { insertEntry, updateEntry } from '../lib/journalService'
+import { insertEntry, updateEntry, fetchTodayGratitudeCount } from '../lib/journalService'
 import { Mic, MicOff } from 'lucide-react'
 import { db } from '../lib/db'
 import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
@@ -45,6 +45,19 @@ import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
+
+// ─── UUID 生成（兼容非安全上下文 http://192.168.x.x）──────────────
+// crypto.randomUUID() 需要 secure context，localhost 豁免但 LAN IP 不行。
+// getRandomValues() 在所有上下文均可用，用它生成合法 UUID v4。
+function generateUUID() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40  // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80  // variant
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
+}
 
 function saveDraft(content, templateId, selectedDatetime, manualOverride, dismissedPeople) {
   try {
@@ -131,6 +144,13 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   // 未读回顾信
   const [unreadLetter, setUnreadLetter] = useState(null)
   const [letterReadTimer, setLetterReadTimer] = useState(null)
+
+  // 今日感恩进度
+  const [gratitudeCount, setGratitudeCount] = useState(0)
+  useEffect(() => {
+    if (!user) return
+    fetchTodayGratitudeCount(user.id).then(({ count }) => setGratitudeCount(count ?? 0))
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -449,7 +469,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
     // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步上传图片
     const optimisticEntry = {
-      id: crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2)),
+      id: generateUUID(),
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
@@ -458,6 +478,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     }
 
     clearDraft()
+    clearTimeout(draftTimerRef.current)  // 防止 awareness 期间 timer 重写草稿
     const gotoAwareness = template.awarenessStart !== null
     setSaving(false)
     onDone?.(optimisticEntry, gotoAwareness)
@@ -468,7 +489,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     const notifyFn = onNotify
 
     insertEntry(optimisticEntry)
-      .then(({ error }) => { if (error) console.error('[insert]', error) })
+      .then(({ error }) => {
+        if (error) {
+          console.error('[insert]', error)
+          notifyFn?.('记录保存失败，请检查网络后重试')
+        }
+      })
 
     if (filesToUpload.length > 0) {
       ;(async () => {
@@ -708,18 +734,25 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             opacity: 0.5,
           }}
         />
-        <p
-          style={{
-            fontSize: '12px',
-            lineHeight: 1.65,
-            fontWeight: 400,
-            letterSpacing: '0.1px',
-            color: template.color,
-            opacity: 0.8,
-          }}
-        >
-          {template.guide}
-        </p>
+        <div>
+          <p
+            style={{
+              fontSize: '12px',
+              lineHeight: 1.65,
+              fontWeight: 400,
+              letterSpacing: '0.1px',
+              color: template.color,
+              opacity: 0.8,
+            }}
+          >
+            {template.guide}
+          </p>
+          {template.id === 'gratitude' && (
+            <div style={{ paddingTop: 5, fontSize: 13, color: template.color, opacity: 0.7, letterSpacing: '4px' }}>
+              {'●'.repeat(gratitudeCount)}{'○'.repeat(3 - gratitudeCount)}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}

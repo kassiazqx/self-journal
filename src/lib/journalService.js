@@ -59,3 +59,16 @@ export function deleteEntries({ ids, userId }) {
     .in('id', ids)
     .eq('user_id', userId)
 }
+
+// ─── 今日感恩条目数（最多计 3 条）──────────────────────────────
+export async function fetchTodayGratitudeCount(userId) {
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const { count, error } = await supabase
+    .from('journal_entries')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('template_type', 'gratitude')
+    .gte('created_at', todayStart.toISOString())
+  return { count: Math.min(count ?? 0, 3), error }
+}
