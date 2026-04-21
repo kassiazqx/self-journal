@@ -1,6 +1,6 @@
 # 同步卡：UI 小修复（取消按钮 / 顶栏固定 / API Key 自动填充）
 
-> **状态：⏳ 待实现**
+> **状态：✅ 已实现（commit 46c2d95，2026-04-21）**
 > Plan：`docs/superpowers/plans/2026-04-21-ui-fixes-cancel-sticky-apikey.md`
 
 ---
