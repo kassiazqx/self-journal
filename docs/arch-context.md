@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-21（完整数据备份导出：exportService.js 新建 + SettingsPage 导出 UI 重写）
+**最后更新：** 2026-04-21（回顾信脉络卡片 + 手机端保存修复：crypto.randomUUID 安全上下文兼容）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -292,6 +292,8 @@ src/
 │   │                           checkAndGenerateLetter: 仅按 count_threshold 计数触发（无时间过滤）
 │   │                           generateReviewLetter: 查全量未覆盖 entry（不过滤时间范围）
 │   │                           generateLetterNow: 手动立即生成，传 null 跳过时间限制
+│   │                           Step 7: for...of 串行写 threads + thread_entries；写入 review_letter_id 外键
+│   │                           AI 返回三种 JSON 格式均支持：```json、裸对象、裸数组
 │   ├── exportService.js        完整数据备份导出（新增 2026-04-21）
 │   │                           exportDataJson(userId)：8 表全量导出为 JSON 字符串
 │   │                           fetchImages(paths, {onProgress})：批量 3 并发下载图片 Blob
@@ -303,6 +305,7 @@ src/
 │   ├── extractSummaryService.js     摘要索引批量提取服务（maxTokens 已升至 1200，见4.28）
 │   ├── extractSummaryService.test.js
 │   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary + reAnalyzeThread
+│   │                                fetchThreadsByLetterId(letterId)：通过 review_letter_id 外键查候选脉络
 │   └── threadService.test.js
 ├── components/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
@@ -318,7 +321,9 @@ src/
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
-│   └── ReviewLetterDetail.jsx  回顾信详情（只读）
+│   └── ReviewLetterDetail.jsx  回顾信详情（只读 + 相关脉络卡片）
+│                               加载 fetchThreadsByLetterId 展示脉络卡片（三态：待确认/已接受/已忽略）
+│                               内嵌接受/忽略操作；点击跳转 CandidateDetailPage / ThreadDetailPage
 └── pages/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
@@ -451,6 +456,9 @@ threads：（第二批新增）
   - id, user_id, name, status('candidate'|'confirmed'|'archived'|'rejected')
     ⚠️ 新增 'rejected' 状态（候选被忽略，灰色保留，AI 不重复提议）
   - arc_summary, arc_updated_at, created_at, updated_at
+  - trigger_source: text（nullable，'review' 或 null/手动）
+  - review_letter_id: uuid → review_letters(id) ON DELETE SET NULL
+    ⚠️ 新增（2026-04-21），通过此外键 ReviewLetterDetail 加载该信关联的候选脉络
   - CHECK 约束需更新：加入 'rejected'
 
 thread_entries：（第二批新增，无 user_id，RLS 通过 threads 子查询）
@@ -803,9 +811,29 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 
 **规律：** 任何查询「未覆盖条目」的地方，过滤条件必须是 `.is('covered_by_letter_id', null)`，不加时间约束。
 
+### 4.40 crypto.randomUUID() 在非 HTTPS 环境（本地局域网）会抛出 TypeError（已修复）
+
+**根因：** `crypto.randomUUID()` 需要安全上下文（Secure Context）。`http://localhost` 被浏览器特殊处理为安全上下文，但 `http://192.168.x.x:port`（局域网 IP）不是安全上下文。直接调用会抛出 TypeError，使调用方 async 函数提前退出。
+
+**症状：** 手机通过局域网访问 Vite dev server 时，点 ✓ 后按钮永远显示「…」（`setSaving(false)` 从未执行）；电脑 localhost 正常，Vercel HTTPS 正常。
+
+**已修复（2026-04-21）：** `HomePage.jsx` 中 `crypto.randomUUID()` 改为 `crypto.randomUUID?.() ?? fallback`，与 `AwarenessFlow.jsx` 的安全写法保持一致。
+
+**规律：** 任何调用 Web Crypto API（randomUUID / subtle 等）的代码，必须用可选链（?.）或先检查 `globalThis.crypto?.randomUUID`，不能裸调用，防止在本地非 HTTPS 环境崩溃。
+
 ---
 
-## §5 后续扩展约束
+### 4.41 code review 和架构审查为何未发现 crypto.randomUUID 问题
+
+**原因一：** code review 只审 diff——`crypto.randomUUID()` 不是最近 diff 引入的改动，存在于更早的提交，每次 review 的 diff 里没有这一行，因此不在审查范围内。
+
+**原因二：** 这是运行时浏览器 API 兼容性问题，不是代码逻辑错误，静态分析/编译阶段无法发现。
+
+**原因三：** 同一项目内已有安全写法（AwarenessFlow.jsx），但不一致性未被对比发现。
+
+**预防机制：** 新增本条 §4.41 让代码 session 在写任何 Crypto API 调用时主动检查；§4.40 的「规律」行直接指导写法。
+
+---
 
 > 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。
 
@@ -889,6 +917,9 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-21 · 代码session · 回顾信详情页相关脉络卡片完成：threads 表加 review_letter_id 外键（ALTER TABLE 已执行）；threadService 新增 fetchThreadsByLetterId；reviewLetterService Step 7 写入 review_letter_id；ReviewLetterDetail 展示三态脉络卡片（内嵌接受/忽略）；修复 AI 返回裸数组格式时正文夹带 JSON 的问题；commit 105c3eb；同步卡：docs/sync-cards/2026-04-21-review-letter-threads-done.md
+- 2026-04-21 · 代码session · 修复手机端保存卡住：crypto.randomUUID() 在 http://192.168.x.x 非安全上下文下抛出 TypeError，setSaving(false) 从未执行，按钮永远显示「…」；改为 crypto.randomUUID?.() ?? fallback 与 AwarenessFlow 保持一致；commit 577a19d；新增架构规则：§4.40
+- 2026-04-21 · 代码session · 完整数据备份导出完成：新建 exportService.js（8 表全量 JSON + 批量图片下载 + JSZip 打包）；SettingsPage 导出 UI 重写（两阶段失败处理）；commit f606c1d；同步卡：docs/sync-cards/2026-04-21-full-export.md
 - 2026-04-21 · 代码session · 回顾信时间过滤修复：generateReviewLetter + checkAndGenerateLetter 统一删除 .gt('created_at', ...) 过滤，只看 covered_by_letter_id IS NULL；generateLetterNow 传 null 作 periodStart；commit fa39d6f；同步卡：docs/sync-cards/2026-04-21-review-letter-time-filter-fix.md
 - 2026-04-21 · 代码session · 回顾信生成修复（第二批）：①删除 generateReviewLetter + checkAndGenerateLetter 的时间范围过滤，统一改为只看 covered_by_letter_id IS NULL；②insights JSON 正则容错（兼容 ~~~json 和多反引号，加二次裸JSON清理）；③RecordsPage 改为 await checkAndGenerateLetter 再查列表，避免并发导致新信当次不可见；DB：threads 表新增 trigger_source text 列（ALTER TABLE 已执行）；commit fa39d6f 已 push main；同步卡：docs/sync-cards/2026-04-21-review-letter-fixes2.md
 - 2026-04-20 · 代码session · UI小批次优化完成：①RecordsPage 回顾信从时间流内嵌改为顶部固定卡片（有信/无信两态，点击跳列表），清理 latestUnreadLetter state；②MainLayout 两处 RecordsPage 补传 onOpenLetterList prop（漏传导致点击报 is not a function）；③HomePage 写作页键盘贴合：visualViewport resize监听，bottom=keyboardHeight-nav实测高度，bottom属性替代paddingBottom；④RecordDetail 编辑入口从 header 移到原始记录流 ✎，触摸区 padding+margin 补偿满足§8；⑤SettingsPage 回顾信频率切换修复：updateMemory 多传 user.id 导致UUID被spread为列名，改为 () => {} 只走localStorage；同步卡：docs/sync-cards/2026-04-20-ui-polish-batch-done.md
