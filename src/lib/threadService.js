@@ -2,6 +2,7 @@
 // 脉络 CRUD + 加权召回 + arc_summary 生成
 import { db } from './db'
 import { callAI } from './aiClient'
+import { buildThreadAnalysisPrompt } from './prompts'
 
 // ── 加权评分（纯函数）────────────────────────────────────────
 export function scoreEntryForThread(entry, thread) {
@@ -257,4 +258,80 @@ export async function fetchThreadsByLetterId(letterId) {
     return []
   }
   return data ?? []
+}
+
+// ── 生成脉络详情分析（碎片 + 此刻这里）────────────────────────
+// 用完整 content 字段（不用摘要），过滤 removed_by_user=true 的条目
+export async function generateThreadAnalysis(threadId, userId) {
+  const { data: rows, error: rowErr } = await db.from('thread_entries')
+    .select('removed_by_user, journal_entries(id, content, created_at)')
+    .eq('thread_id', threadId)
+    .order('added_at', { ascending: true })
+
+  if (rowErr) {
+    console.error('[generateThreadAnalysis] 读取条目失败:', rowErr.message)
+    return { error: rowErr }
+  }
+
+  const entries = (rows ?? [])
+    .filter(r => !r.removed_by_user && r.journal_entries?.content)
+    .map(r => ({
+      date: r.journal_entries.created_at.slice(0, 10).replace(/-/g, '/'),
+      content: r.journal_entries.content,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  if (entries.length === 0) return { error: new Error('无有效条目') }
+
+  const { data: thread, error: threadErr } = await db.from('threads')
+    .select('name')
+    .eq('id', threadId)
+    .eq('user_id', userId)
+    .single()
+
+  if (threadErr || !thread) return { error: threadErr }
+
+  const prompt = buildThreadAnalysisPrompt(thread.name, entries)
+  let raw
+  try {
+    raw = await callAI(
+      [{ role: 'user', content: prompt }],
+      '你是用户的内心陪伴者，帮助用户看见自己追踪的主题此刻在哪里。',
+      { maxTokens: 800 }
+    )
+  } catch (e) {
+    console.error('[generateThreadAnalysis] AI 调用失败:', e.message)
+    return { error: e }
+  }
+
+  let parsed
+  try {
+    const cleaned = raw.replace(/```json|```/g, '').trim()
+    const match = cleaned.match(/\{[\s\S]*\}/)
+    if (!match) throw new Error('未找到 JSON 对象')
+    parsed = JSON.parse(match[0])
+    if (!Array.isArray(parsed.fragments) || typeof parsed.current_state !== 'string') {
+      throw new Error('JSON 结构不符预期')
+    }
+  } catch (e) {
+    console.error('[generateThreadAnalysis] JSON 解析失败:', e.message, raw.slice(-300))
+    return { error: e }
+  }
+
+  const { error: saveErr } = await db.from('threads')
+    .update({
+      fragments: parsed.fragments,
+      current_state: parsed.current_state.trim(),
+      analysis_generated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', threadId)
+    .eq('user_id', userId)
+
+  if (saveErr) {
+    console.error('[generateThreadAnalysis] 存储失败:', saveErr.message)
+    return { error: saveErr }
+  }
+
+  return { fragments: parsed.fragments, current_state: parsed.current_state.trim(), error: null }
 }

@@ -356,3 +356,63 @@ ${THREAD_OUTPUT_INSTRUCTION}
 
 ${entriesText}`
 }
+
+// ─── 脉络详情分析 prompt ─────────────────────────────────────────
+// entries: [{ date: 'YYYY/MM/DD', content: string }]（全文，已过滤 removed_by_user）
+export function buildThreadAnalysisPrompt(threadName, entries) {
+  const entryCount = entries.length
+  const dates = entries.map(e => e.date).sort()
+  const dateRange = `${dates[0]}—${dates[dates.length - 1]}`
+
+  const entriesText = entries
+    .map(e => `[${e.date}]\n${e.content}`)
+    .join('\n\n---\n\n')
+
+  return `你会读到用户追踪「${threadName}」这条脉络的所有记录（${entryCount} 条，${dateRange}）。
+
+完成以下两件事，输出一个 JSON，不要解释：
+
+────────────────────────────────────
+【任务一：挑碎片】
+
+从记录里挑 2–5 句原句，标准：
+- 每句里有一个具体的发现、悖论、或行为转变
+- 句子之间不能说同一件事
+- 用原文，不改写，不截断到语义不完整
+
+────────────────────────────────────
+【任务二：写此刻这里】
+
+读完所有记录后，写 3–5 句话描述这条脉络「目前在哪里」——
+不是它经历了什么，而是此刻这个主题的状态和方向。
+
+必须做到：
+- 用试探性语言：「似乎」「好像」「目前」「可能」「也许」
+- 用用户自己写过的词或场景
+- 描述变化和方向，不描述固化特质
+
+绝对不能：
+- 「你是一个……的人」「你总是……」「你一直……」
+- 「这说明……」「这意味着……」「由此可见……」
+- 「建议你……」「你应该……」「你可以试试……」
+- 超过 5 句
+- 通用句（「你在成长」「你承受了很多」）
+
+如果记录只有 1–2 条：不要强行描述轨迹，只描述此刻看到的状态。
+如果记录跨度很长：聚焦最近几条，描述当下方向，不试图概括全部历史。
+
+────────────────────────────────────
+【输出格式】
+
+{
+  "fragments": [
+    { "quote": "原句", "date": "YYYY/MM/DD" },
+    { "quote": "原句", "date": "YYYY/MM/DD" }
+  ],
+  "current_state": "3–5句话，此刻这里。"
+}
+
+以下是记录：
+
+${entriesText}`
+}

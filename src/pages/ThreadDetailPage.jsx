@@ -9,9 +9,9 @@ import {
   fetchThreadWithEntries,
   updateThread,
   deleteThread,
-  refreshArcSummary,
   addEntryToThread,
   reAnalyzeThread,
+  generateThreadAnalysis,
 } from '../lib/threadService'
 import FilterBar from '../components/FilterBar'
 import { loadContacts } from '../lib/contactsService'
@@ -48,7 +48,6 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const loadingRef = useRef(false)      // 同步锁，防止并发加载
-  const [arcStale, setArcStale] = useState(false)  // 编辑后 arc_summary 过期
   // FilterBar 筛选条件（编辑模式用）
   const [filterConditions, setFilterConditions] = useState(null) // null = 未激活，object = 激活
   const [categoryOptions, setCategoryOptions] = useState([])
@@ -59,8 +58,9 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [reanalyzing, setReanalyzing] = useState(false)
   const [reanalyzeToast, setReanalyzeToast] = useState('')
 
-  // arc_summary 刷新
-  const [refreshing, setRefreshing] = useState(false)
+  // 脉络分析
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState('')
 
   // 归档确认弹窗
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
@@ -107,15 +107,18 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     setEditingName(false)
   }
 
-  // ── arc_summary 刷新 ──────────────────────────────────────────
-  async function handleRefreshArc() {
-    if (refreshing) return
-    setRefreshing(true)
-    await refreshArcSummary(thread.id, user.id)
-    const { thread: t } = await fetchThreadWithEntries(thread.id)
-    if (t) setThread(t)
-    setArcStale(false)
-    setRefreshing(false)
+  // ── 生成脉络分析（碎片 + 此刻这里）────────────────────────────
+  async function handleGenerateAnalysis() {
+    if (analyzing) return
+    setAnalyzing(true)
+    setAnalyzeError('')
+    const { fragments, current_state, error } = await generateThreadAnalysis(thread.id, user.id)
+    if (error) {
+      setAnalyzeError('分析失败，请检查网络后重试')
+    } else {
+      setThread(prev => ({ ...prev, fragments, current_state }))
+    }
+    setAnalyzing(false)
   }
 
   // ── 编辑关联记录：加载默认列表（按时间倒序，每页 30 条）─────
@@ -252,7 +255,6 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       .eq('entry_id', entryId)
     setEntries(prev => prev.filter(e => e.id !== entryId))
     setRawEntries(prev => prev.map(r => r.entry_id === entryId ? { ...r, removed_by_user: true } : r))
-    setArcStale(true)
   }
 
   // ── 编辑关联记录：添加 ────────────────────────────────────────
@@ -262,7 +264,6 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     setRawEntries(prev => [...prev, { thread_id: thread.id, entry_id: entry.id, added_by: 'user', removed_by_user: false, journal_entries: entry }])
     setSearchResults(prev => prev.filter(e => e.id !== entry.id))
     setDefaultEntries(prev => prev.filter(e => e.id !== entry.id))
-    setArcStale(true)
   }
 
   // ── 重新分析 ──────────────────────────────────────────────────
@@ -351,7 +352,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                   {[
                     { label: '✏️ 编辑名称', action: () => { setShowMenu(false); setEditingName(true); setNameInput(thread.name) }, color: '#333' },
                     { label: '📝 编辑关联记录', action: () => { setShowMenu(false); setEditingEntries(true) }, color: '#333' },
-                    { label: reanalyzing ? '🔄 分析中…' : '🔄 重新分析', action: handleReAnalyze, color: '#333' },
+                    { label: reanalyzing ? '🔍 查找中…' : '🔍 查找新记录', action: handleReAnalyze, color: '#333' },
                     { label: '📁 归档', action: () => { setShowMenu(false); setShowArchiveConfirm(true) }, color: '#e07850' },
                     { label: '🗑️ 删除', action: () => { setShowMenu(false); setShowDeleteConfirm(true) }, color: '#e05252' },
                   ].map((item, i) => (
@@ -496,44 +497,55 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
         {/* ── 正常查看模式：变化轨迹 + 关联记录 ── */}
         {!editingEntries && (<>
 
-        {/* arc_summary 区 */}
-        <div style={{ background: isArchived ? '#f5f3ef' : '#fffdf8', border: '1px solid #f0e8d4', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500 }}>变化轨迹</span>
-            {!isArchived && thread?.arc_updated_at && (
-              <span style={{ fontSize: 10, color: '#ccc' }}>AI 生成轨迹 · {formatDate(thread.arc_updated_at)}</span>
-            )}
-          </div>
-          {/* arc_summary 过期警告 */}
-          {arcStale && !isArchived && (
-            <div style={{ fontSize: 12, color: '#e07850', marginBottom: 8 }}>
-              ⚠ 关联记录已更改，AI 轨迹摘要尚未更新
-              <button onClick={handleRefreshArc} disabled={refreshing}
-                style={{ marginLeft: 8, color: '#c9a96e', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>
-                {refreshing ? '生成中…' : '点击重新生成轨迹 ›'}
-              </button>
-            </div>
-          )}
-          {thread?.arc_summary ? (
-            <div style={{ fontSize: 13, color: isArchived ? '#888' : '#555', lineHeight: 1.75 }}>
-              {thread.arc_summary}
-            </div>
+        {/* ── 一些碎片 ── */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 12 }}>一些碎片</div>
+          {thread.fragments?.length > 0 ? (
+            thread.fragments.map((f, i) => (
+              <div key={i} style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 14, color: '#444', lineHeight: 1.8, fontStyle: 'italic' }}>
+                  「{f.quote}」
+                </div>
+                <div style={{ fontSize: 11, color: '#bbb', textAlign: 'right', marginTop: 3 }}>
+                  {f.date}
+                </div>
+              </div>
+            ))
           ) : (
             <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65 }}>
-              {entries.length < 2 ? '关联 2 条以上记录后可生成变化轨迹' : '点击右上角「···」→「🔄 重新分析」生成变化轨迹'}
+              {analyzing ? '分析中…' : entries.length === 0 ? '关联记录后可生成分析' : '点击下方「开始分析」生成'}
             </div>
-          )}
-          {!arcStale && !isArchived && (
-            <button onClick={handleRefreshArc} disabled={refreshing || entries.length < 2}
-              style={{ marginTop: 8, fontSize: 11, color: refreshing ? '#ccc' : '#c9a96e', background: 'none', border: 'none', cursor: entries.length >= 2 && !refreshing ? 'pointer' : 'default', padding: 0 }}>
-              {refreshing ? '生成中…' : entries.length >= 2 ? '↻ 更新轨迹' : ''}
-            </button>
           )}
         </div>
 
-        {/* 关联记录列表 */}
+        {/* ── 此刻这里 ── */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 10 }}>此刻这里</div>
+          {thread.current_state ? (
+            <>
+              <div style={{ fontSize: 14, color: '#444', lineHeight: 1.85 }}>
+                {thread.current_state}
+              </div>
+              {thread.analysis_generated_at && (
+                <div style={{ fontSize: 10, color: '#ccc', marginTop: 8, textAlign: 'right' }}>
+                  AI 生成 · {new Date(thread.analysis_generated_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65 }}>
+              {analyzing ? '分析中…' : entries.length === 0 ? '关联记录后可生成分析' : '点击下方「开始分析」生成'}
+            </div>
+          )}
+        </div>
+
+        {analyzeError && (
+          <div style={{ fontSize: 12, color: '#e05252', marginBottom: 12 }}>{analyzeError}</div>
+        )}
+
+        {/* 走过的路 */}
         <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
-          关联记录（{entries.length}）
+          走过的路（{entries.length} 条）
         </div>
         {loading ? (
           <div style={{ textAlign: 'center', color: '#ccc', fontSize: 13, paddingTop: 16 }}>加载中…</div>
@@ -558,6 +570,23 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
         ))}
         </>)}
       </div>
+
+      {/* 分析按钮（非归档态，有条目时显示） */}
+      {!isArchived && entries.length > 0 && (
+        <div style={{ padding: '10px 18px 16px', background: '#faf8f4', borderTop: '1px solid #ede9e2', flexShrink: 0 }}>
+          <button
+            onClick={handleGenerateAnalysis}
+            disabled={analyzing}
+            style={{
+              width: '100%', padding: '12px', borderRadius: 10,
+              border: '1px solid #f0e4cc', background: analyzing ? '#f5f3ef' : 'white',
+              color: analyzing ? '#ccc' : '#c9a96e', fontSize: 14, cursor: analyzing ? 'default' : 'pointer',
+            }}
+          >
+            {analyzing ? '分析中…' : thread.fragments ? '重新分析' : '开始分析'}
+          </button>
+        </div>
+      )}
 
       {/* 归档态底部固定操作栏 */}
       {isArchived && (
