@@ -58,14 +58,9 @@
 
 **去掉：** `type: 'days'` + `day_interval` 字段不再出现在 UI。
 
-**数据层影响：** `letterPrefs` 对象里 `type` 和 `day_interval` 字段依然存在于 `reviewLetterService.js` 的 `checkAndGenerateLetter` 逻辑中。**现有已保存了 `type: 'days'` 的用户**：打开 SettingsPage 后会加载到 `days`，但 UI 里没有这个选项，radio 都不选中（外观异常）。
+**数据层影响：** `checkAndGenerateLetter` 里的 `days` 分支逻辑保留不动（后续可单独清理）。
 
-**⚠️ 建议处理方式：** 加载 prefs 后，若 `type === 'days'`，自动 fallback 为 `{ type: 'count', count_threshold: 10 }`。
-
-**实现：** 在 Task 3 Step 3 的 `.then(prefs => ...)` 里加一行：
-```js
-if (prefs.type === 'days') prefs = { ...prefs, type: 'count' }
-```
+**历史数据风险：** 无。默认值一直是 `type: 'count'`，该选项从未被用户实际选中并保存，不存在已存储 `type: 'days'` 的数据，**不需要 fallback 处理**。
 
 ---
 
@@ -91,5 +86,5 @@ if (prefs.type === 'days') prefs = { ...prefs, type: 'count' }
 
 ## 四、实施前确认清单
 
-- [ ] **§D** 已确认：加载 `type: 'days'` 时自动 fallback 为 `count`（已写入 plan Task 3）
+- [x] **§D** 确认：`type: 'days'` 从未被保存，无历史数据冲突，不需要 fallback 代码
 - [ ] 所有改动均在已有文件内，无新表、无新 API、无 schema 变更
