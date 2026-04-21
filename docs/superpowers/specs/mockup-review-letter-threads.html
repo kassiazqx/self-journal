@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回顾信「相关 threads」设计看板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f0ebe3;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 40px;
+    padding: 40px 24px;
+    font-family: -apple-system, 'PingFang SC', sans-serif;
+    flex-wrap: wrap;
+    min-height: 100vh;
+  }
+
+  .label {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 12px;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  /* 手机外壳 */
+  .phone {
+    width: 375px;
+    height: 780px;
+    background: #faf8f4;
+    border-radius: 40px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.08);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 状态栏 */
+  .status-bar {
+    height: 44px;
+    background: #faf8f4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    flex-shrink: 0;
+  }
+  .status-bar .time { font-size: 15px; font-weight: 600; color: #333; }
+  .status-bar .icons { font-size: 12px; color: #555; letter-spacing: 2px; }
+
+  /* 顶部导航 */
+  .nav {
+    height: 48px;
+    background: #faf8f4;
+    border-bottom: 1px solid #ede9e2;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .nav-back { font-size: 18px; color: #c9a96e; cursor: pointer; }
+  .nav-title { font-size: 16px; font-weight: 600; color: #333; }
+
+  /* 滚动内容区 */
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 0 40px;
+  }
+  .scroll-area::-webkit-scrollbar { display: none; }
+
+  /* 信件正文区（截取底部） */
+  .letter-body {
+    padding: 20px 20px 0;
+    font-size: 14px;
+    color: #555;
+    line-height: 1.85;
+  }
+  .letter-fade {
+    height: 40px;
+    background: linear-gradient(to bottom, transparent, #faf8f4);
+    margin-top: -40px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* 分割线 */
+  .divider {
+    margin: 16px 20px;
+    border: none;
+    border-top: 1px solid #ede9e2;
+  }
+
+  /* 相关 threads 区 */
+  .section-title {
+    font-size: 11px;
+    color: #aaa;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    padding: 0 20px;
+    margin-bottom: 12px;
+  }
+
+  /* Thread 卡片 */
+  .thread-card {
+    margin: 0 16px 10px;
+    background: white;
+    border-radius: 14px;
+    border: 1px solid #ede9e2;
+    padding: 14px 14px 0;
+    overflow: hidden;
+  }
+
+  .thread-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .thread-status-badge {
+    font-size: 10px;
+    color: #c9a96e;
+    background: #fdf5e6;
+    border: 1px solid #f0e4cc;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .thread-status-badge.accepted {
+    color: #6aaa6a;
+    background: #f0faf0;
+    border-color: #c8e6c8;
+  }
+
+  .thread-status-badge.ignored {
+    color: #bbb;
+    background: #f5f5f5;
+    border-color: #e0e0e0;
+  }
+
+  .thread-reason {
+    font-size: 12px;
+    color: #888;
+    line-height: 1.65;
+    margin-bottom: 12px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 操作按钮行 */
+  .thread-actions {
+    display: flex;
+    border-top: 1px solid #f0ece6;
+    margin: 0 -14px;
+  }
+
+  .btn-ignore {
+    flex: 1;
+    height: 42px;
+    background: none;
+    border: none;
+    border-right: 1px solid #f0ece6;
+    font-size: 13px;
+    color: #bbb;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .btn-accept {
+    flex: 1;
+    height: 42px;
+    background: none;
+    border: none;
+    font-size: 13px;
+    color: #c9a96e;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  /* 已操作状态 */
+  .thread-card.accepted-card {
+    border-color: #d4edda;
+    background: #f8fdf8;
+  }
+
+  .thread-card.ignored-card {
+    border-color: #e8e8e8;
+    background: #fafafa;
+    opacity: 0.7;
+  }
+
+  .thread-card.ignored-card .thread-name { color: #aaa; }
+  .thread-card.ignored-card .thread-reason { color: #bbb; }
+
+  .thread-done-row {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    border-top: 1px solid #f0ece6;
+    margin: 0 -14px;
+  }
+  .thread-done-row.accepted { color: #6aaa6a; }
+  .thread-done-row.ignored { color: #ccc; }
+
+  /* 全部完成 提示 */
+  .all-done {
+    margin: 4px 16px 0;
+    font-size: 12px;
+    color: #bbb;
+    text-align: center;
+    padding: 8px 0;
+  }
+
+  /* 方案标签 */
+  .variant-label {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    font-size: 10px;
+    background: #333;
+    color: white;
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── 方案 A：有两张待确认 + 一张已接受 ─── -->
+<div>
+  <div class="label">方案 A · 混合状态（有已操作 + 待操作）</div>
+  <div class="phone">
+    <div class="variant-label">A</div>
+    <div class="status-bar">
+      <span class="time">9:41</span>
+      <span class="icons">▲ ◆ ▬</span>
+    </div>
+    <div class="nav">
+      <span class="nav-back">‹</span>
+      <span class="nav-title">回顾信</span>
+    </div>
+    <div class="scroll-area">
+      <div class="letter-body">
+        <p>……这段时间你一直在用文字陪伴自己。有时候你用很克制的语言描述很深的感受，这让我想停下来，多看你一眼。</p>
+        <p style="margin-top:12px">不是因为你有什么问题，而是因为你在认真地对待自己的内心，这件事本身已经很有力量了。</p>
+      </div>
+      <div class="letter-fade"></div>
+
+      <hr class="divider">
+      <div class="section-title">AI 发现的规律 · 相关脉络</div>
+
+      <!-- 待确认 1 -->
+      <div class="thread-card">
+        <div class="thread-name">
+          与伴侣的沟通困境
+          <span class="thread-status-badge">待确认</span>
+        </div>
+        <div class="thread-reason">这几篇日记里你多次写到说了却没被听见、或者不知道该不该说。这种"说与不说"的拉扯，像是你们之间一个反复出现的模式。</div>
+        <div class="thread-actions">
+          <button class="btn-ignore">忽略</button>
+          <button class="btn-accept">接受脉络</button>
+        </div>
+      </div>
+
+      <!-- 待确认 2 -->
+      <div class="thread-card">
+        <div class="thread-name">
+          对「被看见」的渴望
+          <span class="thread-status-badge">待确认</span>
+        </div>
+        <div class="thread-reason">你几次写到希望对方能注意到你的情绪，但同时又担心"太脆弱"——这个内心需求值得单独记录下来。</div>
+        <div class="thread-actions">
+          <button class="btn-ignore">忽略</button>
+          <button class="btn-accept">接受脉络</button>
+        </div>
+      </div>
+
+      <!-- 已接受 -->
+      <div class="thread-card accepted-card">
+        <div class="thread-name">
+          工作压力的身体信号
+          <span class="thread-status-badge accepted">已接受</span>
+        </div>
+        <div class="thread-reason">你提到头疼、睡不好、身体紧绷——这些身体反应跟工作高压时间点高度重合。</div>
+        <div class="thread-done-row accepted">✓ 已加入脉络追踪</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ─── 方案 B：全部待确认，紧凑版 ─── -->
+<div>
+  <div class="label">方案 B · 全部待确认（3 条）</div>
+  <div class="phone">
+    <div class="variant-label">B</div>
+    <div class="status-bar">
+      <span class="time">9:41</span>
+      <span class="icons">▲ ◆ ▬</span>
+    </div>
+    <div class="nav">
+      <span class="nav-back">‹</span>
+      <span class="nav-title">回顾信</span>
+    </div>
+    <div class="scroll-area">
+      <div class="letter-body">
+        <p>……这段时间你一直在用文字陪伴自己。有时候你用很克制的语言描述很深的感受，这让我想停下来，多看你一眼。</p>
+        <p style="margin-top:12px">不是因为你有什么问题，而是因为你在认真地对待自己的内心，这件事本身已经很有力量了。</p>
+      </div>
+      <div class="letter-fade"></div>
+
+      <hr class="divider">
+      <div class="section-title">AI 发现的规律 · 相关脉络</div>
+
+      <div class="thread-card">
+        <div class="thread-name">
+          与伴侣的沟通困境
+          <span class="thread-status-badge">待确认</span>
+        </div>
+        <div class="thread-reason">这几篇日记里你多次写到说了却没被听见，像是你们之间一个反复出现的模式。</div>
+        <div class="thread-actions">
+          <button class="btn-ignore">忽略</button>
+          <button class="btn-accept">接受脉络</button>
+        </div>
+      </div>
+
+      <div class="thread-card">
+        <div class="thread-name">
+          对「被看见」的渴望
+          <span class="thread-status-badge">待确认</span>
+        </div>
+        <div class="thread-reason">你几次写到希望对方能注意到你的情绪，但同时又担心"太脆弱"。</div>
+        <div class="thread-actions">
+          <button class="btn-ignore">忽略</button>
+          <button class="btn-accept">接受脉络</button>
+        </div>
+      </div>
+
+      <div class="thread-card">
+        <div class="thread-name">
+          工作压力的身体信号
+          <span class="thread-status-badge">待确认</span>
+        </div>
+        <div class="thread-reason">你提到头疼、睡不好——这些身体反应跟工作高压时间点高度重合。</div>
+        <div class="thread-actions">
+          <button class="btn-ignore">忽略</button>
+          <button class="btn-accept">接受脉络</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ─── 方案 C：全部已操作完 ─── -->
+<div>
+  <div class="label">方案 C · 全部已处理完</div>
+  <div class="phone">
+    <div class="variant-label">C</div>
+    <div class="status-bar">
+      <span class="time">9:41</span>
+      <span class="icons">▲ ◆ ▬</span>
+    </div>
+    <div class="nav">
+      <span class="nav-back">‹</span>
+      <span class="nav-title">回顾信</span>
+    </div>
+    <div class="scroll-area">
+      <div class="letter-body">
+        <p>……这段时间你一直在用文字陪伴自己。有时候你用很克制的语言描述很深的感受，这让我想停下来，多看你一眼。</p>
+        <p style="margin-top:12px">不是因为你有什么问题，而是因为你在认真地对待自己的内心，这件事本身已经很有力量了。</p>
+      </div>
+      <div class="letter-fade"></div>
+
+      <hr class="divider">
+      <div class="section-title">AI 发现的规律 · 相关脉络</div>
+
+      <div class="thread-card accepted-card">
+        <div class="thread-name">
+          与伴侣的沟通困境
+          <span class="thread-status-badge accepted">已接受</span>
+        </div>
+        <div class="thread-reason">这几篇日记里你多次写到说了却没被听见，像是你们之间一个反复出现的模式。</div>
+        <div class="thread-done-row accepted">✓ 已加入脉络追踪</div>
+      </div>
+
+      <div class="thread-card ignored-card">
+        <div class="thread-name">
+          对「被看见」的渴望
+          <span class="thread-status-badge ignored">已忽略</span>
+        </div>
+        <div class="thread-reason">你几次写到希望对方能注意到你的情绪，但同时又担心"太脆弱"。</div>
+        <div class="thread-done-row ignored">已忽略，不再追踪</div>
+      </div>
+
+      <div class="thread-card accepted-card">
+        <div class="thread-name">
+          工作压力的身体信号
+          <span class="thread-status-badge accepted">已接受</span>
+        </div>
+        <div class="thread-reason">你提到头疼、睡不好——这些身体反应跟工作高压时间点高度重合。</div>
+        <div class="thread-done-row accepted">✓ 已加入脉络追踪</div>
+      </div>
+
+      <div class="all-done">全部脉络已处理 · 可在「洞察」Tab 查看</div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
