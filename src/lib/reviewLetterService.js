@@ -101,19 +101,23 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   )
 
   // Step 4: 提取末尾 JSON（兼容 AI 输出的各种格式）
-  // 策略：依次尝试三种格式，任一匹配即解析
-  //   格式A: ```json ... ``` 或 ~~~json ... ~~~
-  //   格式B: { "suggested_threads": [...] }  裸对象
-  //   格式C: [ { "action": ... } ]            AI 直接返回裸数组（不套对象）
-  const fencedMatch = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
-  const objectMatch = rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})\s*$/)
-  const arrayMatch  = rawLetter.match(/(\[[\s\S]*"thread_name"[\s\S]*\])\s*$/)
+  // 策略：依次尝试四种格式，任一匹配即解析
+  //   格式A: ```json ... ``` 或 ~~~json ... ~~~（含 json 标签）
+  //   格式A2: ``` ... ``` 或 ~~~  ... ~~~（不含 json 标签，直接包裹数组/对象）
+  //   格式B: { "suggested_threads": [...] }  裸对象（至字符串末尾）
+  //   格式C: [ { "action": ... } ]            AI 直接返回裸数组（至字符串末尾，末尾可能跟 ``` 等杂质）
+  const fencedMatch  = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
+  const fencedMatch2 = rawLetter.match(/(?:```+|~~~+)\s*(\[[\s\S]*"thread_name"[\s\S]*?\])[\s\S]*?(?:```+|~~~+)/)
+  const objectMatch  = rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})[\s\S]*$/)
+  const arrayMatch   = rawLetter.match(/(\[[\s\S]*"thread_name"[\s\S]*\])/)
 
   let insights = { suggested_threads: [] }
   let rawJsonStr = null
 
   if (fencedMatch) {
     rawJsonStr = fencedMatch[1]
+  } else if (fencedMatch2) {
+    rawJsonStr = fencedMatch2[1]
   } else if (objectMatch) {
     rawJsonStr = objectMatch[1]
   } else if (arrayMatch) {
@@ -122,7 +126,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
   if (rawJsonStr) {
     try {
-      const parsed = JSON.parse(rawJsonStr)
+      const parsed = JSON.parse(rawJsonStr.trim())
       // 格式C：AI 直接返回数组，需包装成标准结构
       if (Array.isArray(parsed)) {
         insights = { suggested_threads: parsed }
@@ -131,17 +135,21 @@ async function generateReviewLetter(userId, periodStart, prefs) {
       }
     } catch (e) {
       console.warn('[reviewLetter] insights JSON 解析失败:', e)
-      console.warn('[reviewLetter] 原始返回前 500 字符:', rawLetter.slice(0, 500))
+      console.warn('[reviewLetter] rawJsonStr:', rawJsonStr?.slice(0, 300))
+      console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetter.slice(-500))
     }
   } else {
-    console.warn('[reviewLetter] 未找到 JSON 块，rawLetter 前 300 字符:', rawLetter.slice(0, 300))
+    console.warn('[reviewLetter] 未找到 JSON 块')
+    console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetter.slice(-500))
   }
 
   // 移除末尾所有 JSON 块，保证信的正文干净
+  // ⚠️ 每条 replace 均删除到字符串末尾（[\s\S]*$），
+  //    避免因 AI 在 ] 后追加 ``` 等杂质导致 \]\s*$ 无法命中
   const letterContent = rawLetter
-    .replace(/(?:```+|~~~+)\s*json\s*[\s\S]*?(?:```+|~~~+)/, '')  // 格式A
-    .replace(/\{[\s\S]*"suggested_threads"[\s\S]*\}\s*$/, '')       // 格式B
-    .replace(/\[[\s\S]*"thread_name"[\s\S]*\]\s*$/, '')             // 格式C
+    .replace(/(?:```+|~~~+)\s*(?:json)?\s*[\s\S]*?(?:```+|~~~+)[\s\S]*$/, '')  // 格式A/A2：代码块到末尾
+    .replace(/\{[\s\S]*"suggested_threads"[\s\S]*$/, '')                          // 格式B：裸对象到末尾
+    .replace(/\[[\s\S]*"thread_name"[\s\S]*$/, '')                               // 格式C：裸数组到末尾
     .trim()
 
   // Step 5: 保存 review_letter
