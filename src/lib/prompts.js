@@ -293,31 +293,24 @@ const THREAD_OUTPUT_INSTRUCTION = `\
 如果没有可建议新建的脉络，返回 "suggested_threads": []`
 
 export function getReviewLetterPrompt({ entriesSummary, timeGreeting }) {
-  // 每条条目拼为一行，theme_hints / core_needs 为空时省略对应片段
-  const entriesText = entriesSummary.map((e, i) => {
-    const parts = [`[${e.date.replace(/-/g, '/')}] 摘要：${e.entry_summary ?? '（无摘要）'}`]
-    if (e.theme_hints?.length)  parts.push(`主题：${e.theme_hints.join('、')}`)
-    if (e.core_needs?.length)   parts.push(`核心需求：${e.core_needs.join('、')}`)
-    return parts.join(' | ')
-  }).join('\n')
+  // 每条条目用分隔线隔开，richContent 已包含原文 + 卡片答案 + 对话
+  const entriesText = entriesSummary.map((e, i) =>
+    `[第 ${i + 1} 条，${e.date.replace(/-/g, '/')}]\n${e.richContent}`
+  ).join('\n\n---\n\n')
 
   const entryCount = entriesSummary.length
   const dates = entriesSummary.map(e => e.date).sort()
   const dateRange = `${dates[0].replace(/-/g, '/')}—${dates[dates.length - 1].replace(/-/g, '/')}`
 
-  return `你会收到用户最近 ${entryCount} 条日记摘要（${dateRange}）。请先选择写信格式，再按该格式写信。
+  return `你会收到用户最近 ${entryCount} 条日记记录（${dateRange}）。请先选择写信格式，再按该格式写信。
 
 ---
 
 ## 第一步：选择格式
 
-读完所有条目后，按以下规则选格式：
-
-**格式A（一根线）——满足任一条件即选格式A：**
-- theme_hints、core_needs 或摘要文字中，同一个词出现在超过一半的条目中（严格 >50%，即出现次数 > ${entryCount} × 0.5）
-- 同一个词出现在 5 条或更多条目中
-
-**否则选格式B（关键时刻）。**
+读完所有条目，凭感受判断：
+- 如果你发现同一种感受、同一个处境、或同一个词反复在不同条目里出现——选格式A（一根线）
+- 否则选格式B（关键时刻）
 
 ---
 
@@ -358,7 +351,7 @@ ${timeGreeting}，这段时间有些时刻特别清晰。
 
 ${THREAD_OUTPUT_INSTRUCTION}
 
-以下是用户的日记摘要（${entryCount} 条，${dateRange}）：
+以下是用户的日记记录（${entryCount} 条，${dateRange}）：
 
 ${entriesText}`
 }
