@@ -867,6 +867,46 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 
 **规律：** 新增任何全屏覆盖页（FullScreen overlay）时，不得在外层容器加 `overflow`，滚动必须收在内容区 div。已按此结构修复：RecordDetail / ReviewLetterDetail / EditEntryPage（2026-04-21）。
 
+### 4.44 threads 表新增 AI 分析列（2026-04-21 确立）
+
+`threads` 表通过 SQL 手动迁移新增三列：
+
+```sql
+ALTER TABLE threads
+  ADD COLUMN IF NOT EXISTS fragments jsonb,
+  ADD COLUMN IF NOT EXISTS current_state text,
+  ADD COLUMN IF NOT EXISTS analysis_generated_at timestamptz;
+```
+
+- `fragments`：`[{ quote: string, date: "YYYY/MM/DD" }]` 数组，AI 从原文挑选的碎片引用
+- `current_state`：AI 对脉络「此刻在哪里」的 3–5 句描述，可含换行（见 §4.45）
+- `analysis_generated_at`：最近一次分析时间戳
+
+**规律：** 这三列是手动触发分析的产物，与条目新增无绑定。`fragments IS NULL` 表示从未分析，UI 显示占位态 + 「开始分析」按钮；有值后显示「重新分析」。
+
+### 4.45 current_state 换行显示规则（2026-04-21 确立）
+
+`current_state` 字段内容由 AI 生成，可能含 `\n` 换行分组。
+
+**规律：** 所有渲染 `current_state` 的容器必须设置 `whiteSpace: 'pre-wrap'`，否则换行丢失，多段文字粘连为一行。
+
+```jsx
+// ✅ 正确
+<div style={{ fontSize: 13, color: '#555', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+  {thread.current_state}
+</div>
+```
+
+### 4.46 generateThreadAnalysis 使用全文 content（2026-04-21 确立）
+
+`generateThreadAnalysis` 不复用 `fetchThreadWithEntries`（历史上只 select `entry_summary`），而是独立查询 `thread_entries` 并 join `journal_entries.content` 全字段。
+
+**原因：** 碎片功能需要引用原句，必须用完整 `content`，摘要无法满足。
+
+**规律：** 凡需要向 AI 传入完整用户原文的场景，禁止复用只取摘要的查询函数，必须独立查询并明确 select `content`。过滤条件：`.filter(r => !r.removed_by_user && r.journal_entries?.content)`。
+
+> **附注（2026-04-21）：** `fetchThreadWithEntries` 在脉络详情页同步改为也带 `content` 字段（用于关联记录展示），但 `generateThreadAnalysis` 仍保持独立查询，不依赖 `fetchThreadWithEntries` 的返回格式。
+
 ---
 
 > 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。

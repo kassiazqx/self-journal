@@ -352,7 +352,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                   {[
                     { label: '✏️ 编辑名称', action: () => { setShowMenu(false); setEditingName(true); setNameInput(thread.name) }, color: '#333' },
                     { label: '📝 编辑关联记录', action: () => { setShowMenu(false); setEditingEntries(true) }, color: '#333' },
-                    { label: reanalyzing ? '🔍 查找中…' : '🔍 查找新记录', action: handleReAnalyze, color: '#333' },
+                    { label: reanalyzing ? '🔄 分析中…' : '🔄 重新分析', action: handleReAnalyze, color: '#333' },
                     { label: '📁 归档', action: () => { setShowMenu(false); setShowArchiveConfirm(true) }, color: '#e07850' },
                     { label: '🗑️ 删除', action: () => { setShowMenu(false); setShowDeleteConfirm(true) }, color: '#e05252' },
                   ].map((item, i) => (
@@ -402,7 +402,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, color: '#bbb', marginBottom: 2 }}>{formatDate(entry.created_at)}</div>
                   <div style={{ fontSize: 13, color: '#333', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {entry.entry_summary ?? '（暂无摘要）'}
+                    {entry.entry_summary ?? entry.content?.slice(0, 80) ?? '（暂无摘要）'}
                   </div>
                 </div>
                 <button onClick={e => { e.stopPropagation(); handleRemoveEntry(entry.id) }}
@@ -497,6 +497,27 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
         {/* ── 正常查看模式：变化轨迹 + 关联记录 ── */}
         {!editingEntries && (<>
 
+        {/* ── 此刻这里 ── */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 10 }}>此刻这里</div>
+          {thread.current_state ? (
+            <>
+              <div style={{ fontSize: 14, color: '#444', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>
+                {thread.current_state}
+              </div>
+              {thread.analysis_generated_at && (
+                <div style={{ fontSize: 10, color: '#ccc', marginTop: 8, textAlign: 'right' }}>
+                  AI 生成 · {new Date(thread.analysis_generated_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65 }}>
+              {analyzing ? '分析中…' : entries.length === 0 ? '关联记录后可生成分析' : '点击下方「开始分析」生成'}
+            </div>
+          )}
+        </div>
+
         {/* ── 一些碎片 ── */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 12 }}>一些碎片</div>
@@ -511,27 +532,6 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                 </div>
               </div>
             ))
-          ) : (
-            <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65 }}>
-              {analyzing ? '分析中…' : entries.length === 0 ? '关联记录后可生成分析' : '点击下方「开始分析」生成'}
-            </div>
-          )}
-        </div>
-
-        {/* ── 此刻这里 ── */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 10 }}>此刻这里</div>
-          {thread.current_state ? (
-            <>
-              <div style={{ fontSize: 14, color: '#444', lineHeight: 1.85 }}>
-                {thread.current_state}
-              </div>
-              {thread.analysis_generated_at && (
-                <div style={{ fontSize: 10, color: '#ccc', marginTop: 8, textAlign: 'right' }}>
-                  AI 生成 · {new Date(thread.analysis_generated_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
-                </div>
-              )}
-            </>
           ) : (
             <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65 }}>
               {analyzing ? '分析中…' : entries.length === 0 ? '关联记录后可生成分析' : '点击下方「开始分析」生成'}
@@ -583,7 +583,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
               color: analyzing ? '#ccc' : '#c9a96e', fontSize: 14, cursor: analyzing ? 'default' : 'pointer',
             }}
           >
-            {analyzing ? '分析中…' : thread.fragments ? '重新分析' : '开始分析'}
+            {analyzing ? '分析中…' : thread.fragments ? '再次分析' : '开始分析'}
           </button>
         </div>
       )}

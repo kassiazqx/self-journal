@@ -46,7 +46,7 @@ export async function fetchThreadWithEntries(threadId) {
   const [threadRes, entriesRes] = await Promise.all([
     db.from('threads').select('*').eq('id', threadId).single(),
     db.from('thread_entries')
-      .select('entry_id, added_at, added_by, journal_entries(id, entry_summary, created_at, template_type)')
+      .select('entry_id, added_at, added_by, removed_by_user, journal_entries(id, entry_summary, content, created_at, template_type)')
       .eq('thread_id', threadId)
       .order('added_at', { ascending: true }),
   ])
