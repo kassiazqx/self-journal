@@ -85,7 +85,3 @@ export function getChatSession(entryId) {
 export function saveChatSession(entryId, data) {
   _set(chatSessionKey(entryId), JSON.stringify(data))
 }
-
-export function removeChatSession(entryId) {
-  _remove(chatSessionKey(entryId))
-}
