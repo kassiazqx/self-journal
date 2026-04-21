@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-19（搜索筛选增强 + 死代码清理 + Tab重置修复，dev 分支）
+**最后更新：** 2026-04-21（完整数据备份导出：exportService.js 新建 + SettingsPage 导出 UI 重写）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -289,6 +289,15 @@ src/
 │   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
 │   │                           getExtractionPrompt(userCategoryTags, coreNeedsVocab) 双参数（已修复4.21）
 │   ├── reviewLetterService.js  回顾信触发 + 生成
+│   │                           checkAndGenerateLetter: 仅按 count_threshold 计数触发（无时间过滤）
+│   │                           generateReviewLetter: 查全量未覆盖 entry（不过滤时间范围）
+│   │                           generateLetterNow: 手动立即生成，传 null 跳过时间限制
+│   ├── exportService.js        完整数据备份导出（新增 2026-04-21）
+│   │                           exportDataJson(userId)：8 表全量导出为 JSON 字符串
+│   │                           fetchImages(paths, {onProgress})：批量 3 并发下载图片 Blob
+│   │                           buildZip(jsonString, imageBlobs)：JSZip 打包为 zip Blob
+│   │                           ⚠️ thread_entries 无 user_id，先查 threads 取 ids，再 .in() 查询
+│   │                           ⚠️ getImageUrl 是唯一合法 URL 拼接入口（不自行拼 Supabase URL）
 │   ├── awarenessFlowState.js   觉察流状态机（含 serializeFlowState 深拷贝）
 │   ├── awarenessFlowState.test.js
 │   ├── extractSummaryService.js     摘要索引批量提取服务（maxTokens 已升至 1200，见4.28）
@@ -328,6 +337,8 @@ src/
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
+                                数据导出：新 UI（勾选图片 + 导出备份按钮 + 两阶段失败处理）
+                                旧「导出 JSON」「导出 TXT」已移除，由 exportService 全量备份替代
                                 含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
                                 含人物管理子页（canonical+aliases+group_name，RPC级联替换）
                                 含内心需求词库子页（core_needs，RPC级联替换）
