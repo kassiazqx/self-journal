@@ -52,6 +52,7 @@ export default function AwarenessFlow({
   const [transitioning, setTransitioning] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
 
   const textareaRef = useRef(null)
   const saveTimerRef = useRef(null)
@@ -64,6 +65,23 @@ export default function AwarenessFlow({
   useEffect(() => {
     latestStateRef.current = flowState
   }, [flowState])
+
+  // ── 键盘高度监听，防止底部按钮被软键盘遮挡 ────────────────────
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    function update() {
+      const navEl = document.querySelector('nav')
+      const navH = navEl ? navEl.getBoundingClientRect().height : 0
+      setKeyboardOffset(Math.max(0, window.innerHeight - vv.height - navH))
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
 
   useEffect(() => {
     initDoneRef.current = false
@@ -438,10 +456,11 @@ export default function AwarenessFlow({
 
       <div style={{
         position: 'absolute',
-        bottom: 0,
+        bottom: keyboardOffset,
         left: 0,
         right: 0,
         padding: '8px 18px 26px',
+        transition: 'bottom 0.1s',
         background: 'linear-gradient(transparent, #faf8f4 38%)',
         display: 'flex',
         alignItems: 'center',
