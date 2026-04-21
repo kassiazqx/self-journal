@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>脉络详情页 · UI 设计稿</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #dedad4;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 48px 20px;
+      min-height: 100vh;
+      font-family: -apple-system, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+    }
+
+    /* 手机外框 */
+    .phone {
+      width: 390px;
+      height: 844px;
+      background: #f5f3ef;
+      border-radius: 48px;
+      box-shadow:
+        0 2px 4px rgba(0,0,0,0.06),
+        0 8px 20px rgba(0,0,0,0.12),
+        0 32px 80px rgba(0,0,0,0.18),
+        inset 0 0 0 1px rgba(255,255,255,0.6),
+        inset 0 0 0 2px rgba(0,0,0,0.06);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* 顶部状态栏 */
+    .status-bar {
+      height: 44px;
+      background: #faf8f4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 26px;
+      flex-shrink: 0;
+    }
+    .status-time { font-size: 15px; font-weight: 600; color: #2a2a2a; }
+    .status-icons { font-size: 11px; color: #666; letter-spacing: 2px; }
+
+    /* 导航栏 */
+    .nav {
+      background: #faf8f4;
+      border-bottom: 1px solid #eae6df;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .nav-back {
+      font-size: 24px;
+      color: #c0bab2;
+      font-weight: 300;
+      line-height: 1;
+    }
+    .nav-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #2a2a2a;
+    }
+    .nav-menu {
+      font-size: 20px;
+      color: #c0bab2;
+      letter-spacing: 1px;
+    }
+
+    /* Stats 行 */
+    .stats-bar {
+      background: #faf8f4;
+      padding: 6px 18px 11px;
+      border-bottom: 1px solid #eae6df;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+    }
+    .badge {
+      font-size: 10px;
+      color: #7aab7a;
+      background: #ecf6ec;
+      border: 1px solid #c4e0c4;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .stats-dot { color: #d8d3cc; font-size: 11px; }
+    .stats-text { font-size: 11px; color: #b8b2aa; }
+
+    /* 内容区 */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 18px 16px;
+    }
+
+    /* 分割线 — 渐隐式 */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #e2ddd7 15%, #e2ddd7 85%, transparent);
+      margin: 18px 0;
+    }
+
+    /* 段落标题 */
+    .section-label {
+      font-size: 10px;
+      color: #c9a96e;
+      font-weight: 600;
+      margin-bottom: 13px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    /* ── 一些碎片 ── */
+    .fragment-item {
+      margin-bottom: 16px;
+    }
+    .fragment-item:last-child { margin-bottom: 4px; }
+    .fragment-quote {
+      font-size: 13.5px;
+      color: #3a3a3a;
+      line-height: 1.8;
+      font-style: italic;
+      padding-left: 13px;
+      border-left: 2px solid #ddd0b8;
+    }
+    .fragment-date {
+      font-size: 10.5px;
+      color: #c0bab2;
+      text-align: right;
+      margin-top: 5px;
+    }
+
+    /* ── 此刻这里 —— 无框，开放式 ── */
+    .current-state {
+      padding: 2px 0 6px;
+    }
+    .current-state-text {
+      font-size: 13.5px;
+      color: #555;
+      line-height: 2.0;
+    }
+    .current-state-meta {
+      font-size: 10px;
+      color: #ccc;
+      margin-top: 10px;
+      letter-spacing: 0.3px;
+    }
+
+    /* ── 走过的路 ── */
+    .entry-row {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #ede9e3;
+    }
+    .entry-row:last-of-type { border-bottom: none; }
+    .entry-date {
+      font-size: 11px;
+      color: #c0bab2;
+      white-space: nowrap;
+      padding-top: 2px;
+      flex-shrink: 0;
+      width: 40px;
+    }
+    .entry-preview {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.65;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .entries-count {
+      font-size: 11px;
+      color: #ccc;
+      text-align: right;
+      padding-top: 11px;
+    }
+
+    /* 底部按钮 */
+    .bottom-bar {
+      padding: 10px 18px 26px;
+      background: #faf8f4;
+      border-top: 1px solid #eae6df;
+      flex-shrink: 0;
+    }
+    .analyze-btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #eddfc8;
+      background: white;
+      color: #c9a96e;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.3px;
+    }
+
+    /* 右侧说明 */
+    .annotations {
+      margin-left: 36px;
+      width: 260px;
+      padding-top: 88px;
+    }
+    .ann-group { margin-bottom: 26px; }
+    .ann-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #444;
+      margin-bottom: 6px;
+      letter-spacing: 0.3px;
+    }
+    .ann-note {
+      font-size: 11.5px;
+      color: #888;
+      line-height: 1.75;
+    }
+    .ann-note code {
+      font-size: 10.5px;
+      background: #e8e4de;
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #555;
+    }
+    .page-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #2a2a2a;
+      margin-bottom: 4px;
+    }
+    .page-sub {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 32px;
+    }
+
+    .ann-tag {
+      display: inline-block;
+      font-size: 10px;
+      background: #f0ece6;
+      color: #999;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div>
+    <div class="page-title">脉络详情页</div>
+    <div class="page-sub">Thread Detail · UI 设计稿 · 2026-04-21</div>
+
+    <div style="display: flex; align-items: flex-start;">
+
+      <!-- 手机 -->
+      <div class="phone">
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+          <span class="status-time">9:41</span>
+          <span class="status-icons">▲▲▲  WiFi  🔋</span>
+        </div>
+
+        <!-- 导航栏 -->
+        <div class="nav">
+          <span class="nav-back">‹</span>
+          <span class="nav-title">公共场所刺激敏感</span>
+          <span class="nav-menu">···</span>
+        </div>
+
+        <!-- Stats 行 -->
+        <div class="stats-bar">
+          <span class="badge">已确认</span>
+          <span class="stats-dot">·</span>
+          <span class="stats-text">3 个月</span>
+          <span class="stats-dot">·</span>
+          <span class="stats-text">12 条记录</span>
+          <span class="stats-dot">·</span>
+          <span class="stats-text">最近更新 4月18日</span>
+        </div>
+
+        <!-- 内容区 -->
+        <div class="content">
+
+          <!-- 一些碎片 -->
+          <div class="section-label">一些碎片</div>
+          <div>
+            <div class="fragment-item">
+              <div class="fragment-quote">还没到平和，但慈悲心让我压下去了。</div>
+              <div class="fragment-date">4月10日</div>
+            </div>
+            <div class="fragment-item">
+              <div class="fragment-quote">好像对「完全不被影响」的期待，反而让自己更累。</div>
+              <div class="fragment-date">2月14日</div>
+            </div>
+            <div class="fragment-item">
+              <div class="fragment-quote">这次主动换了车厢，发现自己其实可以选择离开。</div>
+              <div class="fragment-date">3月22日</div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- 此刻这里 -->
+          <div class="section-label">此刻这里</div>
+          <div class="current-state">
+            <div class="current-state-text">
+              目前这个主题似乎正在从「如何压制反应」走向「如何接纳有反应的自己」。在地铁、咖啡馆、会议室——好像不是要消除敏感，而是在慢慢学习和它同在。方向开始有点清晰了，还在路上。
+            </div>
+            <div class="current-state-meta">AI 生成 · 4月21日</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- 走过的路 -->
+          <div class="section-label">走过的路</div>
+          <div>
+            <div class="entry-row">
+              <div class="entry-date">4月18日</div>
+              <div class="entry-preview">在咖啡馆被旁边的人影响，但这次好像稍微快一点就意识到了……</div>
+            </div>
+            <div class="entry-row">
+              <div class="entry-date">4月10日</div>
+              <div class="entry-preview">地铁上遇到一个一直大声打电话的男生，试着用慈悲心……</div>
+            </div>
+            <div class="entry-row">
+              <div class="entry-date">3月22日</div>
+              <div class="entry-preview">又是地铁，这次我提前换了车厢，发现自己其实……</div>
+            </div>
+            <div class="entry-row">
+              <div class="entry-date">2月14日</div>
+              <div class="entry-preview">公司会议室里，空调声让我完全没法集中，一直在想……</div>
+            </div>
+            <div class="entries-count">共 12 条</div>
+          </div>
+
+        </div>
+
+        <!-- 底部按钮 -->
+        <div class="bottom-bar">
+          <button class="analyze-btn">重新分析</button>
+        </div>
+
+      </div>
+
+      <!-- 说明注解 -->
+      <div class="annotations">
+
+        <div class="ann-group">
+          <div class="ann-title">顶部 Stats 行</div>
+          <div class="ann-note">
+            Badge 跟随 status：已确认绿，待确认金。<br>
+            · 时长：从最早关联记录到今天<br>
+            · 条数：<code>entries.length</code><br>
+            · 最近更新：<code>thread.updated_at</code>
+          </div>
+        </div>
+
+        <div class="ann-group">
+          <div class="ann-title">一些碎片</div>
+          <div class="ann-note">
+            金色细竖线 + 斜体，日期右对齐。<br>
+            未生成时显示灰色占位文字。<br>
+            碎片之间靠间距区分，无分割线。
+          </div>
+        </div>
+
+        <div class="ann-group">
+          <div class="ann-title">此刻这里</div>
+          <div class="ann-note">
+            <span class="ann-tag">无框</span><br>
+            纯文本，行高 2.0，无背景、无边框。<br>
+            右下角小字标注 AI 生成日期。<br>
+            与「一些碎片」保持相同的空气感。
+          </div>
+        </div>
+
+        <div class="ann-group">
+          <div class="ann-title">走过的路</div>
+          <div class="ann-note">
+            日期左列固定宽度，内容两行截断。<br>
+            点击整行跳转条目详情。<br>
+            底部「共 N 条」居右灰字。
+          </div>
+        </div>
+
+        <div class="ann-group">
+          <div class="ann-title">底部按钮</div>
+          <div class="ann-note">
+            首次未分析：「开始分析」<br>
+            已有内容：「重新分析」<br>
+            分析中：「分析中…」+ disabled<br>
+            归档态：不显示此按钮
+          </div>
+        </div>
+
+        <div class="ann-group">
+          <div class="ann-title">··· 菜单变化</div>
+          <div class="ann-note">
+            原「🔄 重新分析」→「🔍 查找新记录」<br>
+            功能不变，名字区分两种操作
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>
