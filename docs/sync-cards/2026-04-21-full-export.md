@@ -1,6 +1,6 @@
 # 同步卡：完整数据备份导出
 
-> **状态：⏳ 待实现**
+> **状态：✅ 已完成** 2026-04-21
 > Plan：`docs/superpowers/plans/2026-04-21-full-export.md`
 > Spec：`docs/superpowers/specs/2026-04-21-full-export-design.md`
 
@@ -74,4 +74,4 @@ handleCancelExport   → 清空状态，中止
 - [x] getImageUrl 为唯一 URL 拼接入口，plan 中已标注
 - [x] thread_entries 二段查询已写入 plan Task 1
 - [x] downloadFile 改为支持 Blob，已写入 plan Task 4
-- [ ] 所有改动均在已有文件或新建 exportService.js，无新表、无 schema 变更
+- [x] 所有改动均在已有文件或新建 exportService.js，无新表、无 schema 变更

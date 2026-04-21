@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Key, Check, Loader2, LogOut, Lock, Pencil, Download } from 'lucide-react'
+import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { fetchAllEntries } from '../lib/journalService'
 import { forceUpdateMemory } from '../lib/conversationService'
@@ -13,6 +13,7 @@ import {
 import {
   loadCoreNeeds, addCoreNeed, updateCoreNeed, deleteCoreNeed,
 } from '../lib/coreNeedsService'
+import { exportDataJson, fetchImages, buildZip } from '../lib/exportService'
 
 const PROVIDERS = [
   {
@@ -39,8 +40,12 @@ export default function SettingsPage() {
   const [testMsg, setTestMsg] = useState('')
   const [saved, setSaved] = useState(false)
   const [keyUnlocked, setKeyUnlocked] = useState(false) // API Key 是否处于编辑模式
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState('')
+  const [includeImages, setIncludeImages] = useState(false)
+  const [exportStatus, setExportStatus] = useState(null)
+  // exportStatus: null | 'exporting' | 'fetching-images' | 'confirm-failed' | 'building' | 'done' | 'error'
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
+  const [failedImages, setFailedImages] = useState([])   // [{ path, reason }]
+  const [pendingExport, setPendingExport] = useState(null) // { jsonString, okBlobs }，等用户决定后用
   const [updatingMemory, setUpdatingMemory] = useState(false)
   const [memoryUpdateMsg, setMemoryUpdateMsg] = useState('')
   const [letterPrefs, setLetterPrefs] = useState({
@@ -119,7 +124,8 @@ export default function SettingsPage() {
 
   // 触发浏览器下载
   function downloadFile(content, filename, mimeType) {
-    const blob = new Blob([content], { type: mimeType })
+    // content 可以是 string 或 Blob（zip 用 Blob 直接传）
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -128,39 +134,92 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url)
   }
 
-  async function handleExport(format) {
-    setExporting(true)
-    setExportError('')
+  async function handleExportBackup() {
+    const date = new Date().toISOString().slice(0, 10)
+    setExportStatus('exporting')
+    setFailedImages([])
+    setPendingExport(null)
+
     try {
-      const { data, error } = await fetchAllEntries({ userId: user.id })
-      if (error) throw error
+      // 1. 查询 8 张表
+      const jsonString = await exportDataJson(user.id)
 
-      const date = new Date().toISOString().slice(0, 10)
-
-      if (format === 'json') {
-        downloadFile(
-          JSON.stringify(data, null, 2),
-          `self-journal-${date}.json`,
-          'application/json'
-        )
-      } else {
-        const lines = data.map(e => {
-          const d = new Date(e.created_at).toLocaleString('zh-CN')
-          const emotions = e.emotions?.length ? `情绪：${e.emotions.join('、')}\n` : ''
-          const insight = e.reflection_insight ? `洞见：${e.reflection_insight}\n` : ''
-          return `【${d}】\n${e.content}\n${emotions}${insight}`
-        })
-        downloadFile(
-          lines.join('\n---\n\n'),
-          `self-journal-${date}.txt`,
-          'text/plain;charset=utf-8'
-        )
+      if (!includeImages) {
+        // 不含图片：直接下载 JSON
+        downloadFile(jsonString, `self-journal-backup-${date}.json`, 'application/json')
+        setExportStatus('done')
+        setTimeout(() => setExportStatus(null), 3000)
+        return
       }
+
+      // 2. 收集所有图片路径（去重）
+      const parsed = JSON.parse(jsonString)
+      const allPaths = [...new Set(
+        (parsed.tables.journal_entries ?? []).flatMap(e => e.image_urls ?? []).filter(Boolean)
+      )]
+
+      if (allPaths.length === 0) {
+        // 无图片，直接打包
+        setExportStatus('building')
+        const zipBlob = await buildZip(jsonString, new Map())
+        downloadFile(zipBlob, `self-journal-backup-${date}.zip`, 'application/zip')
+        setExportStatus('done')
+        setTimeout(() => setExportStatus(null), 3000)
+        return
+      }
+
+      // 3. 下载图片（阶段 1）
+      setExportStatus('fetching-images')
+      setExportProgress({ done: 0, total: allPaths.length })
+      const { ok, failed } = await fetchImages(allPaths, {
+        onProgress: (done, total) => setExportProgress({ done, total }),
+      })
+
+      if (failed.size > 0) {
+        // 有失败：暂停，等用户决定
+        setFailedImages([...failed.entries()].map(([path, err]) => ({ path, reason: err.message })))
+        setPendingExport({ jsonString, okBlobs: ok })
+        setExportStatus('confirm-failed')
+        return
+      }
+
+      // 4. 打包 zip（阶段 2，无失败）
+      setExportStatus('building')
+      const zipBlob = await buildZip(jsonString, ok)
+      downloadFile(zipBlob, `self-journal-backup-${date}.zip`, 'application/zip')
+      setExportStatus('done')
+      setTimeout(() => setExportStatus(null), 3000)
+
     } catch (err) {
-      setExportError('导出失败：' + err.message)
-    } finally {
-      setExporting(false)
+      console.error('[export]', err)
+      setExportStatus('error')
     }
+  }
+
+  // 用户在失败弹窗选「继续导出（跳过失败图片）」
+  async function handleContinueExport() {
+    if (!pendingExport) return
+    const date = new Date().toISOString().slice(0, 10)
+    setExportStatus('building')
+    setFailedImages([])
+    try {
+      const zipBlob = await buildZip(pendingExport.jsonString, pendingExport.okBlobs)
+      downloadFile(zipBlob, `self-journal-backup-${date}.zip`, 'application/zip')
+      setExportStatus('done')
+      setTimeout(() => setExportStatus(null), 3000)
+    } catch (err) {
+      console.error('[export]', err)
+      setExportStatus('error')
+    } finally {
+      setPendingExport(null)
+    }
+  }
+
+  // 用户在失败弹窗选「取消并放弃本次导出」
+  function handleCancelExport() {
+    setPendingExport(null)
+    setFailedImages([])
+    setExportStatus(null)
   }
 
   async function handleForceUpdateMemory() {
@@ -457,37 +516,87 @@ export default function SettingsPage() {
         <div className="card">
           <p className="text-sm font-medium text-gray-600 mb-1">数据导出</p>
           <p className="text-xs text-gray-400 mb-3">
-            导出你的全部日记记录，仅在本机浏览器下载，不会上传到任何服务器
+            导出你的全部数据，仅在本机浏览器下载，不会上传到任何服务器
           </p>
 
-          {exportError && (
-            <div className="mb-3 px-3 py-2 rounded-xl text-sm bg-red-50 text-red-600 border border-red-100 fade-in">
-              {exportError}
+          {/* 包含图片勾选 */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555', marginBottom: 16, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={includeImages}
+              onChange={e => setIncludeImages(e.target.checked)}
+              disabled={exportStatus !== null}
+            />
+            包含图片（导出为 zip 格式，文件较大）
+          </label>
+
+          {/* 导出按钮 */}
+          <button
+            onClick={handleExportBackup}
+            disabled={exportStatus !== null && exportStatus !== 'error'}
+            style={{
+              background: (exportStatus !== null && exportStatus !== 'error') ? '#e0dbd4' : '#c9a96e',
+              color: 'white', border: 'none', borderRadius: 8,
+              padding: '9px 20px', fontSize: 13, cursor: (exportStatus !== null && exportStatus !== 'error') ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {exportStatus === null || exportStatus === 'error' ? '导出备份' : '导出中…'}
+          </button>
+
+          {/* 进度 / 状态文字 */}
+          {exportStatus === 'fetching-images' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+              正在下载图片 {exportProgress.done} / {exportProgress.total}…
             </div>
           )}
+          {exportStatus === 'building' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>正在打包…</div>
+          )}
+          {exportStatus === 'done' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#6aaa6a' }}>✓ 已导出</div>
+          )}
+          {exportStatus === 'error' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#e06c6c' }}>导出失败，请重试</div>
+          )}
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => handleExport('json')}
-              disabled={exporting}
-              className="flex-1 py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-600 flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all"
-            >
-              {exporting
-                ? <><Loader2 size={15} className="animate-spin" /> 导出中…</>
-                : <><Download size={15} /> 导出 JSON</>
-              }
-            </button>
-            <button
-              onClick={() => handleExport('txt')}
-              disabled={exporting}
-              className="flex-1 py-3.5 rounded-2xl text-sm font-medium bg-primary-500 text-white flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40"
-            >
-              {exporting
-                ? <><Loader2 size={15} className="animate-spin" /> 导出中…</>
-                : <><Download size={15} /> 导出 TXT</>
-              }
-            </button>
-          </div>
+          {/* 图片失败确认 sheet */}
+          {exportStatus === 'confirm-failed' && (
+            <div style={{
+              marginTop: 12, background: '#fff8f2', border: '1px solid #f0d9c8',
+              borderRadius: 10, padding: '14px 16px',
+            }}>
+              <div style={{ fontSize: 13, color: '#c06040', fontWeight: 500, marginBottom: 8 }}>
+                ⚠️ {failedImages.length} 张图片下载失败
+              </div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 12, maxHeight: 120, overflowY: 'auto' }}>
+                {failedImages.map(({ path, reason }) => (
+                  <div key={path} style={{ marginBottom: 4 }}>
+                    · {path} — {reason}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={handleContinueExport}
+                  style={{
+                    flex: 1, background: '#c9a96e', color: 'white', border: 'none',
+                    borderRadius: 8, padding: '8px 0', fontSize: 12, cursor: 'pointer',
+                  }}
+                >
+                  继续导出（跳过这 {failedImages.length} 张）
+                </button>
+                <button
+                  onClick={handleCancelExport}
+                  style={{
+                    flex: 1, background: 'none', color: '#999', border: '1px solid #e0dbd4',
+                    borderRadius: 8, padding: '8px 0', fontSize: 12, cursor: 'pointer',
+                  }}
+                >
+                  取消并放弃本次导出
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ─── 自定义选项 ─── */}
