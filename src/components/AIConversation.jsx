@@ -38,6 +38,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [isRateLimit, setIsRateLimit] = useState(false)
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
   const systemPromptRef = useRef('')
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
@@ -87,6 +88,23 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
 
     startChat()
+  }, [])
+
+  // ── 键盘高度监听，防止输入栏被软键盘遮挡 ────────────────────
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    function update() {
+      const navEl = document.querySelector('nav')
+      const navH = navEl ? navEl.getBoundingClientRect().height : 0
+      setKeyboardOffset(Math.max(0, window.innerHeight - vv.height - navH))
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
   }, [])
 
   async function startChat() {
@@ -192,7 +210,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#fdfaf7]">
+    <div className="flex flex-col h-full bg-[#fdfaf7]" style={{ paddingBottom: keyboardOffset, transition: 'padding-bottom 0.1s' }}>
       {/* 顶栏 */}
       <div className="flex items-center justify-between px-4 pt-5 pb-3">
         <div className="flex items-center gap-3">
