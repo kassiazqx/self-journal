@@ -449,7 +449,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
     // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步上传图片
     const optimisticEntry = {
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2)),
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
