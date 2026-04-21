@@ -48,9 +48,7 @@ export default function SettingsPage() {
   const [pendingExport, setPendingExport] = useState(null) // { jsonString, okBlobs }，等用户决定后用
   const [updatingMemory, setUpdatingMemory] = useState(false)
   const [memoryUpdateMsg, setMemoryUpdateMsg] = useState('')
-  const [letterPrefs, setLetterPrefs] = useState({
-    type: 'count', count_threshold: 10, require_new_entries: true,
-  })
+  const [letterPrefs, setLetterPrefs] = useState(null)  // null = 加载中，避免闪默认值
   const [countInput, setCountInput] = useState('10') // 独立字符串，允许输入过程中间状态
   const [generatingLetter, setGeneratingLetter] = useState(false)
   const [letterMsg, setLetterMsg] = useState('')
@@ -626,6 +624,9 @@ export default function SettingsPage() {
           </div>
 
           {/* 触发方式 */}
+          {letterPrefs === null ? (
+            <div style={{ fontSize: 13, color: '#bbb', marginBottom: 14 }}>加载中…</div>
+          ) : (<>
           {/* 选项 A：累积 N 条后自动生成 */}
           <label style={{
             display: 'flex', alignItems: 'center', gap: 8,
@@ -683,6 +684,7 @@ export default function SettingsPage() {
             />
             手动生成（不自动触发）
           </label>
+          </>)}
 
           {/* 立即生成按钮 */}
           <button
