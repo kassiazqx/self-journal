@@ -306,6 +306,8 @@ src/
 │   ├── extractSummaryService.test.js
 │   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary + reAnalyzeThread
 │   │                                fetchThreadsByLetterId(letterId)：通过 review_letter_id 外键查候选脉络
+│   │                                generateThreadAnalysis(threadId, userId)：读全文 content，生成 fragments+current_state，存 DB
+│   │                                fetchThreadWithEntries：现已含 content + removed_by_user 字段
 │   └── threadService.test.js
 ├── components/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
@@ -339,6 +341,10 @@ src/
     ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）
     ├── ThreadDetailPage.jsx    脉络详情（mode='confirmed'|'archived'；··· 菜单；编辑关联记录模式）
     │                           编辑模式：FilterBar 五维筛选（showDate=false）/ 默认列表30条+上滑加载
+    │                           ⭐ 新增：此刻这里（current_state）+ 一些碎片（fragments）两段 AI 分析
+    │                           底部「开始分析/再次分析」按钮（非归档态+有条目时显示）
+    │                           ··· 菜单「🔄 重新分析」= reAnalyzeThread（扫新条目）；底部按钮 = generateThreadAnalysis（分析已关联）
+    │                           条目列表「走过的路」：entry_summary 为空时显示 content 前80字
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
@@ -847,6 +853,22 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 
 ---
 
+### 4.43 全屏覆盖页顶栏 sticky 固定的正确结构（2026-04-21 确立）
+
+**问题：** `position: sticky` 在外层容器有 `overflowY: auto` 时失效——sticky 的参照系是最近的滚动祖先，如果外层容器本身在滚动，顶栏的 sticky 是相对于这个容器定位，跟着内容一起滚出去。
+
+**正确结构（所有全屏覆盖页统一使用）：**
+
+```
+外层 div（display: flex, flexDirection: column, height: 100%）← 不加 overflow
+  顶栏 div（position: sticky, top: 0, zIndex: 10, background: #faf8f4）← 固定于视口
+  内容区 div（flex: 1, overflowY: auto）← 独立滚动
+```
+
+**规律：** 新增任何全屏覆盖页（FullScreen overlay）时，不得在外层容器加 `overflow`，滚动必须收在内容区 div。已按此结构修复：RecordDetail / ReviewLetterDetail / EditEntryPage（2026-04-21）。
+
+---
+
 > 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。
 
 ### 5.1 Capacitor APK 打包
@@ -930,7 +952,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-21 · 代码session · 回顾信 JSON 清理正则兼容增强：格式C `\]\s*$` 末尾锚点在 ] 后有 ``` 等杂质时失配，导致 JSON 残留正文；三条清理 replace 均改为删至字符串末尾（[\s\S]*$）；新增格式A2（无 json 标签代码块）；commit 8560273；同步卡：docs/sync-cards/2026-04-21-review-letter-json-cleanup-fix.md；新增 arch §4.42
-- 2026-04-21 · 代码session · 回顾信详情页相关脉络卡片完成：threads 表加 review_letter_id 外键（ALTER TABLE 已执行）；threadService 新增 fetchThreadsByLetterId；reviewLetterService Step 7 写入 review_letter_id；ReviewLetterDetail 展示三态脉络卡片（内嵌接受/忽略）；修复 AI 返回裸数组格式时正文夹带 JSON 的问题；commit 105c3eb；同步卡：docs/sync-cards/2026-04-21-review-letter-threads-done.md
+- 2026-04-21 · 代码session · 脉络详情页 AI 分析完成：threads 表加 fragments/current_state/analysis_generated_at 三列（SQL 已执行）；prompts.js 新增 buildThreadAnalysisPrompt（挑碎片+写此刻，平实语言规则+分组格式）；threadService.js 新增 generateThreadAnalysis（读全文 content，一次 AI 调用输出 JSON，存 DB）；ThreadDetailPage 替换 arc_summary 区块为「此刻这里」+「一些碎片」（无框，上方）+「走过的路」；底部加「开始分析/再次分析」按钮；fetchThreadWithEntries 加 content 字段，entry_summary 为空时 content 前80字兜底；commit 3879c6a；同步卡：docs/sync-cards/2026-04-21-thread-detail-analysis.md
+- 2026-04-21 · 代码session · 回顾信 prompt 重设计：getTimeGreeting() 注入时间问候词（早/中/下午/晚/深夜随机选）；getReviewLetterPrompt 入参改为 {entriesSummary, timeGreeting}；新增格式A（一根线，贯穿词>50%条目）/格式B（关键时刻）AI 自选；THREAD_OUTPUT_INSTRUCTION 提为常量复用；commit 988c2e6；同步卡：已有 docs/sync-cards/2026-04-21-review-letter-threads-done.md
 - 2026-04-21 · 代码session · 修复手机端保存卡住：crypto.randomUUID() 在 http://192.168.x.x 非安全上下文下抛出 TypeError，setSaving(false) 从未执行，按钮永远显示「…」；改为 crypto.randomUUID?.() ?? fallback 与 AwarenessFlow 保持一致；commit 577a19d；新增架构规则：§4.40
 - 2026-04-21 · 代码session · 完整数据备份导出完成：新建 exportService.js（8 表全量 JSON + 批量图片下载 + JSZip 打包）；SettingsPage 导出 UI 重写（两阶段失败处理）；commit f606c1d；同步卡：docs/sync-cards/2026-04-21-full-export.md
 - 2026-04-21 · 代码session · 回顾信时间过滤修复：generateReviewLetter + checkAndGenerateLetter 统一删除 .gt('created_at', ...) 过滤，只看 covered_by_letter_id IS NULL；generateLetterNow 传 null 作 periodStart；commit fa39d6f；同步卡：docs/sync-cards/2026-04-21-review-letter-time-filter-fix.md
