@@ -205,7 +205,17 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         padding: '12px 18px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', background: '#faf8f4',
         borderBottom: '1px solid #ede9e2', flexShrink: 0,
+        position: 'sticky', top: 0, zIndex: 10,
       }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 14, color: '#bbb', padding: '6px 8px', margin: '-6px -8px',
+          }}
+        >
+          取消
+        </button>
         <button
           onClick={() => setShowPicker(true)}
           style={{

@@ -506,8 +506,6 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       flexDirection: 'column',
       height: '100%',
       background: '#faf8f4',
-      overflowY: 'auto',
-      paddingBottom: 100,
     }}>
 
       {/* 全屏图片查看 */}
@@ -538,8 +536,11 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       )}
 
       {/* ── 顶部导航 ── */}
-      <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', flexShrink: 0 }}>
+      <div style={{
+        padding: '12px 18px 0', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexShrink: 0,
+        position: 'sticky', top: 0, zIndex: 10, background: '#faf8f4',
+      }}>
         <button
           onClick={onBack}
           style={{
@@ -554,6 +555,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
         </button>
       </div>
 
+      {/* 内容区独立滚动 */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
       <div style={{ padding: '16px 18px 0' }}>
 
         {/* ── 顶部标签区（四字段可编辑）── */}
@@ -1208,6 +1211,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

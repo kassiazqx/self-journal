@@ -56,11 +56,15 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%',
-      background: '#faf8f4', overflowY: 'auto', paddingBottom: 40,
+      background: '#faf8f4',
     }}>
 
-      {/* 顶部 */}
-      <div style={{ padding: '12px 18px 0' }}>
+      {/* 顶部 — sticky 固定 */}
+      <div style={{
+        padding: '12px 18px 0',
+        position: 'sticky', top: 0, zIndex: 10, background: '#faf8f4',
+        flexShrink: 0,
+      }}>
         <button onClick={onBack}
           style={{
             background: 'none', border: 'none',
@@ -73,6 +77,8 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
         </button>
       </div>
 
+      {/* 内容区 — 独立滚动 */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 40 }}>
       <div style={{ padding: '16px 18px 0' }}>
 
         {/* 标题区 */}
@@ -224,6 +230,7 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   )

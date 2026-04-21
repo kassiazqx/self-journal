@@ -419,7 +419,7 @@ export default function SettingsPage() {
                 onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
                 placeholder={currentProvider?.hint || '请输入 API Key'}
                 readOnly={!keyUnlocked}
-                autoComplete="off"
+                autoComplete="new-password"
                 data-lpignore="true"
                 data-form-type="other"
                 className={`w-full pl-9 pr-4 py-3 bg-gray-50 border rounded-2xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none transition-colors ${
