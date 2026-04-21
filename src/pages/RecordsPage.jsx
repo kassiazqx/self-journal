@@ -197,8 +197,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
     if (!user) return
     setLoading(true)
 
-    // 触发回顾信检查（异步，不阻塞列表加载）
-    checkAndGenerateLetter(user.id).catch(() => {})
+    // 先检查是否需要生成回顾信，完成后再查列表（保证新信能出现在当次加载结果中）
+    await checkAndGenerateLetter(user.id).catch(() => {})
 
     const [entriesRes, lettersRes] = await Promise.all([
       db.from('journal_entries')

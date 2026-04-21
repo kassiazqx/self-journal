@@ -55,8 +55,6 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     .eq('user_id', userId)
     .is('covered_by_letter_id', null)
     .neq('template_type', 'freewrite')
-    .gt('created_at', periodStart ?? '1970-01-01')
-    .lte('created_at', periodEnd)
     .order('created_at', { ascending: true })
     .limit(8)
 
@@ -102,8 +100,10 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     { maxTokens: 1200 }
   )
 
-  // Step 4: 提取末尾 JSON
-  const insightsMatch = rawLetter.match(/```json([\s\S]*?)```/)
+  // Step 4: 提取末尾 JSON（兼容 AI 输出的各种代码块格式）
+  // 匹配 ```json...``` 或 ~~~json...~~~ 或直接 {...} 块
+  const insightsMatch = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
+    ?? rawLetter.match(/(\{\s*"suggested_threads"[\s\S]*?\})\s*$/)
   let insights = { suggested_threads: [] }
   if (insightsMatch) {
     try { insights = JSON.parse(insightsMatch[1]) }
@@ -114,7 +114,11 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   } else {
     console.warn('[reviewLetter] 未找到 JSON 块，rawLetter 前 300 字符:', rawLetter.slice(0, 300))
   }
-  const letterContent = rawLetter.replace(/```json[\s\S]*?```/, '').trim()
+  // 移除末尾 JSON 块（含代码围栏），保证信的正文干净
+  const letterContent = rawLetter
+    .replace(/(?:```+|~~~+)\s*json\s*[\s\S]*?(?:```+|~~~+)/, '')
+    .replace(/\{\s*"suggested_threads"[\s\S]*?\}\s*$/, '')
+    .trim()
 
   // Step 5: 保存 review_letter
   const { data: letter, error } = await db.from('review_letters').insert({
@@ -210,14 +214,13 @@ export async function checkAndGenerateLetter(userId) {
     .eq('user_id', userId)
     .is('covered_by_letter_id', null)
     .neq('template_type', 'freewrite')
-    .gt('created_at', lastLetter?.period_end ?? '1970-01-01')
 
   if (prefs.require_new_entries && newEntryCount === 0) return
 
   const shouldGenerate = prefs.type === 'count' && newEntryCount >= prefs.count_threshold
 
   if (shouldGenerate) {
-    await generateReviewLetter(userId, lastLetter?.period_end, prefs)
+    await generateReviewLetter(userId, null, prefs)
   }
 }
 
@@ -231,5 +234,7 @@ export async function generateLetterNow(userId) {
     .maybeSingle()
 
   const prefs = await getUserLetterPrefs(userId)
-  await generateReviewLetter(userId, lastLetter?.period_end ?? null, prefs)
+  // 手动触发不限制时间范围：covered_by_letter_id IS NULL 已能识别未覆盖条目
+  // 不传 period_end 作为 periodStart，避免旧时间戳条目被排除
+  await generateReviewLetter(userId, null, prefs)
 }
