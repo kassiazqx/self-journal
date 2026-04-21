@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
-import { getImageUrl } from '../lib/imageStorage'
+import { getImageUrl, deleteImage } from '../lib/imageStorage'
 import { deleteEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { checkAndGenerateLetter } from '../lib/reviewLetterService'
@@ -127,47 +127,6 @@ function EntryCard({ entry, onOpen, onLongPress }) {
           style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
         />
       )}
-    </div>
-  )
-}
-
-// 回顾信卡片
-function LetterCard({ letter, onOpen }) {
-  const start = new Date(letter.period_start).toLocaleDateString('zh-CN',
-    { month: 'long', day: 'numeric' })
-  const end = new Date(letter.period_end).toLocaleDateString('zh-CN',
-    { month: 'long', day: 'numeric' })
-  const preview = (letter.content ?? '').slice(0, 50)
-
-  return (
-    <div
-      onClick={() => onOpen(letter)}
-      style={{
-        background: '#fffdf8',
-        border: '1px solid #f0e8d4',
-        borderLeft: letter.is_read ? '1px solid #f0e8d4' : '3px solid #c9a96e',
-        borderRadius: 12, padding: '12px 14px', marginBottom: 8,
-        cursor: 'pointer',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-        <span style={{ fontSize: 12 }}>✉</span>
-        <span style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500 }}>回顾信</span>
-        {!letter.is_read && (
-          <span style={{ width: 6, height: 6, borderRadius: '50%',
-            background: '#c9a96e', display: 'inline-block' }} />
-        )}
-      </div>
-      <div style={{
-        fontSize: 13, color: '#555', lineHeight: 1.6, marginBottom: 4,
-        display: '-webkit-box', WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical', overflow: 'hidden',
-      }}>
-        {preview}
-      </div>
-      <div style={{ fontSize: 10, color: '#bbb' }}>
-        {start} - {end} · {letter.entry_ids?.length ?? 0} 条记录
-      </div>
     </div>
   )
 }
@@ -387,7 +346,11 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
   })
 
   async function handleDelete(entry) {
+    const paths = (entry.image_urls ?? []).filter(Boolean)
     await deleteEntry({ id: entry.id, userId: user.id })
+    if (paths.length > 0) {
+      await Promise.all(paths.map(p => deleteImage(p)))
+    }
     setActionEntry(null)
     setConfirmDelete(false)
     load()

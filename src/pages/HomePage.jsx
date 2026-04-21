@@ -202,6 +202,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const [selectedFiles, setSelectedFiles] = useState([])
   const [selectedPreviews, setSelectedPreviews] = useState([])
   const [imagePaths, setImagePaths] = useState(editEntry?.image_urls ?? [])
+  const pathsToDeleteRef = useRef([])
   const [uploading, setUploading] = useState(false)
   const [editingImages, setEditingImages] = useState(false)
   const [fullscreenSrc, setFullscreenSrc] = useState(null)
@@ -414,6 +415,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       updateEntry({ id: entryId, userId, fields })
         .then(async ({ error }) => {
           if (error) { console.error('[edit]', error); return }
+          // DB 写成功后，才删 Storage（防止取消时产生孤儿文件）
+          const toDelete = [...pathsToDeleteRef.current]
+          pathsToDeleteRef.current = []
+          if (toDelete.length > 0) {
+            await Promise.all(toDelete.map(p => deleteImage(p)))
+          }
           if (!filesToUpload.length) return
           const newPaths = await Promise.all(
             filesToUpload.map(f => uploadImage(f, userId, entryId))
@@ -513,9 +520,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   }
 
   // ── 删除图片 ──────────────────────────────────────────────────
-  const handleDeleteImage = async (item) => {
+  const handleDeleteImage = (item) => {
     if (item.type === 'path') {
-      await deleteImage(item.id)
+      // 延迟删除：先从 UI 移除，保存成功后才真正删 Storage（与 EditEntryPage 模式一致）
+      pathsToDeleteRef.current = [...pathsToDeleteRef.current, item.id]
       setImagePaths(prev => prev.filter(p => p !== item.id))
     } else {
       const idx = item.fileIndex

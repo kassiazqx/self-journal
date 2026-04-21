@@ -259,37 +259,6 @@ export default function MainLayout() {
     return null
   }
 
-  // ── Tab 内容 ────────────────────────────────────────────────
-  function renderTab() {
-    switch (activeTab) {
-      case 'write':
-        return <HomePage onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} />
-      case 'records':
-        return (
-          <RecordsPage
-            key={refreshKey}
-            onOpenDetail={handleOpenDetail}
-            onOpenLetter={handleOpenLetter}
-            onOpenLetterList={handleOpenLetterList}
-            onEdit={handleEditEntry}
-          />
-        )
-      case 'insights':
-        return (
-          <InsightsPage
-            onOpenLetterList={handleOpenLetterList}
-            onOpenThreads={handleOpenThreads}
-            onOpenThread={handleOpenThread}
-            onOpenPendingThreads={() => push({ type: 'threads', defaultTab: 'pending' })}
-          />
-        )
-      case 'mine':
-        return <SettingsPage />
-      default:
-        return null
-    }
-  }
-
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',

@@ -40,6 +40,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState(null) // null = 加载中
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
 
   // 图片：已有路径（从 entry.image_urls 初始化） + 新选文件
   const [imagePaths, setImagePaths] = useState(entry.image_urls ?? [])
@@ -121,6 +122,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   async function handleSave() {
     if (saving) return
     setSaving(true)
+    setSaveError(false)
 
     try {
       const hasFlow = messages && messages.length > 0
@@ -161,6 +163,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
       onDone?.()
     } catch (err) {
       console.error('[EditEntryPage handleSave]', err)
+      setSaveError(true)
     } finally {
       setSaving(false)
     }
@@ -200,9 +203,9 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 14, fontWeight: 500,
-            color: saving || isLoading ? '#ccc' : '#c9a96e',
+            color: saving || isLoading ? '#ccc' : saveError ? '#e05252' : '#c9a96e',
           }}>
-          {saving ? '保存中…' : '保存'}
+          {saving ? '保存中…' : saveError ? '保存失败，重试' : '保存'}
         </button>
       </div>
 
