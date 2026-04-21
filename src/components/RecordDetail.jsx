@@ -467,9 +467,9 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   )
 
   // 优先展示 emotion_display（描述层），否则 fallback 到 emotions（基础层）
-  const emotions = entry.emotion_display?.length
+  const emotions = [...new Set(entry.emotion_display?.length
     ? entry.emotion_display
-    : (entry.emotions ?? [])
+    : (entry.emotions ?? []))]
 
   const TEMPLATE_OPTIONS = [
     { id: 'awareness', label: '觉察' },

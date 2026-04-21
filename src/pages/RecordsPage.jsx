@@ -33,9 +33,9 @@ function formatTime(isoStr) {
 // 单条记录卡片
 function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onToggle }) {
   const tpl = resolveTemplate(entry.template_type)
-  const emotions = entry.emotion_display?.length
+  const emotions = [...new Set(entry.emotion_display?.length
     ? entry.emotion_display
-    : (entry.emotions ?? [])
+    : (entry.emotions ?? []))]
   const preview = (entry.content ?? '').slice(0, 60)
 
   const pressTimer = useRef(null)
@@ -385,23 +385,25 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
     const selectedEntries = allEntries.filter(e => selectedIds.has(e.id))
     const paths = selectedEntries.flatMap(e => e.image_urls ?? []).filter(Boolean)
 
-    // 2. 并发清理 Storage（失败只 console.error，不阻塞）
-    if (paths.length > 0) {
-      await Promise.all(paths.map(p => deleteImage(p))).catch(console.error)
-    }
+    try {
+      // 2. 并发清理 Storage（失败抛出，不继续删 DB，避免孤儿文件）
+      if (paths.length > 0) {
+        await Promise.all(paths.map(p => deleteImage(p)))
+      }
 
-    // 3. 单次批量 DB 删除
-    const { error } = await deleteEntries({ ids: [...selectedIds], userId: user.id })
-    if (error) {
-      console.error('批量删除失败', error)
-      return  // 保持确认框和多选状态，用户知道失败了
-    }
+      // 3. 单次批量 DB 删除
+      const { error } = await deleteEntries({ ids: [...selectedIds], userId: user.id })
+      if (error) throw error
 
-    // 4. 退出多选，刷新列表
-    setShowBatchDeleteConfirm(false)
-    setIsSelecting(false)
-    setSelectedIds(new Set())
-    load()
+      // 4. 退出多选，刷新列表
+      setShowBatchDeleteConfirm(false)
+      setIsSelecting(false)
+      setSelectedIds(new Set())
+      load()
+    } catch (err) {
+      console.error('批量删除失败', err)
+      // 保持确认框和多选状态，用户可重试（Storage 删除幂等，重试安全）
+    }
   }
 
   async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {

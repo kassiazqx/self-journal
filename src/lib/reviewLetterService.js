@@ -101,9 +101,9 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   )
 
   // Step 4: 提取末尾 JSON（兼容 AI 输出的各种代码块格式）
-  // 匹配 ```json...``` 或 ~~~json...~~~ 或直接 {...} 块
+  // 匹配 ```json...``` 或 ~~~json...~~~ 或直接 {...} 块（贪婪匹配保证捕获完整嵌套 JSON）
   const insightsMatch = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
-    ?? rawLetter.match(/(\{\s*"suggested_threads"[\s\S]*?\})\s*$/)
+    ?? rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})\s*$/)
   let insights = { suggested_threads: [] }
   if (insightsMatch) {
     try { insights = JSON.parse(insightsMatch[1]) }
@@ -117,7 +117,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   // 移除末尾 JSON 块（含代码围栏），保证信的正文干净
   const letterContent = rawLetter
     .replace(/(?:```+|~~~+)\s*json\s*[\s\S]*?(?:```+|~~~+)/, '')
-    .replace(/\{\s*"suggested_threads"[\s\S]*?\}\s*$/, '')
+    .replace(/\{[\s\S]*"suggested_threads"[\s\S]*\}\s*$/, '')
     .trim()
 
   // Step 5: 保存 review_letter
