@@ -833,6 +833,18 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 
 **预防机制：** 新增本条 §4.41 让代码 session 在写任何 Crypto API 调用时主动检查；§4.40 的「规律」行直接指导写法。
 
+### 4.42 AI 输出解析：清理正则不能依赖末尾锚点（已修复）
+
+**根因：** AI 有时在 JSON 数组 `]` 之后追加 ` ``` ` 等杂质，导致 `\]\s*$` 末尾锚点失配，JSON 残留在正文。
+
+**已修复（2026-04-21）：** 三条清理 replace 均改为「从特征词删到字符串末尾」（`[\s\S]*$`），不依赖 `]` 的位置；新增格式A2（无 `json` 标签的代码块）；console.warn 改为输出末尾500字。
+
+**规律：**
+1. AI 输出格式不可完全预测，解析正则必须容忍末尾杂质
+2. 清理正则应为「从 JSON 起点删到末尾」，不用 `\]\s*$` 等末尾锚点
+3. 调试日志应输出**末尾**内容（JSON 在末尾），而非前500字
+4. 每次发现新格式立即扩展 pattern，不假设 AI 输出固定格式
+
 ---
 
 > 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。
@@ -917,6 +929,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-21 · 代码session · 回顾信 JSON 清理正则兼容增强：格式C `\]\s*$` 末尾锚点在 ] 后有 ``` 等杂质时失配，导致 JSON 残留正文；三条清理 replace 均改为删至字符串末尾（[\s\S]*$）；新增格式A2（无 json 标签代码块）；commit 8560273；同步卡：docs/sync-cards/2026-04-21-review-letter-json-cleanup-fix.md；新增 arch §4.42
 - 2026-04-21 · 代码session · 回顾信详情页相关脉络卡片完成：threads 表加 review_letter_id 外键（ALTER TABLE 已执行）；threadService 新增 fetchThreadsByLetterId；reviewLetterService Step 7 写入 review_letter_id；ReviewLetterDetail 展示三态脉络卡片（内嵌接受/忽略）；修复 AI 返回裸数组格式时正文夹带 JSON 的问题；commit 105c3eb；同步卡：docs/sync-cards/2026-04-21-review-letter-threads-done.md
 - 2026-04-21 · 代码session · 修复手机端保存卡住：crypto.randomUUID() 在 http://192.168.x.x 非安全上下文下抛出 TypeError，setSaving(false) 从未执行，按钮永远显示「…」；改为 crypto.randomUUID?.() ?? fallback 与 AwarenessFlow 保持一致；commit 577a19d；新增架构规则：§4.40
 - 2026-04-21 · 代码session · 完整数据备份导出完成：新建 exportService.js（8 表全量 JSON + 批量图片下载 + JSZip 打包）；SettingsPage 导出 UI 重写（两阶段失败处理）；commit f606c1d；同步卡：docs/sync-cards/2026-04-21-full-export.md
