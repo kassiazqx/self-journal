@@ -6,6 +6,16 @@ import { getReviewLetterPrompt } from './prompts'
 import { getMemory } from './memory'
 import { extractEntrySummaries } from './extractSummaryService'
 
+// ── 时间问候词 ──────────────────────────────────────────────────
+function getTimeGreeting() {
+  const h = new Date().getHours()
+  if (h >= 5  && h < 11) return ['早上好', '早啊', '早'][Math.floor(Math.random() * 3)]
+  if (h >= 11 && h < 14) return ['中午好', '午安'][Math.floor(Math.random() * 2)]
+  if (h >= 14 && h < 18) return '下午好'
+  if (h >= 18 && h < 23) return ['晚上好', '晚啊'][Math.floor(Math.random() * 2)]
+  return ['还没睡呢', '深夜了'][Math.floor(Math.random() * 2)]  // 23–05
+}
+
 // ── 读取用户触发偏好 ───────────────────────────────────────────
 export async function getUserLetterPrefs(userId) {
   // 主存储：user_memory（多端同步）
@@ -93,7 +103,8 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     core_needs: e.core_needs,
   }))
 
-  const prompt = getReviewLetterPrompt(entriesSummary)
+  const timeGreeting = getTimeGreeting()
+  const prompt = getReviewLetterPrompt({ entriesSummary, timeGreeting })
   const rawLetter = await callAI(
     [{ role: 'user', content: prompt }],
     '你是用户的内心陪伴者，写一封温和的回顾信，不评判，不说教，帮助用户看见自己。',

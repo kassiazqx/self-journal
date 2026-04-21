@@ -262,24 +262,11 @@ export function buildAwarenessContext(rawContent, answeredMessages) {
     + '请给出一个精炼的引导块：先用1句轻微共情/命名，再给1句你看到的线索或盲区，最后给1个开放式问题。不要长篇分析，总长度控制在半屏以内。'
 }
 
-// ─── 回顾信生成 prompt（第二批版本）──────────────────────────────
-// 入参改为 entries 摘要数组，不传原始 content（省 token + 保护隐私）
-// JSON 结构改为 suggested_threads（spec §5.2）
-export function getReviewLetterPrompt(entriesSummary) {
-  // entriesSummary: [{ date, entry_summary, theme_hints, core_needs }]
-  const entriesText = entriesSummary.map((e, i) =>
-    `[第${i + 1}条，${e.date}]\n摘要：${e.entry_summary ?? '（无摘要）'}\n主题标签：${(e.theme_hints ?? []).join('、') || '无'}\n核心需求：${(e.core_needs ?? []).join('、') || '无'}`
-  ).join('\n\n---\n\n')
+// ─── 回顾信生成 prompt ───────────────────────────────────────────
+// vars: { entriesSummary: [{ date, entry_summary, theme_hints, core_needs }], timeGreeting: string }
+// AI 在一次调用中完成「选格式 + 写信 + 输出 suggested_threads JSON」
 
-  return `你会收到用户这段时间的日记摘要。请写一封温暖的回顾信，语气像一位长期陪伴的朋友。
-
-要求：
-- 不评判，不说教，不鼓励"你下次应该..."
-- 帮助用户看见反复出现的情绪和模式
-- 用具体细节（用户自己写的词和场景），而不是泛泛而谈
-- 结尾留一个轻柔的问题或邀请，用户可以选择回应也可以不回应
-- 长度：300-500字
-
+const THREAD_OUTPUT_INSTRUCTION = `\
 写完信之后，在信的最后附上以下JSON（不要解释，直接输出）：
 \`\`\`json
 {
@@ -297,9 +284,75 @@ export function getReviewLetterPrompt(entriesSummary) {
 字段说明：
 - discovery_reason：2-3句，引用用户原文中出现的词汇和场景，不泛泛而谈
 - related_entry_indices：上方日记摘要数组的序号（0-based，第0条 = 第1篇日记），可填多个
-如果没有可建议新建的脉络，返回 "suggested_threads": []
+如果没有可建议新建的脉络，返回 "suggested_threads": []`
 
-以下是用户的日记摘要：
+export function getReviewLetterPrompt({ entriesSummary, timeGreeting }) {
+  // 每条条目拼为一行，theme_hints / core_needs 为空时省略对应片段
+  const entriesText = entriesSummary.map((e, i) => {
+    const parts = [`[${e.date.replace(/-/g, '/')}] 摘要：${e.entry_summary ?? '（无摘要）'}`]
+    if (e.theme_hints?.length)  parts.push(`主题：${e.theme_hints.join('、')}`)
+    if (e.core_needs?.length)   parts.push(`核心需求：${e.core_needs.join('、')}`)
+    return parts.join(' | ')
+  }).join('\n')
+
+  const entryCount = entriesSummary.length
+  const dates = entriesSummary.map(e => e.date).sort()
+  const dateRange = `${dates[0].replace(/-/g, '/')}—${dates[dates.length - 1].replace(/-/g, '/')}`
+
+  return `你会收到用户最近 ${entryCount} 条日记摘要（${dateRange}）。请先选择写信格式，再按该格式写信。
+
+---
+
+## 第一步：选择格式
+
+读完所有条目后，按以下规则选格式：
+
+**格式A（一根线）——满足任一条件即选格式A：**
+- theme_hints、core_needs 或摘要文字中，同一个词出现在超过一半的条目中（严格 >50%，即出现次数 > ${entryCount} × 0.5）
+- 同一个词出现在 5 条或更多条目中
+
+**否则选格式B（关键时刻）。**
+
+---
+
+## 格式A：一根线
+
+**第一行（必须是这个格式）：** ${timeGreeting}，[一句话观察，不超过20字，点出那条贯穿词/感受，像一个朋友说话，不是总结]
+
+**正文：** 找出那个贯穿词或感受，从 2–6 条不同日期的条目各摘一句，每条前标日期，直接引用，不加解释。
+
+格式（日期和内容之间无空行）：
+${timeGreeting}，这阵子好像一直在等什么。
+
+4月3日，你说……
+4月7日，你写……
+4月12日，你提到……
+
+**禁止：** 分析、解释、「这说明你……」、结尾总结段、建议。
+
+---
+
+## 格式B：关键时刻
+
+**第一行（必须是这个格式）：** ${timeGreeting}，[一句话观察，不超过20字，给出这段时间的整体感]
+
+**正文：** 从条目里找 2–6 个最有力量、最真实的时刻，每条前标日期，紧接一两行引用，日期和引用之间无空行，不加评论。
+
+格式：
+${timeGreeting}，这段时间有些时刻特别清晰。
+
+4月5日
+你说……
+4月11日
+你写……
+
+**禁止：** 分析、连接词「因为」「所以」、结尾总结、建议。
+
+---
+
+${THREAD_OUTPUT_INSTRUCTION}
+
+以下是用户的日记摘要（${entryCount} 条，${dateRange}）：
 
 ${entriesText}`
 }
