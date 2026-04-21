@@ -104,4 +104,45 @@
 
 ---
 
-*最后更新：2026-04-07*
+---
+
+## 9. Web Crypto API 必须用可选链，不能裸调用
+
+**踩坑案例：** `HomePage.jsx` 用 `crypto.randomUUID()` 生成 entry ID。桌面 `http://localhost` 正常，手机通过局域网 `http://192.168.x.x` 访问时抛出 TypeError，`setSaving(false)` 从未执行，按钮永远显示「…」。Vercel HTTPS 正常。
+
+**根因：** `crypto.randomUUID()` 要求安全上下文（Secure Context）。`localhost` 被浏览器豁免，但局域网 IP 不是。
+
+**规则：**
+- 任何 `crypto.*` / `crypto.subtle.*` 调用，必须用可选链加 fallback：
+  ```js
+  crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))
+  ```
+- 参考 `AwarenessFlow.jsx` 的安全写法，新增调用必须一致
+- code review 不会自动发现——这类 bug 不在 diff 里，只在真机测试时暴露
+
+---
+
+## 10. AI 输出解析：清理正则必须删至字符串末尾，不依赖末尾锚点
+
+**踩坑案例：** `reviewLetterService.js` 的格式C清理正则 `\[[\s\S]*"thread_name"[\s\S]*\]\s*$`，当 AI 在 `]` 后追加 ` ``` ` 时，`\]\s*$` 无法命中，JSON 原样残留在信的正文里。
+
+**根因：** AI 输出格式不可枚举，末尾可能追加任意杂质字符。
+
+**规则：**
+- AI 输出清理正则的结尾一律用 `[\s\S]*$`，从 JSON 起点删到字符串末尾：
+  ```js
+  // ❌ 不安全：依赖 ] 在末尾
+  .replace(/\[[\s\S]*"field"[\s\S]*\]\s*$/, '')
+
+  // ✅ 安全：从 [ 删到末尾，无论后面跟什么
+  .replace(/\[[\s\S]*"field"[\s\S]*$/, '')
+  ```
+- 调试日志输出**末尾**内容（JSON 在末尾），不是前500字：
+  ```js
+  console.warn('末尾500字:', rawOutput.slice(-500))
+  ```
+- 每次发现新 AI 输出格式后，立即扩展 pattern，不假设格式固定
+
+---
+
+*最后更新：2026-04-21*
