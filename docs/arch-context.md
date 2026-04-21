@@ -761,7 +761,16 @@ ALTER TABLE threads ADD COLUMN trigger_source text;
 
 ---
 
-### 4.37 reviewLetterService.js Step 7 串行化原因
+### 4.38 updateMemory 函数签名误用（已修复）
+
+**风险：** `updateMemory(userId, patch)` 的签名是 `(userId, updater)`，`updater` 应为函数 `(prev) => newVal`，不是数据对象。若误传 `patch` 对象，userId（UUID 字符串）会被 spread 为对象的 key，写入一堆以 UUID 字符序列为列名的无效字段，同时覆盖掉真正要写的内容，造成静默数据损坏。
+
+**已修复（2026-04-20）：** SettingsPage 回顾信频率切换处，改为 `() => {}` 只走 localStorage，不调 `updateMemory`。
+
+**规律：** 任何调用 `updateMemory` 的地方，第二参数必须是 `(prev) => newValue` 形式的函数，不能传对象或原始值。
+
+---
+
 
 **背景：** 当前 Step 7 用 `Promise.all` 并行 insert candidates，无法取回 thread id，因此无法写 `thread_entries`。
 
