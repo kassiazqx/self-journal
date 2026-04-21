@@ -868,6 +868,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-21 · 代码session · 回顾信生成修复（第二批）：①删除 generateReviewLetter + checkAndGenerateLetter 的时间范围过滤，统一改为只看 covered_by_letter_id IS NULL；②insights JSON 正则容错（兼容 ~~~json 和多反引号，加二次裸JSON清理）；③RecordsPage 改为 await checkAndGenerateLetter 再查列表，避免并发导致新信当次不可见；DB：threads 表新增 trigger_source text 列（ALTER TABLE 已执行）；commit fa39d6f 已 push main；同步卡：docs/sync-cards/2026-04-21-review-letter-fixes2.md
 - 2026-04-20 · 代码session · UI小批次优化完成：①RecordsPage 回顾信从时间流内嵌改为顶部固定卡片（有信/无信两态，点击跳列表），清理 latestUnreadLetter state；②MainLayout 两处 RecordsPage 补传 onOpenLetterList prop（漏传导致点击报 is not a function）；③HomePage 写作页键盘贴合：visualViewport resize监听，bottom=keyboardHeight-nav实测高度，bottom属性替代paddingBottom；④RecordDetail 编辑入口从 header 移到原始记录流 ✎，触摸区 padding+margin 补偿满足§8；⑤SettingsPage 回顾信频率切换修复：updateMemory 多传 user.id 导致UUID被spread为列名，改为 () => {} 只走localStorage；同步卡：docs/sync-cards/2026-04-20-ui-polish-batch-done.md
 - 2026-04-20 · 架构session · 审查 RecordDetail「编辑」入口迁移：header 按钮移至原始记录流标题行右侧 ✎；指出裸 span 触摸区仅 13×13px 违反 §8；修复：padding:6px 8px + margin:-6px -8px 补偿达 ~25×25px；onEdit 调用签名不变，无架构影响
 - 2026-04-20 · 代码session · 候选脉络信息补全 Tasks 1–2 完成：prompts.js getReviewLetterPrompt JSON schema 扩展（新增 discovery_reason/related_entry_indices，删除 link action）；reviewLetterService Step 7 由 Promise.all 改为 for...of 串行循环，insert 时写入 trigger_source/arc_summary/arc_updated_at，并根据 related_entry_indices 批量写 thread_entries；build 通过；因条目不足暂跳过 live 测试，待 generateLetterNow() 手动验证
