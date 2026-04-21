@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
 import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
+import DatetimePicker from '../components/DatetimePicker'
+import { formatPill } from '../lib/dateUtils'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -41,6 +43,8 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   const [messages, setMessages] = useState(null) // null = 加载中
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
+  const [editDatetime, setEditDatetime] = useState(new Date(entry.created_at ?? Date.now()))
+  const [showPicker, setShowPicker] = useState(false)
 
   // 图片：已有路径（从 entry.image_urls 初始化） + 新选文件
   const [imagePaths, setImagePaths] = useState(entry.image_urls ?? [])
@@ -129,7 +133,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
       if (!hasFlow) {
         const newContent = (contentMap['__raw__'] ?? '').trim()
-        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } })
+        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString() } })
       } else {
         const updatedMessages = messages.map(msg => {
           if (msg.id in contentMap) return { ...msg, content: contentMap[msg.id] }
@@ -138,7 +142,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         const rawMsg = updatedMessages.find(m => m.nodeType === 'raw_entry')
         const newContent = (rawMsg?.content ?? entry.content ?? '').trim()
         await Promise.all([
-          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent } }),
+          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString() } }),
           db.from('conversations').upsert(
             { user_id: user.id, entry_id: entry.id, context_type: 'entry',
               messages: updatedMessages, updated_at: new Date().toISOString() },
@@ -175,6 +179,15 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
       background: '#faf8f4' }}>
 
+      {/* 时间编辑 picker */}
+      {showPicker && (
+        <DatetimePicker
+          initialDatetime={editDatetime}
+          onConfirm={d => { setEditDatetime(d); setShowPicker(false) }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
       {fullscreenImg && (
         <div
           onClick={() => setFullscreenImg(null)}
@@ -193,12 +206,16 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         justifyContent: 'space-between', background: '#faf8f4',
         borderBottom: '1px solid #ede9e2', flexShrink: 0,
       }}>
-        <button onClick={onBack}
-          style={{ background: 'none', border: 'none', color: '#bbb',
-            cursor: 'pointer', fontSize: 14 }}>
-          取消
+        <button
+          onClick={() => setShowPicker(true)}
+          style={{
+            background: 'none', border: '1px solid #f0e4cc',
+            borderRadius: 99, fontSize: 11,
+            padding: '3px 10px', color: '#c9a96e', cursor: 'pointer',
+          }}
+        >
+          {formatPill(editDatetime)}
         </button>
-        <span style={{ fontSize: 13, color: '#aaa' }}>编辑记录</span>
         <button onClick={handleSave} disabled={saving || isLoading}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',

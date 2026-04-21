@@ -4,7 +4,7 @@ import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { fetchAllEntries } from '../lib/journalService'
 import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
-import { generateLetterNow, saveUserLetterPrefs } from '../lib/reviewLetterService'
+import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
 import { updateMemory } from '../lib/memory'
 import { db } from '../lib/db'
 import {
@@ -44,8 +44,9 @@ export default function SettingsPage() {
   const [updatingMemory, setUpdatingMemory] = useState(false)
   const [memoryUpdateMsg, setMemoryUpdateMsg] = useState('')
   const [letterPrefs, setLetterPrefs] = useState({
-    type: 'count', count_threshold: 10, day_interval: 7, require_new_entries: true,
+    type: 'count', count_threshold: 10, require_new_entries: true,
   })
+  const [countInput, setCountInput] = useState('10') // 独立字符串，允许输入过程中间状态
   const [generatingLetter, setGeneratingLetter] = useState(false)
   const [letterMsg, setLetterMsg] = useState('')
 
@@ -77,6 +78,12 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return
     loadTagOptions()
+    getUserLetterPrefs(user.id).then(prefs => {
+      if (prefs) {
+        setLetterPrefs(prefs)
+        setCountInput(String(prefs.count_threshold ?? 10))
+      }
+    }).catch(() => {})
   }, [user])
 
   async function loadTagOptions() {
@@ -510,29 +517,63 @@ export default function SettingsPage() {
           </div>
 
           {/* 触发方式 */}
-          {[
-            { value: 'days',   label: `每隔 ${letterPrefs.day_interval} 天自动生成` },
-            { value: 'count',  label: `累积 ${letterPrefs.count_threshold} 条情感记录后生成` },
-            { value: 'manual', label: '手动生成' },
-          ].map(opt => (
-            <label key={opt.value} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              fontSize: 14, color: '#333', marginBottom: 12, cursor: 'pointer',
-            }}>
-              <input
-                type="radio"
-                name="letterTrigger"
-                value={opt.value}
-                checked={letterPrefs.type === opt.value}
-                onChange={() => {
-                  const updated = { ...letterPrefs, type: opt.value }
-                  setLetterPrefs(updated)
-                  saveUserLetterPrefs(user.id, updated, () => {})
-                }}
-              />
-              {opt.label}
-            </label>
-          ))}
+          {/* 选项 A：累积 N 条后自动生成 */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 14, color: '#333', marginBottom: 14, cursor: 'pointer',
+          }}>
+            <input
+              type="radio"
+              name="letterTrigger"
+              checked={letterPrefs.type === 'count'}
+              onChange={() => {
+                const updated = { ...letterPrefs, type: 'count' }
+                setLetterPrefs(updated)
+                saveUserLetterPrefs(user.id, updated, () => {})
+              }}
+            />
+            累积
+            <input
+              type="number"
+              min={3}
+              max={50}
+              value={countInput}
+              disabled={letterPrefs.type !== 'count'}
+              onChange={e => setCountInput(e.target.value)}
+              onBlur={() => {
+                const n = Math.max(3, Math.min(50, parseInt(countInput) || 10))
+                setCountInput(String(n))
+                const updated = { ...letterPrefs, count_threshold: n }
+                setLetterPrefs(updated)
+                saveUserLetterPrefs(user.id, updated, () => {})
+              }}
+              style={{
+                width: 48, textAlign: 'center', fontSize: 14,
+                border: '1px solid #e0dbd4', borderRadius: 6,
+                padding: '2px 4px', background: letterPrefs.type === 'count' ? 'white' : '#f5f3ef',
+                color: letterPrefs.type === 'count' ? '#333' : '#bbb',
+              }}
+            />
+            条情感记录后自动生成
+          </label>
+
+          {/* 选项 B：手动生成 */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 14, color: '#333', marginBottom: 14, cursor: 'pointer',
+          }}>
+            <input
+              type="radio"
+              name="letterTrigger"
+              checked={letterPrefs.type === 'manual'}
+              onChange={() => {
+                const updated = { ...letterPrefs, type: 'manual' }
+                setLetterPrefs(updated)
+                saveUserLetterPrefs(user.id, updated, () => {})
+              }}
+            />
+            手动生成（不自动触发）
+          </label>
 
           {/* 立即生成按钮 */}
           <button

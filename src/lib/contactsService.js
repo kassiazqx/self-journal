@@ -103,14 +103,37 @@ export async function deleteContact(id) {
 
 // 用内存中的联系人列表检测文本里的人物（不查 DB）
 // contacts: loadContacts() 返回的数组
+// 长词优先匹配，防止「朋友」被「男朋友」的子串误命中
 export function detectPeopleFromText(text, contacts) {
   if (!text || !contacts?.length) return []
-  const matched = []
+
+  const pairs = []
   for (const contact of contacts) {
     const allKeywords = [contact.canonical, ...(contact.aliases || [])]
-    if (allKeywords.some(kw => text.includes(kw))) {
-      matched.push(contact.canonical)
+    for (const kw of allKeywords) {
+      if (kw) pairs.push({ canonical: contact.canonical, kw })
     }
   }
-  return [...new Set(matched)]
+  pairs.sort((a, b) => b.kw.length - a.kw.length)
+
+  const matched = new Set()
+  const usedRanges = []
+
+  for (const { canonical, kw } of pairs) {
+    if (matched.has(canonical)) continue
+
+    let idx = text.indexOf(kw)
+    while (idx !== -1) {
+      const end = idx + kw.length
+      const overlaps = usedRanges.some(([s, e]) => idx < e && end > s)
+      if (!overlaps) {
+        usedRanges.push([idx, end])
+        matched.add(canonical)
+        break
+      }
+      idx = text.indexOf(kw, idx + 1)
+    }
+  }
+
+  return [...matched]
 }

@@ -46,7 +46,7 @@ import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
 
-function saveDraft(content, templateId, selectedDatetime, manualOverride) {
+function saveDraft(content, templateId, selectedDatetime, manualOverride, dismissedPeople) {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       content,
@@ -54,6 +54,7 @@ function saveDraft(content, templateId, selectedDatetime, manualOverride) {
       savedAt: new Date().toISOString(),
       selectedDatetime: selectedDatetime instanceof Date ? selectedDatetime.toISOString() : null,
       manualOverride: Boolean(manualOverride),
+      dismissedPeople: dismissedPeople ? [...dismissedPeople] : [],
     }))
   } catch (_) {}
 }
@@ -72,6 +73,7 @@ function loadDraft() {
     if (draft.selectedDatetime) {
       draft.selectedDatetime = new Date(draft.selectedDatetime)
     }
+    draft.dismissedPeople = new Set(draft.dismissedPeople ?? [])
     return draft
   } catch (_) {
     return null
@@ -214,8 +216,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     ...selectedPreviews.map((src, i) => ({ id: `new-${i}`, previewSrc: src, type: 'file', fileIndex: i })),
   ]
 
-  // 日期时间选择（仅新建模式）
-  const [selectedDatetime, setSelectedDatetime] = useState(() => new Date())
+  // 日期时间选择
+  const [selectedDatetime, setSelectedDatetime] = useState(() =>
+    editEntry?.created_at ? new Date(editEntry.created_at) : new Date()
+  )
   const [manualOverride, setManualOverride] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const inferTimerRef = useRef(null)
@@ -268,10 +272,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     if (isEditMode) return
     clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
-      if (content.trim()) saveDraft(content, template.id, selectedDatetime, manualOverride)
+      if (content.trim()) saveDraft(content, template.id, selectedDatetime, manualOverride, dismissedPeople)
     }, 3000)
     return () => clearTimeout(draftTimerRef.current)
-  }, [content, template.id, isEditMode, selectedDatetime, manualOverride])
+  }, [content, template.id, isEditMode, selectedDatetime, manualOverride, dismissedPeople])
 
   // ── inferDatetime debounce（仅新建模式）──────────────────────
   useEffect(() => {
@@ -299,6 +303,9 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       if (draftRef.current.selectedDatetime) {
         setSelectedDatetime(draftRef.current.selectedDatetime)
         setManualOverride(draftRef.current.manualOverride ?? false)
+      }
+      if (draftRef.current.dismissedPeople?.size > 0) {
+        setDismissedPeople(draftRef.current.dismissedPeople)
       }
     }
     setShowDraftBanner(false)
@@ -402,6 +409,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         template_type: template.id,
         people_involved: allPeople,
         image_urls: imagePaths,
+        created_at: selectedDatetime.toISOString(),
       }
       const updatedEntry = { ...editEntry, ...fields }
       onDone?.(updatedEntry, false)
@@ -651,25 +659,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           </button>
         ))}
 
-        {/* 编辑模式取消按钮 */}
-        {isEditMode && onCancel && (
-          <button
-            onClick={onCancel}
-            className="ml-auto text-xs text-gray-400 px-2 py-1"
-          >
-            取消
-          </button>
-        )}
-
-        {/* 日期时间 pill（仅新建模式） */}
-        {!isEditMode && (() => {
+        {/* 日期时间 pill（始终显示，始终可点） */}
+        {(() => {
           const now = new Date()
-          const isModified = manualOverride || Math.abs(selectedDatetime.getTime() - now.getTime()) >= 60000
+          const isModified = !isEditMode && (manualOverride || Math.abs(selectedDatetime.getTime() - now.getTime()) >= 60000)
           return (
             <button
               onClick={() => setShowPicker(true)}
               style={{
-                marginLeft: isEditMode ? 0 : 'auto',
+                marginLeft: 'auto',
                 fontSize: 11,
                 padding: '2px 8px',
                 borderRadius: 99,
@@ -684,6 +682,16 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             </button>
           )
         })()}
+
+        {/* 编辑模式取消按钮 */}
+        {isEditMode && onCancel && (
+          <button
+            onClick={onCancel}
+            className="text-xs text-gray-400 px-2 py-1"
+          >
+            取消
+          </button>
+        )}
       </div>
 
       {/* ── 引导词行（细竖线 + 文字）── */}

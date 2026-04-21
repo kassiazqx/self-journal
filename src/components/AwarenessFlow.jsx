@@ -374,7 +374,7 @@ export default function AwarenessFlow({
             onClick={handleSaveExit}
             style={{ background: 'none', border: 'none', color: '#bbb', cursor: 'pointer', fontSize: 13, padding: 0 }}
           >
-            保存并退出
+            保存
           </button>
         </div>
       </div>

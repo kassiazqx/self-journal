@@ -7,22 +7,28 @@ import { getMemory } from './memory'
 import { extractEntrySummaries } from './extractSummaryService'
 
 // ── 读取用户触发偏好 ───────────────────────────────────────────
-async function getUserLetterPrefs(userId) {
+export async function getUserLetterPrefs(userId) {
   // 主存储：user_memory（多端同步）
   try {
     const memory = await getMemory(userId)
     const prefs = memory?.user_profile?.letter_prefs
-    if (prefs) return prefs
+    if (prefs) {
+      // 兼容旧存储中 type: 'days'（已弃用），降级为 count
+      return prefs.type === 'days' ? { ...prefs, type: 'count' } : prefs
+    }
   } catch { /* ignore */ }
 
   // 降级：localStorage
   try {
     const stored = localStorage.getItem(`letter_prefs_${userId}`)
-    if (stored) return JSON.parse(stored)
+    if (stored) {
+      const prefs = JSON.parse(stored)
+      return prefs.type === 'days' ? { ...prefs, type: 'count' } : prefs
+    }
   } catch { /* ignore */ }
 
   // 默认：每写 10 条自动触发
-  return { type: 'count', count_threshold: 10, day_interval: 7, require_new_entries: true }
+  return { type: 'count', count_threshold: 10, require_new_entries: true }
 }
 
 // ── 保存用户触发偏好 ──────────────────────────────────────────
@@ -199,11 +205,6 @@ export async function checkAndGenerateLetter(userId) {
     .limit(1)
     .maybeSingle()
 
-  const lastDate = lastLetter?.created_at ? new Date(lastLetter.created_at) : null
-  const daysSinceLast = lastDate
-    ? (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
-    : Infinity
-
   const { count: newEntryCount } = await db.from('journal_entries')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
@@ -213,9 +214,7 @@ export async function checkAndGenerateLetter(userId) {
 
   if (prefs.require_new_entries && newEntryCount === 0) return
 
-  const shouldGenerate =
-    (prefs.type === 'days'  && daysSinceLast >= prefs.day_interval) ||
-    (prefs.type === 'count' && newEntryCount >= prefs.count_threshold)
+  const shouldGenerate = prefs.type === 'count' && newEntryCount >= prefs.count_threshold
 
   if (shouldGenerate) {
     await generateReviewLetter(userId, lastLetter?.period_end, prefs)
