@@ -245,3 +245,16 @@ ${candidatesText}
 
   return { newCount: validIds.length, error: null }
 }
+
+// 查询某封回顾信关联的候选脉络（通过 review_letter_id 外键）
+export async function fetchThreadsByLetterId(letterId) {
+  const { data, error } = await db.from('threads')
+    .select('id, name, status, arc_summary')
+    .eq('review_letter_id', letterId)
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error('[fetchThreadsByLetterId]', error.message)
+    return []
+  }
+  return data ?? []
+}

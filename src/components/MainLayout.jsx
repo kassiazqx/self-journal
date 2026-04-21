@@ -183,6 +183,8 @@ export default function MainLayout() {
           letter={screen.letter}
           onBack={pop}
           onOpenEntry={entryId => push({ type: 'detail', entry: { id: entryId } })}
+          onOpenCandidateDetail={handleOpenCandidate}
+          onOpenThreadDetail={thread => handleOpenThread(thread, 'view')}
         />
       )
     }

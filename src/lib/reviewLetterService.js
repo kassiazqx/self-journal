@@ -100,24 +100,48 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     { maxTokens: 1200 }
   )
 
-  // Step 4: 提取末尾 JSON（兼容 AI 输出的各种代码块格式）
-  // 匹配 ```json...``` 或 ~~~json...~~~ 或直接 {...} 块（贪婪匹配保证捕获完整嵌套 JSON）
-  const insightsMatch = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
-    ?? rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})\s*$/)
+  // Step 4: 提取末尾 JSON（兼容 AI 输出的各种格式）
+  // 策略：依次尝试三种格式，任一匹配即解析
+  //   格式A: ```json ... ``` 或 ~~~json ... ~~~
+  //   格式B: { "suggested_threads": [...] }  裸对象
+  //   格式C: [ { "action": ... } ]            AI 直接返回裸数组（不套对象）
+  const fencedMatch = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
+  const objectMatch = rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})\s*$/)
+  const arrayMatch  = rawLetter.match(/(\[[\s\S]*"thread_name"[\s\S]*\])\s*$/)
+
   let insights = { suggested_threads: [] }
-  if (insightsMatch) {
-    try { insights = JSON.parse(insightsMatch[1]) }
-    catch (e) {
+  let rawJsonStr = null
+
+  if (fencedMatch) {
+    rawJsonStr = fencedMatch[1]
+  } else if (objectMatch) {
+    rawJsonStr = objectMatch[1]
+  } else if (arrayMatch) {
+    rawJsonStr = arrayMatch[1]
+  }
+
+  if (rawJsonStr) {
+    try {
+      const parsed = JSON.parse(rawJsonStr)
+      // 格式C：AI 直接返回数组，需包装成标准结构
+      if (Array.isArray(parsed)) {
+        insights = { suggested_threads: parsed }
+      } else {
+        insights = parsed
+      }
+    } catch (e) {
       console.warn('[reviewLetter] insights JSON 解析失败:', e)
       console.warn('[reviewLetter] 原始返回前 500 字符:', rawLetter.slice(0, 500))
     }
   } else {
     console.warn('[reviewLetter] 未找到 JSON 块，rawLetter 前 300 字符:', rawLetter.slice(0, 300))
   }
-  // 移除末尾 JSON 块（含代码围栏），保证信的正文干净
+
+  // 移除末尾所有 JSON 块，保证信的正文干净
   const letterContent = rawLetter
-    .replace(/(?:```+|~~~+)\s*json\s*[\s\S]*?(?:```+|~~~+)/, '')
-    .replace(/\{[\s\S]*"suggested_threads"[\s\S]*\}\s*$/, '')
+    .replace(/(?:```+|~~~+)\s*json\s*[\s\S]*?(?:```+|~~~+)/, '')  // 格式A
+    .replace(/\{[\s\S]*"suggested_threads"[\s\S]*\}\s*$/, '')       // 格式B
+    .replace(/\[[\s\S]*"thread_name"[\s\S]*\]\s*$/, '')             // 格式C
     .trim()
 
   // Step 5: 保存 review_letter
@@ -161,6 +185,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
         trigger_source: 'review',
         arc_summary: t.discovery_reason?.trim() || null,
         arc_updated_at: new Date().toISOString(),
+        review_letter_id: letter.id,
       })
       .select('id')
       .single()
