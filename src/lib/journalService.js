@@ -50,3 +50,12 @@ export function deleteEntry({ id, userId }) {
     .eq('id', id)
     .eq('user_id', userId)
 }
+
+// ─── 批量删除 ──────────────────────────────────────────────────
+export function deleteEntries({ ids, userId }) {
+  return supabase
+    .from('journal_entries')
+    .delete()
+    .in('id', ids)
+    .eq('user_id', userId)
+}

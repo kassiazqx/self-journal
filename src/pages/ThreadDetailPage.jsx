@@ -310,8 +310,14 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
 
       {/* 顶部导航 */}
       <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#faf8f4', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#bbb', cursor: 'pointer', fontSize: 14 }}>
-          ← 脉络
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none',
+          color: '#bbb', cursor: 'pointer',
+          fontSize: 20, fontWeight: 300,
+          padding: '6px 8px', margin: '-6px -8px',
+          lineHeight: 1,
+        }}>
+          ‹
         </button>
 
         {/* 标题（归档态灰色 + 角标，已确认可点击编辑） */}

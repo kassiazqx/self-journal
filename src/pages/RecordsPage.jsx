@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { getImageUrl, deleteImage } from '../lib/imageStorage'
-import { deleteEntry } from '../lib/journalService'
+import { deleteEntry, deleteEntries } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { checkAndGenerateLetter } from '../lib/reviewLetterService'
 import FilterBar from '../components/FilterBar'
@@ -31,7 +31,7 @@ function formatTime(isoStr) {
 }
 
 // 单条记录卡片
-function EntryCard({ entry, onOpen, onLongPress }) {
+function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onToggle }) {
   const tpl = resolveTemplate(entry.template_type)
   const emotions = entry.emotion_display?.length
     ? entry.emotion_display
@@ -53,6 +53,7 @@ function EntryCard({ entry, onOpen, onLongPress }) {
   }
   function handleClick() {
     if (didLongPress.current) { didLongPress.current = false; return }
+    if (isSelecting) { onToggle?.(entry.id); return }
     onOpen(entry)
   }
 
@@ -69,13 +70,32 @@ function EntryCard({ entry, onOpen, onLongPress }) {
       onTouchEnd={cancelPress}
       onTouchMove={cancelPress}
       style={{
-        background: 'white', borderRadius: 12, padding: '12px 14px',
+        background: isSelected ? '#fffbf0' : 'white',
+        borderRadius: 12, padding: '12px 14px',
         marginBottom: 8, cursor: 'pointer',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         WebkitUserSelect: 'none', userSelect: 'none',
         display: 'flex', gap: 10, alignItems: 'flex-start',
+        outline: isSelected ? '2px solid #c9a96e' : 'none',
+        outlineOffset: -2,
       }}
     >
+      {/* 多选 checkbox */}
+      {isSelecting && (
+        <div style={{
+          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+          alignSelf: 'center',
+          background: isSelected ? '#c9a96e' : 'none',
+          border: isSelected ? 'none' : '1.5px solid #ddd',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {isSelected && (
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 5.5L4.5 8L9 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </div>
+      )}
       {/* 左侧文字区 */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between',
@@ -135,6 +155,10 @@ const ENTRY_PAGE = 50   // 每次加载的条数
 
 export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterList, onEdit }) {
   const { user } = useAuth()
+  // ── 多选模式 ────────────────────────────────────────────────
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [allEntries, setAllEntries] = useState([])
   const [allLetters, setAllLetters] = useState([])
   const [loading, setLoading] = useState(true)
@@ -356,6 +380,30 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
     load()
   }
 
+  async function handleBatchDelete() {
+    // 1. 收集选中条目的所有图片路径
+    const selectedEntries = allEntries.filter(e => selectedIds.has(e.id))
+    const paths = selectedEntries.flatMap(e => e.image_urls ?? []).filter(Boolean)
+
+    // 2. 并发清理 Storage（失败只 console.error，不阻塞）
+    if (paths.length > 0) {
+      await Promise.all(paths.map(p => deleteImage(p))).catch(console.error)
+    }
+
+    // 3. 单次批量 DB 删除
+    const { error } = await deleteEntries({ ids: [...selectedIds], userId: user.id })
+    if (error) {
+      console.error('批量删除失败', error)
+      return  // 保持确认框和多选状态，用户知道失败了
+    }
+
+    // 4. 退出多选，刷新列表
+    setShowBatchDeleteConfirm(false)
+    setIsSelecting(false)
+    setSelectedIds(new Set())
+    load()
+  }
+
   async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {
     const hasFilter = searchText.trim() || selectedEmotions.length ||
                       selectedCategories.length || selectedPeople.length ||
@@ -417,21 +465,48 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
           padding: '14px 18px 10px',
           background: '#faf8f4', borderBottom: '1px solid #ede9e2',
         }}>
-          <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>记录</span>
-          <button
-            onClick={() => {
-              if (showSearch) {
-                setShowSearch(false)
-                setFilteredEntries(null)
-              } else {
-                setShowSearch(true)
-              }
-            }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 20, color: '#888', lineHeight: 1, padding: '0 2px' }}
-          >
-            {showSearch ? '✕' : '🔍'}
-          </button>
+          {isSelecting ? (
+            <>
+              <button
+                onClick={() => { setIsSelecting(false); setSelectedIds(new Set()) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 14, color: '#888' }}
+              >
+                取消
+              </button>
+              <span style={{ fontSize: 14, color: '#555' }}>
+                已选 {selectedIds.size} 条
+              </span>
+              <button
+                onClick={() => selectedIds.size > 0 && setShowBatchDeleteConfirm(true)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 14,
+                  color: selectedIds.size > 0 ? '#c9a96e' : '#ccc',
+                }}
+              >
+                删除
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>记录</span>
+              <button
+                onClick={() => {
+                  if (showSearch) {
+                    setShowSearch(false)
+                    setFilteredEntries(null)
+                  } else {
+                    setShowSearch(true)
+                  }
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 20, color: '#888', lineHeight: 1, padding: '0 2px' }}
+              >
+                {showSearch ? '✕' : '🔍'}
+              </button>
+            </>
+          )}
         </div>
 
         {/* FilterBar（仅 showSearch=true 时显示） */}
@@ -492,8 +567,8 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
       {/* 可滚动内容区 */}
       <div style={{ flex: 1, overflowY: 'auto' }} onScroll={filteredEntries === null ? handleScroll : undefined}>
 
-      {/* 回顾信固定入口卡片 */}
-      <div style={{ padding: '12px 16px 0' }}>
+      {/* 回顾信固定入口卡片（多选模式下隐藏） */}
+      {!isSelecting && <div style={{ padding: '12px 16px 0' }}>
         {allLetters.length > 0 ? (
           <div
             onClick={() => onOpenLetterList(allLetters)}
@@ -557,7 +632,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* 按日期分组的时间流 */}
       <div style={{ padding: '12px 16px' }}>
@@ -574,16 +649,60 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
         ) : (
           groups.map(group => (
             <div key={group.date} style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#bbb', marginBottom: 8,
-                letterSpacing: '0.5px' }}>
-                {group.date}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginBottom: 8,
+              }}>
+                <div style={{ fontSize: 11, color: '#bbb', letterSpacing: '0.5px' }}>
+                  {group.date}
+                </div>
+                {isSelecting && (() => {
+                  const dayIds = group.items.map(i => i.id)
+                  const allSelected = dayIds.every(id => selectedIds.has(id))
+                  return (
+                    <div
+                      onClick={() => setSelectedIds(prev => {
+                        const next = new Set(prev)
+                        if (allSelected) {
+                          dayIds.forEach(id => next.delete(id))
+                        } else {
+                          dayIds.forEach(id => next.add(id))
+                        }
+                        return next
+                      })}
+                      style={{
+                        width: 18, height: 18, borderRadius: '50%', cursor: 'pointer',
+                        background: allSelected ? '#c9a96e' : 'none',
+                        border: allSelected ? 'none' : '1.5px solid #ddd',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {allSelected && (
+                        <svg width="10" height="10" viewBox="0 0 11 11" fill="none">
+                          <path d="M2 5.5L4.5 8L9 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
               {group.items.map(item => (
                 <EntryCard
                   key={item.id}
                   entry={item}
                   onOpen={onOpenDetail}
-                  onLongPress={e => { setActionEntry(e); setConfirmDelete(false) }}
+                  onLongPress={e => {
+                    if (isSelecting) return   // 已在多选模式，长按不重复触发
+                    setIsSelecting(true)
+                    setSelectedIds(new Set([e.id]))
+                  }}
+                  isSelecting={isSelecting}
+                  isSelected={selectedIds.has(item.id)}
+                  onToggle={id => setSelectedIds(prev => {
+                    const next = new Set(prev)
+                    next.has(id) ? next.delete(id) : next.add(id)
+                    return next
+                  })}
                 />
               ))}
             </div>
@@ -692,6 +811,55 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 批量删除确认 sheet */}
+      {showBatchDeleteConfirm && (
+        <div
+          onClick={() => setShowBatchDeleteConfirm(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 210,
+            background: 'rgba(0,0,0,0.35)',
+            display: 'flex', alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', background: 'white',
+              borderRadius: '16px 16px 0 0',
+              padding: '20px 0 env(safe-area-inset-bottom)',
+            }}
+          >
+            <div style={{ padding: '0 20px 16px', fontSize: 15, color: '#333', fontWeight: 500 }}>
+              删除 {selectedIds.size} 条记录？
+            </div>
+            <div style={{ padding: '0 20px 16px', fontSize: 13, color: '#999' }}>
+              此操作不可恢复。
+            </div>
+            <button
+              onClick={handleBatchDelete}
+              style={{
+                width: '100%', padding: '16px 20px', background: 'none',
+                border: 'none', textAlign: 'left', fontSize: 15,
+                color: '#e05252', cursor: 'pointer', fontWeight: 500,
+                borderTop: '1px solid #f5f3ef',
+              }}
+            >
+              确认删除
+            </button>
+            <button
+              onClick={() => setShowBatchDeleteConfirm(false)}
+              style={{
+                width: '100%', padding: '16px 20px', background: 'none',
+                border: 'none', textAlign: 'left', fontSize: 15,
+                color: '#bbb', cursor: 'pointer',
+              }}
+            >
+              取消
+            </button>
           </div>
         </div>
       )}

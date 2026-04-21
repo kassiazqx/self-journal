@@ -16,9 +16,14 @@ export default function ReviewLetterListPage({ letters = [], onBack, onOpenLette
       <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center',
         background: '#faf8f4', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
         <button onClick={onBack}
-          style={{ background: 'none', border: 'none', color: '#bbb',
-            cursor: 'pointer', fontSize: 14, marginRight: 12 }}>
-          ← 返回
+          style={{
+            background: 'none', border: 'none',
+            color: '#bbb', cursor: 'pointer',
+            fontSize: 20, fontWeight: 300,
+            padding: '6px 8px', margin: '-6px -8px',
+            lineHeight: 1, marginRight: 4,
+          }}>
+          ‹
         </button>
         <span style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>回顾信</span>
       </div>

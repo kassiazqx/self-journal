@@ -544,10 +544,13 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           onClick={onBack}
           style={{
             background: 'none', border: 'none',
-            color: '#bbb', cursor: 'pointer', fontSize: 14,
+            color: '#bbb', cursor: 'pointer',
+            fontSize: 20, fontWeight: 300,
+            padding: '6px 8px', margin: '-6px -8px',
+            lineHeight: 1,
           }}
         >
-          ← 返回
+          ‹
         </button>
       </div>
 

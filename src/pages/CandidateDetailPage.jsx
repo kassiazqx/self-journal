@@ -65,8 +65,14 @@ export default function CandidateDetailPage({ thread: initialThread, onBack, onA
       {/* 顶部导航 */}
       <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#faf8f4', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
         <button onClick={onBack}
-          style={{ background: 'none', border: 'none', color: '#bbb', cursor: 'pointer', fontSize: 14 }}>
-          ← 脉络
+          style={{
+            background: 'none', border: 'none',
+            color: '#bbb', cursor: 'pointer',
+            fontSize: 20, fontWeight: 300,
+            padding: '6px 8px', margin: '-6px -8px',
+            lineHeight: 1,
+          }}>
+          ‹
         </button>
         {/* 固定标题「候选脉络」 */}
         <span style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>候选脉络</span>

@@ -31,9 +31,14 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
       {/* 顶部 */}
       <div style={{ padding: '12px 18px 0' }}>
         <button onClick={onBack}
-          style={{ background: 'none', border: 'none', color: '#bbb',
-            cursor: 'pointer', fontSize: 14 }}>
-          ← 返回
+          style={{
+            background: 'none', border: 'none',
+            color: '#bbb', cursor: 'pointer',
+            fontSize: 20, fontWeight: 300,
+            padding: '6px 8px', margin: '-6px -8px',
+            lineHeight: 1,
+          }}>
+          ‹
         </button>
       </div>
 

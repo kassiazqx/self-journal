@@ -203,7 +203,13 @@ export default function ThreadsPage({ onBack, onOpenThread, onOpenCandidate, def
 
       {/* 顶部导航 */}
       <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#faf8f4', borderBottom: '1px solid #ede9e2', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#bbb', cursor: 'pointer', fontSize: 14 }}>← 返回</button>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none',
+          color: '#bbb', cursor: 'pointer',
+          fontSize: 20, fontWeight: 300,
+          padding: '6px 8px', margin: '-6px -8px',
+          lineHeight: 1,
+        }}>‹</button>
         <span style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>脉络</span>
         {/* ＋ 按钮 */}
         <div style={{ position: 'relative' }}>
