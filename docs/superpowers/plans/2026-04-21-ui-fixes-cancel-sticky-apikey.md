@@ -115,14 +115,42 @@ git commit -m "fix: EditEntryPage 顶栏加回取消按钮 + sticky 固定"
 
 ---
 
-## Task 2：RecordDetail — 顶栏加 sticky
+## Task 2：RecordDetail — 重构滚动区，顶栏 sticky
 
 **Files:**
-- Modify: `src/components/RecordDetail.jsx:540-555`
+- Modify: `src/components/RecordDetail.jsx:503-557`
 
-- [ ] **Step 1：顶栏 div 加 sticky 样式**
+**⚠️ 架构注意：** 外层容器（第 504-511 行）有 `overflowY: 'auto'`，sticky 的参照系是最近的滚动容器，在有 overflow 的祖先元素里不起作用。必须与 Task 3 相同处理：外层去掉 `overflowY: 'auto'`，内容区加独立滚动容器。
 
-找到第 540-555 行：
+- [ ] **Step 1：外层容器去掉 overflowY，顶栏加 sticky**
+
+找到第 503-511 行外层容器：
+```jsx
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: '#faf8f4',
+      overflowY: 'auto',
+      paddingBottom: 100,
+    }}>
+```
+
+替换为（去掉 `overflowY` 和 `paddingBottom`）：
+```jsx
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: '#faf8f4',
+    }}>
+```
+
+- [ ] **Step 2：顶栏加 sticky**
+
+找到第 540-542 行顶栏 div（紧接在「全屏图片查看」和「DatetimePicker」条件渲染块之后）：
 ```jsx
       {/* ── 顶部导航 ── */}
       <div style={{ padding: '12px 18px 0', display: 'flex', alignItems: 'center',
@@ -139,17 +167,54 @@ git commit -m "fix: EditEntryPage 顶栏加回取消按钮 + sticky 固定"
       }}>
 ```
 
-- [ ] **Step 2：验证编译**
+- [ ] **Step 3：顶栏结束后，内容区包进滚动容器**
+
+找到第 556-557 行（顶栏 div 闭合之后，内容 div 开始之前）：
+```jsx
+      </div>
+
+      <div style={{ padding: '16px 18px 0' }}>
+```
+
+替换为：
+```jsx
+      </div>
+
+      {/* 内容区独立滚动 */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
+      <div style={{ padding: '16px 18px 0' }}>
+```
+
+- [ ] **Step 4：补关闭内容滚动容器的 `</div>`**
+
+找到组件 return 的最后两行：
+```jsx
+    </div>
+  )
+```
+
+替换为：
+```jsx
+      </div>
+    </div>
+  )
+```
+
+（新增的 `</div>` 关闭 Step 3 加的 `flex: 1, overflowY: 'auto'` 滚动容器）
+
+- [ ] **Step 5：验证编译**
 
 ```bash
 npm run build 2>&1 | tail -5
 ```
 
-- [ ] **Step 3：Commit**
+期望：无 error
+
+- [ ] **Step 6：Commit**
 
 ```bash
 git add src/components/RecordDetail.jsx
-git commit -m "fix: RecordDetail 顶栏 sticky 固定"
+git commit -m "fix: RecordDetail 顶栏 sticky 固定，overflow 移至内容区"
 ```
 
 ---
