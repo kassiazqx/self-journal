@@ -69,6 +69,30 @@ export function useAnnotations(initialAnnotations) {
   }, [])
 
   /**
+   * 剪切掉 [clipStart, clipEnd) 范围内的标注（或指定类型）。
+   * 超出范围的部分保留为新的标注条目。
+   * @param {number} clipStart
+   * @param {number} clipEnd
+   * @param {'all'|'bold'|'highlight'|'underline'} typesToClip
+   */
+  const clipAnnotations = useCallback((clipStart, clipEnd, typesToClip = 'all') => {
+    setAnnotations(prev => {
+      const result = []
+      for (const a of prev) {
+        const shouldClip = typesToClip === 'all' || typesToClip === a.type
+        if (!shouldClip || a.end <= clipStart || a.start >= clipEnd) {
+          result.push(a)
+          continue
+        }
+        if (a.start < clipStart) result.push({ ...a, end: clipStart })
+        if (a.end > clipEnd)     result.push({ ...a, start: clipEnd })
+      }
+      return result
+    })
+    setDirty(true)
+  }, [])
+
+  /**
    * 重置为新的初始标注数组（用于异步加载场景，如 ThreadDetailPage）。
    * 调用后 dirty 重置为 false，视为"刚从 DB 加载"的干净状态。
    * @param {Array|null} newAnnotations
@@ -78,5 +102,5 @@ export function useAnnotations(initialAnnotations) {
     setDirty(false)
   }, [])
 
-  return { annotations, activeColor, setActiveColor, addAnnotation, removeAnnotation, markSaved, clearAll, resetAnnotations, dirty }
+  return { annotations, activeColor, setActiveColor, addAnnotation, removeAnnotation, markSaved, clearAll, clipAnnotations, resetAnnotations, dirty }
 }
