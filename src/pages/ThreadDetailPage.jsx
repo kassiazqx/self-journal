@@ -36,7 +36,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [loading, setLoading] = useState(true)
 
   // ── 标注系统（此刻这里）──
-  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+  const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(thread?.current_state_annotations)
 
   // thread 异步加载后，同步初始标注（防止 mount 时 thread 为 null 导致初始值为 []）
@@ -49,12 +49,14 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   }, [thread?.id, thread?.current_state_annotations])
 
   const currentStateRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: currentStateRef,
       rawText: thread?.current_state ?? '',
       addAnnotation,
+      clipAnnotations,
       activeColor,
+      annotations,
     })
 
   const saveTimerRef = React.useRef(null)
@@ -555,7 +557,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                 onTouchEnd={isArchived ? undefined : handleTouchEnd}
                 onContextMenu={isArchived ? undefined : (e => e.preventDefault())}
               >
-                <AnnotatedText text={thread.current_state ?? ''} annotations={annotations} />
+                <AnnotatedText text={thread.current_state ?? ''} annotations={annotations} onAnnotatedClick={isArchived ? undefined : openMenuForRange} />
                 {!isArchived && (
                   <AnnotationMenu
                     visible={menuVisible}
@@ -566,6 +568,8 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                     onUnderline={handleUnderline}
                     onColorChange={setActiveColor}
                     onClose={closeMenu}
+                    showCancel={hasOverlap}
+                    onCancel={handleCancel}
                   />
                 )}
               </div>

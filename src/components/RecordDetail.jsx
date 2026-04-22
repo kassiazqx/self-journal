@@ -138,16 +138,18 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [fullscreenImg, setFullscreenImg] = useState(null)
 
   // ── 标注系统 ──
-  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+  const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(entry.annotations)
 
   const contentContainerRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: contentContainerRef,
       rawText: entry.content ?? '',
       addAnnotation,
+      clipAnnotations,
       activeColor,
+      annotations,
     })
 
   // debounce 1.5 秒自动保存
@@ -1078,7 +1080,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                 onTouchEnd={handleTouchEnd}
                 onContextMenu={e => e.preventDefault()}
               >
-                <AnnotatedText text={entry.content ?? ''} annotations={annotations} />
+                <AnnotatedText text={entry.content ?? ''} annotations={annotations} onAnnotatedClick={openMenuForRange} />
                 <AnnotationMenu
                   visible={menuVisible}
                   position={menuPosition}
@@ -1088,6 +1090,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                   onUnderline={handleUnderline}
                   onColorChange={setActiveColor}
                   onClose={closeMenu}
+                  showCancel={hasOverlap}
+                  onCancel={handleCancel}
                 />
               </div>
               {(entry.image_urls ?? []).length > 0 && (
@@ -1126,7 +1130,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                       onTouchEnd={handleTouchEnd}
                       onContextMenu={e => e.preventDefault()}
                     >
-                      <AnnotatedText text={msg.content ?? ''} annotations={annotations} />
+                      <AnnotatedText text={msg.content ?? ''} annotations={annotations} onAnnotatedClick={openMenuForRange} />
                       <AnnotationMenu
                         visible={menuVisible}
                         position={menuPosition}
@@ -1136,6 +1140,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                         onUnderline={handleUnderline}
                         onColorChange={setActiveColor}
                         onClose={closeMenu}
+                        showCancel={hasOverlap}
+                        onCancel={handleCancel}
                       />
                     </div>
                     {imgs.length > 0 && (

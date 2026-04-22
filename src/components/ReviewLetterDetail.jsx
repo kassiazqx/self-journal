@@ -23,16 +23,18 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
   const [threads, setThreads] = useState([])
 
   // ── 标注系统 ──
-  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+  const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(letter.annotations)
 
   const letterContainerRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: letterContainerRef,
       rawText: letter.content ?? '',
       addAnnotation,
+      clipAnnotations,
       activeColor,
+      annotations,
     })
 
   const saveTimerRef = React.useRef(null)
@@ -142,7 +144,7 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
           onTouchEnd={handleTouchEnd}
           onContextMenu={e => e.preventDefault()}
         >
-          <AnnotatedText text={letter.content ?? ''} annotations={annotations} />
+          <AnnotatedText text={letter.content ?? ''} annotations={annotations} onAnnotatedClick={openMenuForRange} />
           <AnnotationMenu
             visible={menuVisible}
             position={menuPosition}
@@ -152,6 +154,8 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
             onUnderline={handleUnderline}
             onColorChange={setActiveColor}
             onClose={closeMenu}
+            showCancel={hasOverlap}
+            onCancel={handleCancel}
           />
         </div>
 
