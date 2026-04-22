@@ -49,13 +49,14 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   }, [thread?.id, thread?.current_state_annotations])
 
   const currentStateRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, handleColorChange, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: currentStateRef,
       rawText: thread?.current_state ?? '',
       addAnnotation,
       clipAnnotations,
       activeColor,
+      setActiveColor,
       annotations,
     })
 
@@ -566,7 +567,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
                     onBold={handleBold}
                     onHighlight={handleHighlight}
                     onUnderline={handleUnderline}
-                    onColorChange={setActiveColor}
+                    onColorChange={handleColorChange}
                     onClose={closeMenu}
                     showCancel={hasOverlap}
                     onCancel={handleCancel}

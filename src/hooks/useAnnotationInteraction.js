@@ -27,7 +27,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  *   pendingRange: { start: number, end: number } | null,
  * }}
  */
-export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, annotations }) {
+export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations }) {
   // 判断 [selStart, selEnd) 内每个字符是否都被 type 类型标注覆盖
   function isFullyCovered(selStart, selEnd, type) {
     const ofType = (annotations ?? []).filter(
@@ -170,6 +170,20 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     closeMenu()
   }, [clipAnnotations, closeMenu])
 
+  // 换色：始终更新 activeColor；若选区被该类型完全覆盖则同时替换颜色
+  const handleColorChange = useCallback((colorId) => {
+    setActiveColor(colorId)
+    const r = pendingRangeRef.current
+    if (!r) return
+    for (const type of ['highlight', 'underline']) {
+      if (isFullyCovered(r.start, r.end, type)) {
+        clipAnnotations(r.start, r.end, type)
+        addAnnotation(type, colorId, r.start, r.end)
+      }
+    }
+    // 不关闭菜单，用户可能继续操作
+  }, [setActiveColor, clipAnnotations, addAnnotation, annotations])
+
   // Rule 3：单击已标注 Segment → 以覆盖该 segment 的所有标注的并集为虚拟选区，弹出菜单
   const openMenuForRange = useCallback((e, segStart, segEnd) => {
     e.stopPropagation()
@@ -201,6 +215,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     handleHighlight,
     handleUnderline,
     handleCancel,
+    handleColorChange,
     openMenuForRange,
     hasOverlap,
     pendingRange: pendingRangeRef.current,

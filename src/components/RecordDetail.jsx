@@ -142,13 +142,14 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     useAnnotations(entry.annotations)
 
   const contentContainerRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, handleColorChange, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: contentContainerRef,
       rawText: entry.content ?? '',
       addAnnotation,
       clipAnnotations,
       activeColor,
+      setActiveColor,
       annotations,
     })
 
@@ -1088,7 +1089,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                   onBold={handleBold}
                   onHighlight={handleHighlight}
                   onUnderline={handleUnderline}
-                  onColorChange={setActiveColor}
+                  onColorChange={handleColorChange}
                   onClose={closeMenu}
                   showCancel={hasOverlap}
                   onCancel={handleCancel}
@@ -1138,7 +1139,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                         onBold={handleBold}
                         onHighlight={handleHighlight}
                         onUnderline={handleUnderline}
-                        onColorChange={setActiveColor}
+                        onColorChange={handleColorChange}
                         onClose={closeMenu}
                         showCancel={hasOverlap}
                         onCancel={handleCancel}

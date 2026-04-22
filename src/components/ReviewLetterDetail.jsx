@@ -27,13 +27,14 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
     useAnnotations(letter.annotations)
 
   const letterContainerRef = React.useRef(null)
-  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, openMenuForRange, hasOverlap } =
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, handleColorChange, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
       containerRef: letterContainerRef,
       rawText: letter.content ?? '',
       addAnnotation,
       clipAnnotations,
       activeColor,
+      setActiveColor,
       annotations,
     })
 
@@ -152,7 +153,7 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
             onBold={handleBold}
             onHighlight={handleHighlight}
             onUnderline={handleUnderline}
-            onColorChange={setActiveColor}
+            onColorChange={handleColorChange}
             onClose={closeMenu}
             showCancel={hasOverlap}
             onCancel={handleCancel}
