@@ -96,7 +96,7 @@ test('pausing AI when triggering card is answered navigates to next blank local 
   assert.equal(paused.activeAiNodeId, null)
   // triggering card (context) was answered → should land on next blank local card (emotion)
   assert.equal(paused.currentNode.kind, 'local')
-  assert.notEqual(paused.currentNode.promptId, 'context')
+  assert.notEqual(paused.currentNode.promptId, 'focus')
 
   const messages = buildConversationMessages(makeEntry(), paused)
   assert.deepEqual(
@@ -125,7 +125,7 @@ test('pausing AI when triggering card is blank returns to that blank card', () =
   assert.equal(paused.mode, 'local')
   assert.equal(paused.activeAiNodeId, null)
   // triggering card (context) was blank → should return to it
-  assert.equal(paused.currentNode.promptId, 'context')
+  assert.equal(paused.currentNode.promptId, 'focus')
 })
 
 test('previous and next traverse the unified node stream across AI nodes', () => {
