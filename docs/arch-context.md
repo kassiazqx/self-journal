@@ -340,6 +340,8 @@ src/
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
 │   │                           loadFull() 内调 resetAnnotations(data.annotations) 确保持久化标注正确加载
+│   │                           handleAIAnalyze 重拉 entry 后同样调 resetAnnotations，防止 AI 分析后标注状态与 DB 脱节
+│   │                           ⚠️ messages 分支 raw_entry 节点必须渲染 entry.content（非 msg.content），rawText 与渲染文本必须同源
 │   │                           保存防抖 500ms；onContextMenu preventDefault + WebkitTouchCallout none
 │   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
 │   └── ReviewLetterDetail.jsx  回顾信详情（只读 + 相关脉络卡片）
@@ -369,6 +371,7 @@ src/
     │                           条目列表「走过的路」：entry_summary 为空时显示 content 前80字
     │                           ✨ current_state 区支持标注（useAnnotations + useAnnotationInteraction）
     │                           load() 内调 resetAnnotations(t.current_state_annotations)；保存用 updateThread；防抖 500ms
+    │                           ⚠️ 去掉了 mount 时的额外 useEffect resetAnnotations，load() 里的已足够，双重调用会在异步间隙产生闪烁
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
@@ -918,9 +921,33 @@ async function loadFull() {
 }
 ```
 
+**扩展规律（2026-04-22 补充）：** 任何触发 entry 重新加载的操作（包括 handleAIAnalyze 等 AI 写回后的 re-fetch）都必须同步调 resetAnnotations，不能只 setEntry。
+
 **不要改成什么：**
 - 不要依赖 `setEntry` 触发标注重置（useState 初始化只跑一次）
 - 不要只在 `useAnnotations` 的 prop 上做手脚（应在调用方 loadFull 里调 resetAnnotations）
+- 不要在 loadFull 之外额外写 useEffect 来 reset（双重调用会导致异步间隙内标注闪烁为旧值）
+
+---
+
+### 4.49 标注系统：rawText 与渲染文本必须同源（2026-04-22 确立）
+
+**根因：** `useAnnotationInteraction` 的 `rawText` 参数决定标注偏移的基准字符串。如果页面实际渲染的文本与 `rawText` 不是同一个字符串，用户标注时 start/end 会对应到错误的字符位置，标注渲染位置偏移或完全错位。
+
+**典型陷阱（RecordDetail messages 分支）：**
+
+- `rawText: entry.content`（hook 参数，用于计算偏移）
+- 渲染时用 `msg.content`（对话快照，AwarenessFlow 写入时的原始内容）
+
+两者在大多数情况下相同，但用户**编辑记录**后 `entry.content` 更新而 `msg.content` 是快照，导致不一致。
+
+**修复：** raw_entry 节点改为渲染 `entry.content`，两边统一。
+
+**规律：** 凡使用 `useAnnotationInteraction` 的地方，传入 `rawText` 的字符串和 `AnnotatedText` 的 `text` prop 必须是**同一个表达式**（通常是同一个 state 变量或 prop）。两个不同来源的字符串即便内容相近，也存在时序错位风险。
+
+**不要改成什么：**
+- 不要在 messages 分支用 `msg.content` 渲染但 `rawText` 传 `entry.content`（两条路径，任意时刻可不同步）
+- 不要假设「两个字符串内容一样，所以没关系」——时序问题在正常使用中不会暴露，在编辑后才会出现
 
 ---
 
@@ -1004,7 +1031,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
-- 2026-04-22 · 代码session · 文字标注系统完整实现：新建 annotationConfig.js / useAnnotations.js / useAnnotationInteraction.js / AnnotatedText.jsx / AnnotationMenu.jsx；RecordDetail / ReviewLetterDetail / ThreadDetailPage(current_state区) 接入标注；DB 新增三列（journal_entries.annotations / review_letters.annotations / threads.current_state_annotations jsonb）；reviewLetterService 新增 updateReviewLetter()；修复移动端选区（selectionchange 300ms 防抖）/ 标注不持久化（resetAnnotations in loadFull）/ 水平溢出（去 nowrap）/ 多行覆盖（SVG→CSS）；commit 已 push dev；新增 arch §4.47（selectionchange）/ §4.48（resetAnnotations 规律）；同步卡：docs/sync-cards/2026-04-22-annotation-system.md
+- 2026-04-22 · 代码session · 修复标注系统五个代码审查问题：#1 RecordDetail raw_entry 分支改渲染 entry.content（与 rawText 同源，消除编辑后偏移错位）；#3 handleAIAnalyze re-fetch 后补调 resetAnnotations；#4 openMenuForRange 加越界守卫；#6 closeMenu 空 deps 加注释；#9 ThreadDetailPage 去掉冗余 useEffect resetAnnotations。新增 §4.49（rawText 与渲染文本同源规律）；更新 §4.48「不要在 loadFull 外额外写 useEffect reset」；commit 73c0f15；同步卡：docs/sync-cards/2026-04-22-annotation-bugfixes.md
+- 2026-04-22 · 代码session · 标注交互增强（Part 2.5）：Rule 1 取消（✕按钮 clipAll）/ Rule 2 同类型 toggle / Rule 3 单击已标注文字弹菜单（union range）/ 颜色替换（完全覆盖时点颜色=换色，不叠加）；新增 clipAnnotations hook；useAnnotationInteraction 重写；AnnotationMenu 新增 showCancel/onCancel；AnnotatedText 新增 onAnnotatedClick；三个详情页全部接入；commit 已在之前批次 push；新增 §4.47/§4.48；同步卡：docs/sync-cards/2026-04-22-annotation-system.md
 - 2026-04-21 · 代码session · 回顾信 JSON 清理正则兼容增强：格式C `\]\s*$` 末尾锚点在 ] 后有 ``` 等杂质时失配，导致 JSON 残留正文；三条清理 replace 均改为删至字符串末尾（[\s\S]*$）；新增格式A2（无 json 标签代码块）；commit 8560273；同步卡：docs/sync-cards/2026-04-21-review-letter-json-cleanup-fix.md；新增 arch §4.42
 - 2026-04-21 · 代码session · 脉络详情页 AI 分析完成：threads 表加 fragments/current_state/analysis_generated_at 三列（SQL 已执行）；prompts.js 新增 buildThreadAnalysisPrompt（挑碎片+写此刻，平实语言规则+分组格式）；threadService.js 新增 generateThreadAnalysis（读全文 content，一次 AI 调用输出 JSON，存 DB）；ThreadDetailPage 替换 arc_summary 区块为「此刻这里」+「一些碎片」（无框，上方）+「走过的路」；底部加「开始分析/再次分析」按钮；fetchThreadWithEntries 加 content 字段，entry_summary 为空时 content 前80字兜底；commit 3879c6a；同步卡：docs/sync-cards/2026-04-21-thread-detail-analysis.md
 - 2026-04-21 · 代码session · 回顾信 prompt 重设计：getTimeGreeting() 注入时间问候词（早/中/下午/晚/深夜随机选）；getReviewLetterPrompt 入参改为 {entriesSummary, timeGreeting}；新增格式A（一根线，贯穿词>50%条目）/格式B（关键时刻）AI 自选；THREAD_OUTPUT_INSTRUCTION 提为常量复用；commit 988c2e6；同步卡：已有 docs/sync-cards/2026-04-21-review-letter-threads-done.md
