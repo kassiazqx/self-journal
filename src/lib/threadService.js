@@ -318,10 +318,22 @@ export async function generateThreadAnalysis(threadId, userId) {
     return { error: e }
   }
 
+  // 提取 AI 预标注，过滤非法条目
+  const currentStateText = parsed.current_state.trim()
+  const rawAnnotations = Array.isArray(parsed.annotations) ? parsed.annotations : []
+  const currentStateAnnotations = rawAnnotations.filter(
+    a => typeof a.start === 'number'
+      && typeof a.end === 'number'
+      && a.start >= 0
+      && a.end <= currentStateText.length
+      && a.start < a.end
+  )
+
   const { error: saveErr } = await db.from('threads')
     .update({
       fragments: parsed.fragments,
-      current_state: parsed.current_state.trim(),
+      current_state: currentStateText,
+      current_state_annotations: currentStateAnnotations.length > 0 ? currentStateAnnotations : null,
       analysis_generated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -333,5 +345,10 @@ export async function generateThreadAnalysis(threadId, userId) {
     return { error: saveErr }
   }
 
-  return { fragments: parsed.fragments, current_state: parsed.current_state.trim(), error: null }
+  return {
+    fragments: parsed.fragments,
+    current_state: currentStateText,
+    current_state_annotations: currentStateAnnotations.length > 0 ? currentStateAnnotations : null,
+    error: null,
+  }
 }

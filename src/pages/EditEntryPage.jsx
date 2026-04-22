@@ -133,7 +133,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
       if (!hasFlow) {
         const newContent = (contentMap['__raw__'] ?? '').trim()
-        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString() } })
+        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations: null } })
       } else {
         const updatedMessages = messages.map(msg => {
           if (msg.id in contentMap) return { ...msg, content: contentMap[msg.id] }
@@ -142,7 +142,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         const rawMsg = updatedMessages.find(m => m.nodeType === 'raw_entry')
         const newContent = (rawMsg?.content ?? entry.content ?? '').trim()
         await Promise.all([
-          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString() } }),
+          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations: null } }),
           db.from('conversations').upsert(
             { user_id: user.id, entry_id: entry.id, context_type: 'entry',
               messages: updatedMessages, updated_at: new Date().toISOString() },

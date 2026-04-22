@@ -3,6 +3,7 @@
 // mode=confirmed：··· 菜单（编辑名称/编辑记录/重新分析/归档/删除）+ 编辑关联记录模式
 // mode=archived：只读 banner + 底部恢复/永久删除
 import { useState, useEffect, useRef } from 'react'
+import React from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import {
@@ -16,6 +17,10 @@ import {
 import FilterBar from '../components/FilterBar'
 import { loadContacts } from '../lib/contactsService'
 import { loadCoreNeeds } from '../lib/coreNeedsService'
+import AnnotatedText from '../components/AnnotatedText'
+import AnnotationMenu from '../components/AnnotationMenu'
+import { useAnnotations } from '../hooks/useAnnotations'
+import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 
 function formatDate(isoStr) {
   if (!isoStr) return ''
@@ -29,6 +34,43 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const [entries, setEntries] = useState([])        // thread_entries 展开后的 journal_entries
   const [rawEntries, setRawEntries] = useState([])  // 含 removed_by_user、added_by 的原始行
   const [loading, setLoading] = useState(true)
+
+  // ── 标注系统（此刻这里）──
+  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+    useAnnotations(thread?.current_state_annotations)
+
+  // thread 异步加载后，同步初始标注（防止 mount 时 thread 为 null 导致初始值为 []）
+  const prevThreadIdRef = React.useRef(null)
+  React.useEffect(() => {
+    if (thread?.id && thread.id !== prevThreadIdRef.current) {
+      prevThreadIdRef.current = thread.id
+      resetAnnotations(thread.current_state_annotations)
+    }
+  }, [thread?.id, thread?.current_state_annotations])
+
+  const currentStateRef = React.useRef(null)
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+    useAnnotationInteraction({
+      containerRef: currentStateRef,
+      rawText: thread?.current_state ?? '',
+      addAnnotation,
+      activeColor,
+    })
+
+  const saveTimerRef = React.useRef(null)
+  React.useEffect(() => {
+    if (!dirty || !thread?.id) return
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await updateThread(thread.id, user.id, { current_state_annotations: annotations })
+        markSaved()
+      } catch (e) {
+        console.error('[ThreadDetailPage] current_state_annotations 保存失败:', e)
+      }
+    }, 500)
+    return () => clearTimeout(saveTimerRef.current)
+  }, [dirty, annotations, thread?.id])
 
   // ··· 菜单
   const [showMenu, setShowMenu] = useState(false)
@@ -86,7 +128,10 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   async function load() {
     setLoading(true)
     const { thread: t, entries: e } = await fetchThreadWithEntries(thread.id)
-    if (t) setThread(t)
+    if (t) {
+      setThread(t)
+      resetAnnotations(t.current_state_annotations)
+    }
     setRawEntries(e ?? [])
     setEntries(
       (e ?? [])
@@ -502,8 +547,27 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
           <div style={{ fontSize: 11, color: '#c9a96e', fontWeight: 500, letterSpacing: '0.05em', marginBottom: 10 }}>此刻这里</div>
           {thread.current_state ? (
             <>
-              <div style={{ fontSize: 14, color: '#444', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>
-                {thread.current_state}
+              <div
+                ref={currentStateRef}
+                style={{ position: 'relative', fontSize: 14, color: '#444', lineHeight: 1.85,
+                  WebkitTouchCallout: isArchived ? undefined : 'none' }}
+                onMouseUp={isArchived ? undefined : handleMouseUp}
+                onTouchEnd={isArchived ? undefined : handleTouchEnd}
+                onContextMenu={isArchived ? undefined : (e => e.preventDefault())}
+              >
+                <AnnotatedText text={thread.current_state ?? ''} annotations={annotations} />
+                {!isArchived && (
+                  <AnnotationMenu
+                    visible={menuVisible}
+                    position={menuPosition}
+                    activeColor={activeColor}
+                    onBold={handleBold}
+                    onHighlight={handleHighlight}
+                    onUnderline={handleUnderline}
+                    onColorChange={setActiveColor}
+                    onClose={closeMenu}
+                  />
+                )}
               </div>
               {thread.analysis_generated_at && (
                 <div style={{ fontSize: 10, color: '#ccc', marginTop: 8, textAlign: 'right' }}>

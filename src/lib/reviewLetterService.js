@@ -133,16 +133,38 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     { maxTokens: 1200 }
   )
 
+  // Step 4a: 先提取 annotations 预标注（必须在 suggested_threads 清洗之前）
+  // 使用精确非贪婪正则，只匹配 {"annotations":[...]} 块，不触发贪婪回溯
+  let letterAnnotations = null
+  const annotationsMatch = rawLetter.match(/\{"annotations"\s*:\s*(\[[\s\S]*?\])\}/)
+  if (annotationsMatch) {
+    try {
+      const parsed = JSON.parse(annotationsMatch[0])
+      // 过滤非法标注（start/end 超出范围的由 buildSegments 在渲染时自动忽略）
+      if (Array.isArray(parsed.annotations)) {
+        letterAnnotations = parsed.annotations.filter(
+          a => typeof a.start === 'number' && typeof a.end === 'number' && a.start < a.end
+        )
+      }
+    } catch (e) {
+      console.warn('[reviewLetter] annotations JSON 解析失败:', e)
+    }
+  }
+  // 从 rawLetter 中剥离 annotations 块，防止干扰后续 suggested_threads 清洗
+  const rawLetterNoAnnotations = annotationsMatch
+    ? rawLetter.replace(annotationsMatch[0], '')
+    : rawLetter
+
   // Step 4: 提取末尾 JSON（兼容 AI 输出的各种格式）
   // 策略：依次尝试四种格式，任一匹配即解析
   //   格式A: ```json ... ``` 或 ~~~json ... ~~~（含 json 标签）
   //   格式A2: ``` ... ``` 或 ~~~  ... ~~~（不含 json 标签，直接包裹数组/对象）
   //   格式B: { "suggested_threads": [...] }  裸对象（至字符串末尾）
   //   格式C: [ { "action": ... } ]            AI 直接返回裸数组（至字符串末尾，末尾可能跟 ``` 等杂质）
-  const fencedMatch  = rawLetter.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
-  const fencedMatch2 = rawLetter.match(/(?:```+|~~~+)\s*(\[[\s\S]*"thread_name"[\s\S]*?\])[\s\S]*?(?:```+|~~~+)/)
-  const objectMatch  = rawLetter.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})[\s\S]*$/)
-  const arrayMatch   = rawLetter.match(/(\[[\s\S]*"thread_name"[\s\S]*\])/)
+  const fencedMatch  = rawLetterNoAnnotations.match(/(?:```+|~~~+)\s*json\s*([\s\S]*?)(?:```+|~~~+)/)
+  const fencedMatch2 = rawLetterNoAnnotations.match(/(?:```+|~~~+)\s*(\[[\s\S]*"thread_name"[\s\S]*?\])[\s\S]*?(?:```+|~~~+)/)
+  const objectMatch  = rawLetterNoAnnotations.match(/(\{[\s\S]*"suggested_threads"[\s\S]*\})[\s\S]*$/)
+  const arrayMatch   = rawLetterNoAnnotations.match(/(\[[\s\S]*"thread_name"[\s\S]*\])/)
 
   let insights = { suggested_threads: [] }
   let rawJsonStr = null
@@ -169,17 +191,17 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     } catch (e) {
       console.warn('[reviewLetter] insights JSON 解析失败:', e)
       console.warn('[reviewLetter] rawJsonStr:', rawJsonStr?.slice(0, 300))
-      console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetter.slice(-500))
+      console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetterNoAnnotations.slice(-500))
     }
   } else {
     console.warn('[reviewLetter] 未找到 JSON 块')
-    console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetter.slice(-500))
+    console.warn('[reviewLetter] rawLetter 末尾 500 字符:', rawLetterNoAnnotations.slice(-500))
   }
 
   // 移除末尾所有 JSON 块，保证信的正文干净
   // ⚠️ 每条 replace 均删除到字符串末尾（[\s\S]*$），
   //    避免因 AI 在 ] 后追加 ``` 等杂质导致 \]\s*$ 无法命中
-  const letterContent = rawLetter
+  const letterContent = rawLetterNoAnnotations
     .replace(/(?:```+|~~~+)\s*(?:json)?\s*[\s\S]*?(?:```+|~~~+)[\s\S]*$/, '')  // 格式A/A2：代码块到末尾
     .replace(/\{[\s\S]*"suggested_threads"[\s\S]*$/, '')                          // 格式B：裸对象到末尾
     .replace(/\[[\s\S]*"thread_name"[\s\S]*$/, '')                               // 格式C：裸数组到末尾
@@ -190,6 +212,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
     user_id: userId,
     entry_ids: entries.map(e => e.id),
     content: letterContent,
+    annotations: letterAnnotations,
     insights,
     trigger_type: prefs.type,
     period_start: periodStart ?? entries[0]?.created_at,
@@ -288,6 +311,15 @@ export async function checkAndGenerateLetter(userId) {
   if (shouldGenerate) {
     await generateReviewLetter(userId, null, prefs)
   }
+}
+
+// ── 更新回顾信字段（供 ReviewLetterDetail 标注保存用）─────────
+export async function updateReviewLetter(letterId, userId, fields) {
+  const { error } = await db.from('review_letters')
+    .update(fields)
+    .eq('id', letterId)
+    .eq('user_id', userId)
+  if (error) throw error
 }
 
 // ── 手动立即生成（设置页按钮调用）──────────────────────────────

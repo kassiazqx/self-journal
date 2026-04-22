@@ -12,7 +12,10 @@ import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import DatetimePicker from './DatetimePicker'
 import React from 'react'
-import { getImageUrl } from '../lib/imageStorage'
+import AnnotatedText from './AnnotatedText'
+import AnnotationMenu from './AnnotationMenu'
+import { useAnnotations } from '../hooks/useAnnotations'
+import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 
 function formatDateTime(isoStr) {
   const d = new Date(isoStr)
@@ -134,6 +137,35 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const [showDatetimePicker, setShowDatetimePicker] = useState(false)
   const [fullscreenImg, setFullscreenImg] = useState(null)
 
+  // ── 标注系统 ──
+  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+    useAnnotations(entry.annotations)
+
+  const contentContainerRef = React.useRef(null)
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+    useAnnotationInteraction({
+      containerRef: contentContainerRef,
+      rawText: entry.content ?? '',
+      addAnnotation,
+      activeColor,
+    })
+
+  // debounce 1.5 秒自动保存
+  const saveTimerRef = React.useRef(null)
+  React.useEffect(() => {
+    if (!dirty) return
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await updateEntry({ id: entry.id, userId: entry.user_id, fields: { annotations } })
+        markSaved()
+      } catch (e) {
+        console.error('[RecordDetail] annotations 保存失败:', e)
+      }
+    }, 500)
+    return () => clearTimeout(saveTimerRef.current)
+  }, [dirty, annotations])
+
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
 
@@ -144,7 +176,10 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     async function loadFull() {
       const { data } = await db.from('journal_entries')
         .select('*').eq('id', initialEntry.id).single()
-      if (data) setEntry(data)
+      if (data) {
+        setEntry(data)
+        resetAnnotations(data.annotations)
+      }
     }
     loadFull()
   }, [initialEntry.id, refreshToken])
@@ -1034,9 +1069,26 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
           {messages.length === 0 ? (
             <React.Fragment>
-              <div style={{ fontSize: 14, color: '#2d2d2d', lineHeight: 1.85, whiteSpace: 'pre-wrap',
-                marginBottom: (entry.image_urls ?? []).length > 0 ? 8 : 0 }}>
-                {entry.content}
+              <div
+                ref={contentContainerRef}
+                style={{ position: 'relative', fontSize: 14, color: '#2d2d2d', lineHeight: 1.85,
+                  marginBottom: (entry.image_urls ?? []).length > 0 ? 8 : 0,
+                  WebkitTouchCallout: 'none' }}
+                onMouseUp={handleMouseUp}
+                onTouchEnd={handleTouchEnd}
+                onContextMenu={e => e.preventDefault()}
+              >
+                <AnnotatedText text={entry.content ?? ''} annotations={annotations} />
+                <AnnotationMenu
+                  visible={menuVisible}
+                  position={menuPosition}
+                  activeColor={activeColor}
+                  onBold={handleBold}
+                  onHighlight={handleHighlight}
+                  onUnderline={handleUnderline}
+                  onColorChange={setActiveColor}
+                  onClose={closeMenu}
+                />
               </div>
               {(entry.image_urls ?? []).length > 0 && (
                 <div style={{ marginBottom: 12 }}>
@@ -1062,12 +1114,29 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                 const imgs = entry.image_urls ?? []
                 return (
                   <React.Fragment key={i}>
-                    <div style={{
-                      fontSize: 14, color: '#2d2d2d',
-                      lineHeight: 1.85, marginBottom: imgs.length > 0 ? 8 : 20,
-                      whiteSpace: 'pre-wrap',
-                    }}>
-                      {msg.content}
+                    <div
+                      ref={contentContainerRef}
+                      style={{
+                        position: 'relative',
+                        fontSize: 14, color: '#2d2d2d',
+                        lineHeight: 1.85, marginBottom: imgs.length > 0 ? 8 : 20,
+                        WebkitTouchCallout: 'none',
+                      }}
+                      onMouseUp={handleMouseUp}
+                      onTouchEnd={handleTouchEnd}
+                      onContextMenu={e => e.preventDefault()}
+                    >
+                      <AnnotatedText text={msg.content ?? ''} annotations={annotations} />
+                      <AnnotationMenu
+                        visible={menuVisible}
+                        position={menuPosition}
+                        activeColor={activeColor}
+                        onBold={handleBold}
+                        onHighlight={handleHighlight}
+                        onUnderline={handleUnderline}
+                        onColorChange={setActiveColor}
+                        onClose={closeMenu}
+                      />
                     </div>
                     {imgs.length > 0 && (
                       <div style={{ marginBottom: 12 }}>

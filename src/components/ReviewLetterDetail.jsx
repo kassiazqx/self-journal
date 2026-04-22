@@ -1,9 +1,15 @@
 // src/components/ReviewLetterDetail.jsx
 // 回顾信详情页：只读展示信正文、关联记录跳转、相关脉络卡片
 import { useState, useEffect } from 'react'
+import React from 'react'
 import { db } from '../lib/db'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchThreadsByLetterId, updateThread } from '../lib/threadService'
+import { updateReviewLetter } from '../lib/reviewLetterService'
+import AnnotatedText from './AnnotatedText'
+import AnnotationMenu from './AnnotationMenu'
+import { useAnnotations } from '../hooks/useAnnotations'
+import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 
 function formatPeriod(start, end) {
   const s = new Date(start).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
@@ -16,14 +22,49 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
   const [letter, setLetter] = useState(initialLetter)
   const [threads, setThreads] = useState([])
 
-  // 进入后标记已读
+  // ── 标注系统 ──
+  const { annotations, activeColor, setActiveColor, addAnnotation, markSaved, resetAnnotations, dirty } =
+    useAnnotations(letter.annotations)
+
+  const letterContainerRef = React.useRef(null)
+  const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline } =
+    useAnnotationInteraction({
+      containerRef: letterContainerRef,
+      rawText: letter.content ?? '',
+      addAnnotation,
+      activeColor,
+    })
+
+  const saveTimerRef = React.useRef(null)
+  React.useEffect(() => {
+    if (!dirty) return
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await updateReviewLetter(letter.id, user.id, { annotations })
+        markSaved()
+      } catch (e) {
+        console.error('[ReviewLetterDetail] annotations 保存失败:', e)
+      }
+    }, 500)
+    return () => clearTimeout(saveTimerRef.current)
+  }, [dirty, annotations])
+
+  // 进入后标记已读，同时补拉 annotations（列表查询不含此字段）
   useEffect(() => {
-    if (letter && !letter.is_read) {
-      db.from('review_letters')
-        .update({ is_read: true })
-        .eq('id', letter.id)
-        .then(() => setLetter(l => ({ ...l, is_read: true })))
-    }
+    if (!letter?.id) return
+    db.from('review_letters')
+      .select('is_read, annotations')
+      .eq('id', letter.id)
+      .single()
+      .then(({ data }) => {
+        if (!data) return
+        if (!letter.is_read && data.is_read === false) {
+          db.from('review_letters').update({ is_read: true }).eq('id', letter.id)
+        }
+        setLetter(l => ({ ...l, is_read: true }))
+        resetAnnotations(data.annotations)
+      })
   }, [letter?.id])
 
   // 加载本封信关联的候选脉络
@@ -93,11 +134,25 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
         </div>
 
         {/* 信的正文 */}
-        <div style={{
-          fontSize: 15, color: '#2d2d2d', lineHeight: 1.85,
-          marginBottom: 24, whiteSpace: 'pre-wrap',
-        }}>
-          {letter.content}
+        <div
+          ref={letterContainerRef}
+          style={{ position: 'relative', fontSize: 15, color: '#2d2d2d', lineHeight: 1.85, marginBottom: 24,
+            WebkitTouchCallout: 'none' }}
+          onMouseUp={handleMouseUp}
+          onTouchEnd={handleTouchEnd}
+          onContextMenu={e => e.preventDefault()}
+        >
+          <AnnotatedText text={letter.content ?? ''} annotations={annotations} />
+          <AnnotationMenu
+            visible={menuVisible}
+            position={menuPosition}
+            activeColor={activeColor}
+            onBold={handleBold}
+            onHighlight={handleHighlight}
+            onUnderline={handleUnderline}
+            onColorChange={setActiveColor}
+            onClose={closeMenu}
+          />
         </div>
 
         {/* 关联记录跳转 */}

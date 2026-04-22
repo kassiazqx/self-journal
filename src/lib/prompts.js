@@ -416,6 +416,16 @@ export function buildThreadAnalysisPrompt(threadName, entries) {
 一组里最多 2–3 行，每行不要太长。
 
 ────────────────────────────────────
+【附加任务：预标注】
+
+写完 fragments 和 current_state 之后，在 JSON 里附加 annotations 字段：
+- 加粗（bold）：current_state 里最值得注意的词或短句，不超过 2 处
+- 高亮（highlight，straw 色）：最想让用户停留感受的一句话，最多 1 处
+- start/end 是 current_state 字符串中的字符偏移（从 0 开始，UTF-16 单位）
+
+如果没有合适的标注，annotations 返回空数组 []。
+
+────────────────────────────────────
 【输出格式】
 
 {
@@ -423,7 +433,11 @@ export function buildThreadAnalysisPrompt(threadName, entries) {
     { "quote": "原句", "date": "YYYY/MM/DD" },
     { "quote": "原句", "date": "YYYY/MM/DD" }
   ],
-  "current_state": "3–5句话，此刻这里。"
+  "current_state": "3–5句话，此刻这里。",
+  "annotations": [
+    { "type": "bold", "start": N, "end": N },
+    { "type": "highlight", "color": "straw", "start": N, "end": N }
+  ]
 }
 
 以下是记录：
