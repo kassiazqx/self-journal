@@ -973,6 +973,60 @@ async function loadFull() {
 
 ---
 
+### 4.50 Lexical annotationTransform 防无限循环 guard（2026-04-22 确立）
+
+**场景：** `annotationTransform.js` 在 `editor.update()` 内将 TextNode 按标注边界分割并替换为 `AnnotatedNode`。每次 editor state 变更都会重新触发 transform，若 guard 不到位，替换 → 触发 onChange → 再次替换 → 死循环。
+
+**guard 机制：** 对每个 TextNode，用 `JSON.stringify(existingStyle)` 与目标样式比较。如果完全相同，跳过替换。由此确保 transform 在已完全标注的状态下不再触发新的 update。
+
+**不要改成什么：**
+- 不要用 `===` 比较对象引用——新旧 style 是两次 `Object.assign` 产生的不同引用，引用永远不等
+- 不要在 transform 内部直接改 node style 属性而不走 `node.replace(newNode)`——Lexical 要求 immutable 节点替换
+
+---
+
+### 4.51 Lexical 双触发防护：mouseup + selectionchange 同时触发（2026-04-22 确立）
+
+**场景：** 在 Lexical 编辑器内，用鼠标选字时：
+1. `MouseUpPlugin` 的 mouseup 事件：立即触发，调 `openMenuAt()` 弹菜单
+2. 浏览器随后触发 `selectionchange`：300ms 防抖后，`tryShowMenu()` 也会触发，导致菜单位置跳动两次
+
+**防护机制：** `openMenuAt()` 调用时写入 `lastOpenMenuAtRef.current = Date.now()`；`selectionchange` 处理器检查当前时间与 lastOpenMenuAt 之差，若 < 500ms 则跳过。
+
+**边界：** 500ms 窗口仅针对「刚刚 mouseup 触发了 openMenuAt」的情况。用户停顿后再次选字，selectionchange 正常工作。
+
+**不要改成什么：**
+- 不要完全禁用 selectionchange（手机端 drag 选字依赖它）
+- 不要把 500ms 改小——Chrome 的 selectionchange 延迟在网络拥堵时可超 300ms
+
+---
+
+### 4.52 useCallback 依赖项缺失导致 stale closure（2026-04-22 确立）
+
+**场景（HomePage）：** `handleDone` 和 `handleDeepAwareness` 这两个函数内部读取 `annotations` state，但 `useCallback` deps 数组缺少 `annotations`，导致两个函数捕获的始终是首次渲染时的 `annotations = []`。用户写日记时加了标注，点「完成」或「深入觉察」，保存到 DB 的 `annotations` 始终为空数组。
+
+**修复：** 将 `annotations` 加入两个函数的 `useCallback` deps 数组。
+
+**规律：** 凡 `useCallback` 内部读取了 hook 返回值（state 或 derived value），该值必须出现在 deps 数组中。尤其注意「标注 + 保存」链路——`addAnnotation` 的返回并不导致 re-render 触发外部 useCallback 刷新，必须显式声明依赖。
+
+---
+
+### 4.53 EditEntryPage 的 contentMap['__raw__'] 约定（2026-04-22 确立）
+
+**背景：** `EditEntryPage` 用 `contentMap` 对象存储多段内容，key 为 message id（觉察流节点）。`__raw__` 是预留的特殊 key，指向原始日记正文（raw_entry 节点）。
+
+**Lexical 接入后的约定：**
+- 读取正文：`contentMap['__raw__']`
+- 写入正文（onChange）：`setContentMap(m => ({ ...m, '__raw__': newText }))`
+- handleSave 中的 raw_entry content：必须读 `contentMap['__raw__']`，不能读 `contentMap[msg.id]`（msg.id 是 raw_entry 的 message id，而非 `__raw__`，两者不同）
+
+**Bug 历史（已修复）：** flow 分支的 `handleSave` 曾读 `contentMap[msg.id]` 作为 raw_entry 内容，导致保存后正文永远是空字符串（`contentMap[msg.id]` 未被 Lexical onChange 回调写入）。
+
+**不要改成什么：**
+- 不要把 `__raw__` 改为 `raw_entry` 或其他字符串——整个文件已约定此键名，统一改动代价大
+
+---
+
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
 - Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
@@ -1053,6 +1107,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-22 · 代码session · 觉察卡片扩展：AWARENESS_QUESTIONS 从 6 组扩展为 9 组，问题数从 3 个增至 4-7 个；context 重命名为 focus；新增 acceptance（tier 3, negative）/ behavior（tier 4）/ cognitive（tier 5）三组；测试文件两处 'context' 断言同步改为 'focus'，8/8 pass；commits 0b13d45 + 0da9a36；同步卡：docs/sync-cards/2026-04-22-awareness-questions-expansion.md
+- 2026-04-22 · 架构session · 编辑器框架升级同步：新增 §4.50（annotationTransform 防无限循环 guard）/ §4.51（mouseup+selectionchange 双触发防护，500ms 窗口）/ §4.52（useCallback stale closure：annotations 必须入 deps）/ §4.53（EditEntryPage contentMap['__raw__'] 约定）；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md
 - 2026-04-22 · 代码session · 编辑器框架升级完成：写作页 + 编辑页 textarea 全部换为 Lexical 富文本编辑器（RichTextEditor.jsx + RichTextEditor/ 三子模块）；写作时即可圈字标注；新增 shiftAnnotations/applyShift 在文字变更时移动标注偏移；useAnnotationInteraction 新增 openMenuAt + flipDown + lastOpenMenuAtRef；AnnotationMenu 支持 flipDown（手机/近顶端选区下方显示）；修复 handleDone/handleDeepAwareness stale closure（补 annotations dep）；修复 EditEntryPage flow 分支保存路径；commit 4c8497e；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md
 - 2026-04-22 · 代码session · 修复标注系统五个代码审查问题：#1 RecordDetail raw_entry 分支改渲染 entry.content（与 rawText 同源，消除编辑后偏移错位）；#3 handleAIAnalyze re-fetch 后补调 resetAnnotations；#4 openMenuForRange 加越界守卫；#6 closeMenu 空 deps 加注释；#9 ThreadDetailPage 去掉冗余 useEffect resetAnnotations。新增 §4.49（rawText 与渲染文本同源规律）；更新 §4.48「不要在 loadFull 外额外写 useEffect reset」；commit 73c0f15；同步卡：docs/sync-cards/2026-04-22-annotation-bugfixes.md
 - 2026-04-22 · 代码session · 标注交互增强（Part 2.5）：Rule 1 取消（✕按钮 clipAll）/ Rule 2 同类型 toggle / Rule 3 单击已标注文字弹菜单（union range）/ 颜色替换（完全覆盖时点颜色=换色，不叠加）；新增 clipAnnotations hook；useAnnotationInteraction 重写；AnnotationMenu 新增 showCancel/onCancel；AnnotatedText 新增 onAnnotatedClick；三个详情页全部接入；commit 已在之前批次 push；新增 §4.47/§4.48；同步卡：docs/sync-cards/2026-04-22-annotation-system.md
