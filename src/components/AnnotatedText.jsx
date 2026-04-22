@@ -37,7 +37,7 @@ function buildSegments(text, annotations) {
  * 下划线：CSS text-decoration wavy（天然支持多行换行）
  * 加粗：fontWeight: 700
  */
-function Segment({ seg }) {
+function Segment({ seg, onAnnotatedClick }) {
   const isBold      = seg.types.has('bold')
   const hasHighlight = seg.types.has('highlight')
   const hasUnderline = seg.types.has('underline')
@@ -45,6 +45,11 @@ function Segment({ seg }) {
   if (!isBold && !hasHighlight && !hasUnderline) {
     return <span>{seg.text}</span>
   }
+
+  // 有标注时，注册 onClick 供 Rule 3 单击唤起菜单
+  const handleClick = onAnnotatedClick
+    ? (e) => onAnnotatedClick(e, seg.start, seg.end)
+    : undefined
 
   const hlHex = hasHighlight ? getAnnotationColor(seg.colors.highlight) : null
   const ulHex = hasUnderline ? getAnnotationColor(seg.colors.underline) : null
@@ -71,7 +76,7 @@ function Segment({ seg }) {
     textUnderlineOffset: hasUnderline ? '2px' : undefined,
   }
 
-  return <span style={style}>{seg.text}</span>
+  return <span style={style} onClick={handleClick}>{seg.text}</span>
 }
 
 /**
@@ -80,7 +85,7 @@ function Segment({ seg }) {
  * ⚠️ 架构约束：text 和 annotations 的 start/end 必须基于同一个原始字符串，
  *    不能对 text 进行任何 trim() 或变换后再传入。
  */
-export default function AnnotatedText({ text, annotations, style }) {
+export default function AnnotatedText({ text, annotations, style, onAnnotatedClick }) {
   const sorted = useMemo(() => {
     if (!Array.isArray(annotations) || !annotations.length) return []
     return [...annotations].sort((a, b) => a.start - b.start)
@@ -94,6 +99,7 @@ export default function AnnotatedText({ text, annotations, style }) {
         <Segment
           key={`${seg.start}-${seg.end}`}
           seg={seg}
+          onAnnotatedClick={onAnnotatedClick}
         />
       ))}
     </span>
