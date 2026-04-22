@@ -144,7 +144,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     setHasOverlap(false)
     pendingRangeRef.current = null
     window.getSelection()?.removeAllRanges()
-  }, [])
+  }, []) // intentionally empty — no captured vars
 
   function applyAnnotation(type, color) {
     const r = pendingRangeRef.current
@@ -188,6 +188,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
   const openMenuForRange = useCallback((e, segStart, segEnd) => {
     e.stopPropagation()
     if (!containerRef.current) return
+    if (segStart < 0 || segEnd > rawText.length || segStart >= segEnd) return
     const overlapping = (annotations ?? []).filter(
       a => a.start < segEnd && a.end > segStart
     )

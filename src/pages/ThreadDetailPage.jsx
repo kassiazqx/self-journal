@@ -39,14 +39,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(thread?.current_state_annotations)
 
-  // thread 异步加载后，同步初始标注（防止 mount 时 thread 为 null 导致初始值为 []）
-  const prevThreadIdRef = React.useRef(null)
-  React.useEffect(() => {
-    if (thread?.id && thread.id !== prevThreadIdRef.current) {
-      prevThreadIdRef.current = thread.id
-      resetAnnotations(thread.current_state_annotations)
-    }
-  }, [thread?.id, thread?.current_state_annotations])
+  // thread 异步加载后 load() 内已调 resetAnnotations，此处无需额外处理
 
   const currentStateRef = React.useRef(null)
   const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, handleColorChange, openMenuForRange, hasOverlap } =

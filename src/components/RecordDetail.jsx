@@ -485,7 +485,10 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
       const { data } = await db.from('journal_entries')
         .select('*').eq('id', entry.id).single()
-      if (data) setEntry(data)
+      if (data) {
+        setEntry(data)
+        resetAnnotations(data.annotations)
+      }
     } catch (e) {
       console.error('[RecordDetail] AI分析失败:', e)
       showToast('分析失败，请稍后重试')
@@ -1131,7 +1134,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
                       onTouchEnd={handleTouchEnd}
                       onContextMenu={e => e.preventDefault()}
                     >
-                      <AnnotatedText text={msg.content ?? ''} annotations={annotations} onAnnotatedClick={openMenuForRange} />
+                      <AnnotatedText text={entry.content ?? ''} annotations={annotations} onAnnotatedClick={openMenuForRange} />
                       <AnnotationMenu
                         visible={menuVisible}
                         position={menuPosition}
