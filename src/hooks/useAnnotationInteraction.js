@@ -8,7 +8,9 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  * @param {React.RefObject} params.containerRef - 绑在文本容器上的 ref（position: relative）
  * @param {string} params.rawText - 原始纯文本（与 DB 存储、AnnotatedText 接收的完全一致）
  * @param {Function} params.addAnnotation - useAnnotations 返回的 addAnnotation
+ * @param {Function} params.clipAnnotations - useAnnotations 返回的 clipAnnotations
  * @param {string} params.activeColor - useAnnotations 返回的 activeColor
+ * @param {Array} params.annotations - useAnnotations 返回的 annotations（用于 Rule 1/2/3）
  *
  * @returns {{
  *   menuVisible: boolean,
@@ -19,12 +21,32 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  *   handleBold: Function,
  *   handleHighlight: Function,
  *   handleUnderline: Function,
+ *   handleCancel: Function,
+ *   openMenuForRange: Function,
+ *   hasOverlap: boolean,
  *   pendingRange: { start: number, end: number } | null,
  * }}
  */
-export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, activeColor }) {
+export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, annotations }) {
+  // 判断 [selStart, selEnd) 内每个字符是否都被 type 类型标注覆盖
+  function isFullyCovered(selStart, selEnd, type) {
+    const ofType = (annotations ?? []).filter(
+      a => a.type === type && a.end > selStart && a.start < selEnd
+    )
+    if (!ofType.length) return false
+    const sorted = [...ofType].sort((a, b) => a.start - b.start)
+    let covered = selStart
+    for (const a of sorted) {
+      if (a.start > covered) return false   // 有间隙
+      covered = Math.max(covered, a.end)
+      if (covered >= selEnd) return true
+    }
+    return covered >= selEnd
+  }
+
   const [menuVisible, setMenuVisible] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const [hasOverlap, setHasOverlap] = useState(false)
   const pendingRangeRef = useRef(null)
 
   /**
@@ -57,6 +79,8 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     }
   }
 
+  const MENU_HALF_W = 120
+
   // rawText と containerRef を deps に含めて stale closure を防ぐ
   const tryShowMenu = useCallback(() => {
     const selection = window.getSelection()
@@ -77,10 +101,15 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
 
     pendingRangeRef.current = offsets
 
+    // 计算与已有标注的重叠
+    const overlaps = (annotations ?? []).some(
+      a => a.start < offsets.end && a.end > offsets.start
+    )
+    setHasOverlap(overlaps)
+
     // 计算菜单位置，并夹紧在容器范围内防止截断
     const rect = range.getBoundingClientRect()
     const containerRect = containerRef.current.getBoundingClientRect()
-    const MENU_HALF_W = 120  // 菜单宽度约 240px，取一半做边界
     const rawLeft = rect.left - containerRect.left + rect.width / 2
     const containerW = containerRef.current.offsetWidth
     const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
@@ -88,7 +117,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
 
     setMenuPosition({ top, left })
     setMenuVisible(true)
-  }, [rawText, containerRef]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawText, containerRef, annotations]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMouseUp = useCallback(() => {
     setTimeout(tryShowMenu, 0)
@@ -96,10 +125,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
 
   const handleTouchEnd = useCallback(() => {}, [])  // 移动端由 selectionchange 驱动，此处留空保留接口
 
-  // 移动端：selection handles 的 touch 事件不冒泡到我们的 div，
-  // 所以 touchend 无法可靠捕获拖动结束。
-  // 改用 selectionchange 防抖：拖动中持续触发（计时器一直重置），
-  // 用户停止拖动 500ms 后无新事件 → 弹菜单。
+  // 移动端：selectionchange 防抖 300ms
   useEffect(() => {
     let timer = null
     function onSelectionChange() {
@@ -115,6 +141,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
 
   const closeMenu = useCallback(() => {
     setMenuVisible(false)
+    setHasOverlap(false)
     pendingRangeRef.current = null
     window.getSelection()?.removeAllRanges()
   }, [])
@@ -122,13 +149,47 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
   function applyAnnotation(type, color) {
     const r = pendingRangeRef.current
     if (!r) return
-    addAnnotation(type, color, r.start, r.end)
+    if (isFullyCovered(r.start, r.end, type)) {
+      // Rule 2：toggle — 选区被该类型完全覆盖，点击 = 取消
+      clipAnnotations(r.start, r.end, type)
+    } else {
+      addAnnotation(type, color, r.start, r.end)
+    }
     closeMenu()
   }
 
-  const handleBold      = useCallback(() => applyAnnotation('bold', undefined),       [addAnnotation, closeMenu])
-  const handleHighlight = useCallback(() => applyAnnotation('highlight', activeColor), [addAnnotation, activeColor, closeMenu])
-  const handleUnderline = useCallback(() => applyAnnotation('underline', activeColor), [addAnnotation, activeColor, closeMenu])
+  const handleBold      = useCallback(() => applyAnnotation('bold', undefined),       [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
+  const handleHighlight = useCallback(() => applyAnnotation('highlight', activeColor), [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
+  const handleUnderline = useCallback(() => applyAnnotation('underline', activeColor), [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
+
+  // Rule 1：取消 — 剪切选区内所有类型的所有标注
+  const handleCancel = useCallback(() => {
+    const r = pendingRangeRef.current
+    if (!r) return
+    clipAnnotations(r.start, r.end, 'all')
+    closeMenu()
+  }, [clipAnnotations, closeMenu])
+
+  // Rule 3：单击已标注 Segment → 以覆盖该 segment 的所有标注的并集为虚拟选区，弹出菜单
+  const openMenuForRange = useCallback((e, segStart, segEnd) => {
+    e.stopPropagation()
+    if (!containerRef.current) return
+    const overlapping = (annotations ?? []).filter(
+      a => a.start < segEnd && a.end > segStart
+    )
+    if (!overlapping.length) return
+    const unionStart = Math.min(...overlapping.map(a => a.start))
+    const unionEnd   = Math.max(...overlapping.map(a => a.end))
+    pendingRangeRef.current = { start: unionStart, end: unionEnd }
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const containerW = containerRef.current.offsetWidth
+    const rawLeft = e.clientX - containerRect.left
+    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
+    const top  = e.clientY - containerRect.top - 4
+    setHasOverlap(true)
+    setMenuPosition({ top, left })
+    setMenuVisible(true)
+  }, [annotations, containerRef])
 
   return {
     menuVisible,
@@ -139,6 +200,9 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     handleBold,
     handleHighlight,
     handleUnderline,
+    handleCancel,
+    openMenuForRange,
+    hasOverlap,
     pendingRange: pendingRangeRef.current,
   }
 }
