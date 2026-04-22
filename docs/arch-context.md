@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-21（回顾信脉络卡片 + 手机端保存修复：crypto.randomUUID 安全上下文兼容）
+**最后更新：** 2026-04-22（文字标注系统：高亮/加粗/下划线 + 持久化 + 移动端适配）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -261,6 +261,13 @@ src/
 │   └── AuthContext.jsx         登录状态
 ├── hooks/
 │   └── useSpeechRecognition.js 语音输入
+├── hooks/
+│   ├── useSpeechRecognition.js 语音输入
+│   ├── useAnnotations.js       标注状态机（annotations/activeColor/addAnnotation/markSaved/resetAnnotations/dirty）
+│   │                           dedup guard：同 type+start+end 已存在则跳过；resetAnnotations(arr) 供外部覆盖初始状态
+│   └── useAnnotationInteraction.js 选区→菜单交互（containerRef + rawText → menuVisible/menuPosition/handlers）
+│                               mobile：selectionchange 300ms 防抖（handle drag 不冒泡，selectionchange 是唯一可靠事件）
+│                               desktop：mouseup + 0ms setTimeout 读取 selection
 ├── lib/
 │   ├── supabase.js             DB客户端（仅供 db.js 使用）
 │   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
@@ -284,6 +291,8 @@ src/
 │   ├── dateUtils.js            inferDatetime(text, now) + formatPill() 日期工具（新增）
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
 │   │                           mapToBase() 已改为内部私有（去掉 export）
+│   ├── annotationConfig.js     标注颜色配置（COLOR_MAP: id→hex；getAnnotationColor(id)）
+│   │                           颜色选项：amber/#F59E0B / emerald/#10B981 / violet/#8B5CF6 / rose/#F43F5E
 │   ├── templates.js            模板配置（含新旧ID兼容）
 │   │                           TEMPLATE_BY_ID 已改为内部私有；DEFAULT_TEMPLATE 仍 export（HomePage 使用）
 │   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
@@ -294,6 +303,7 @@ src/
 │   │                           generateLetterNow: 手动立即生成，传 null 跳过时间限制
 │   │                           Step 7: for...of 串行写 threads + thread_entries；写入 review_letter_id 外键
 │   │                           AI 返回三种 JSON 格式均支持：```json、裸对象、裸数组
+│   │                           updateReviewLetter(letterId, userId, fields)：更新回顾信任意字段（新增）
 │   ├── exportService.js        完整数据备份导出（新增 2026-04-21）
 │   │                           exportDataJson(userId)：8 表全量导出为 JSON 字符串
 │   │                           fetchImages(paths, {onProgress})：批量 3 并发下载图片 Blob
@@ -308,6 +318,7 @@ src/
 │   │                                fetchThreadsByLetterId(letterId)：通过 review_letter_id 外键查候选脉络
 │   │                                generateThreadAnalysis(threadId, userId)：读全文 content，生成 fragments+current_state，存 DB
 │   │                                fetchThreadWithEntries：现已含 content + removed_by_user 字段
+│   │                                updateThread(threadId, userId, fields)：更新脉络任意字段（含 current_state_annotations）
 │   └── threadService.test.js
 ├── components/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
@@ -320,12 +331,23 @@ src/
 │   │                           数组筛选：.overlaps('emotions'/'category_tags'/'people_involved'/'core_needs')
 │   ├── DatetimePicker.jsx      日期时间选择 sheet（快捷按钮+迷你日历+时分输入，新增）
 │   │                           props: initialDatetime / onConfirm / onClose
+│   ├── AnnotatedText.jsx       带标注渲染（text + annotations → 高亮/加粗/下划线 inline spans）
+│   │                           CSS 实现：highlight=linear-gradient背景；underline=text-decoration wavy；bold=fontWeight 700
+│   │                           ⚠️ 不用 SVG：CSS background/text-decoration 天然跨行，SVG absolute 只能覆盖 bounding box
+│   ├── AnnotationMenu.jsx      标注操作浮层（B/高亮/下划线 按钮 + 颜色选择器）
+│   │                           props: visible / position / activeColor / onBold / onHighlight / onUnderline / onColorChange / onClose
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
+│   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
+│   │                           loadFull() 内调 resetAnnotations(data.annotations) 确保持久化标注正确加载
+│   │                           保存防抖 500ms；onContextMenu preventDefault + WebkitTouchCallout none
 │   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
 │   └── ReviewLetterDetail.jsx  回顾信详情（只读 + 相关脉络卡片）
 │                               加载 fetchThreadsByLetterId 展示脉络卡片（三态：待确认/已接受/已忽略）
 │                               内嵌接受/忽略操作；点击跳转 CandidateDetailPage / ThreadDetailPage
+│                               ✨ 信的正文支持标注（useAnnotations + useAnnotationInteraction）
+│                               mount 时补拉 is_read + annotations；resetAnnotations(data.annotations) 确保正确加载
+│                               保存用 updateReviewLetter(letter.id, user.id, { annotations })；防抖 500ms
 └── pages/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
@@ -345,6 +367,8 @@ src/
     │                           底部「开始分析/再次分析」按钮（非归档态+有条目时显示）
     │                           ··· 菜单「🔄 重新分析」= reAnalyzeThread（扫新条目）；底部按钮 = generateThreadAnalysis（分析已关联）
     │                           条目列表「走过的路」：entry_summary 为空时显示 content 前80字
+    │                           ✨ current_state 区支持标注（useAnnotations + useAnnotationInteraction）
+    │                           load() 内调 resetAnnotations(t.current_state_annotations)；保存用 updateThread；防抖 500ms
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
@@ -364,75 +388,6 @@ src/
 
 **待删除：**
 - `conversationMessages.js`（无生产代码依赖，等第二批确认后删除）
-├── main.jsx / App.jsx / index.css
-├── contexts/
-│   └── AuthContext.jsx         登录状态
-├── hooks/
-│   └── useSpeechRecognition.js 语音输入
-├── lib/
-│   ├── supabase.js             DB客户端（仅供 db.js 使用）
-│   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
-│   ├── aiClient.js             AI调用层（Gemini/Deepseek）
-│   ├── memory.js               AI记忆读写（Supabase user_memory）
-│   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
-│   ├── conversationService.js  对话保存 + AI 字段提取
-│   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
-│   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
-│   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
-│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
-│   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
-│   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
-│   ├── imageStorage.js         图片 Storage 抽象层（新增，图片功能）
-│   │                           uploadImage / deleteImage / getImageUrl / compressImage
-│   │                           ⚠️ 所有图片操作必须经此层，不得直接调 db.storage（见4.33）
-│   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
-│   ├── storage.js              localStorage 工具
-│   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()
-│   ├── keywordDetection.js     本地关键词检测
-│   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
-│   ├── templates.js            模板配置（含新旧ID兼容）
-│   ├── prompts.js              AI系统提示词 + 问题库 + 回顾信prompt
-│   │                           getExtractionPrompt(userCategoryTags) 接受动态标签列表（已修复4.21）
-│   ├── reviewLetterService.js  回顾信触发 + 生成
-│   ├── awarenessFlowState.js   觉察流状态机
-│   ├── awarenessFlowState.test.js
-│   ├── extractSummaryService.js     摘要索引批量提取服务
-│   ├── extractSummaryService.test.js
-│   ├── threadService.js             脉络 CRUD + 加权召回 + arc_summary + reAnalyzeThread
-│   └── threadService.test.js
-├── components/
-│   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
-│   │                           含 candidateDetail 屏幕类型 + onOpenPendingThreads 回调
-│   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
-│   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
-│   │                           含 category_tags 自动种入默认标签逻辑（A1方案）+ B1孤儿标签合并
-│   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
-│   └── ReviewLetterDetail.jsx  回顾信详情（只读）
-└── pages/
-    ├── AuthPage.jsx            登录注册
-    ├── HomePage.jsx            写作页（模板标签+引导词+草稿恢复）
-    ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
-    │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
-    ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
-    ├── ThreadsPage.jsx         脉络三Tab页（已确认/待确认/已归档）
-    │                           含 ＋浮窗（手动创建/AI分析）+ AI分析sheet + defaultTab prop
-    ├── CandidateDetailPage.jsx 候选脉络详情（独立文件，接受/忽略操作）
-    ├── ThreadDetailPage.jsx    脉络详情（mode='confirmed'|'archived'；··· 菜单；编辑关联记录模式）
-    │                           编辑模式：已关联在上 / 搜索框置顶于未关联区 / 默认列表30条+上滑加载
-    ├── ReviewLetterListPage.jsx 回顾信列表页
-    ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
-    └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
-                                含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
-```
-
-**已删除：**
-- `TaggingPage.jsx`（情绪标注流程取消）
-- `ReflectionPage.jsx`（被 AwarenessFlow 替代）
-- `localDB.js`（被 memory.js 替代，已删除）
-- `reflectionQuestions.js`（服务已删 ReflectionPage，已删除）
-
-**待删除：**
-- `conversationMessages.js`（无生产代码依赖，等第二批确认后删除）
 
 ### 当前 Supabase 表结构
 
@@ -445,6 +400,7 @@ journal_entries：
     cognitive_analysis, cognitive_distortion_type, current_behavior, handling_rating
   - 预留字段：attachments(jsonb), full_conversation(jsonb)（旧路径）
   - **新增（图片功能）：** image_urls(text[]) DEFAULT '{}'  ← 有序图片 URL 数组
+  - **新增（标注功能）：** annotations(jsonb) DEFAULT '[]'  ← [{type,start,end,color?}] 数组
 
 conversations：
   - id, user_id, entry_id(→journal_entries), letter_id(→review_letters)
@@ -457,6 +413,7 @@ review_letters：
   - trigger_type: 'count' | 'days' | 'manual'
   - period_start, period_end, is_read
   - insights v1: {recurring_emotions,...} / v2: {suggested_threads:[{action,thread_id,thread_name}]}
+  - **新增（标注功能）：** annotations(jsonb) DEFAULT '[]'  ← [{type,start,end,color?}] 数组
 
 threads：（第二批新增）
   - id, user_id, name, status('candidate'|'confirmed'|'archived'|'rejected')
@@ -465,6 +422,10 @@ threads：（第二批新增）
   - trigger_source: text（nullable，'review' 或 null/手动）
   - review_letter_id: uuid → review_letters(id) ON DELETE SET NULL
     ⚠️ 新增（2026-04-21），通过此外键 ReviewLetterDetail 加载该信关联的候选脉络
+  - fragments: jsonb（[{quote,date}]，AI 碎片引用）
+  - current_state: text（AI 对脉络当前状态的描述，含 \n，渲染需 whiteSpace: pre-wrap）
+  - analysis_generated_at: timestamptz
+  - **新增（标注功能）：** current_state_annotations(jsonb) DEFAULT '[]'  ← [{type,start,end,color?}] 数组
   - CHECK 约束需更新：加入 'rejected'
 
 thread_entries：（第二批新增，无 user_id，RLS 通过 threads 子查询）
@@ -907,9 +868,61 @@ ALTER TABLE threads
 
 > **附注（2026-04-21）：** `fetchThreadWithEntries` 在脉络详情页同步改为也带 `content` 字段（用于关联记录展示），但 `generateThreadAnalysis` 仍保持独立查询，不依赖 `fetchThreadWithEntries` 的返回格式。
 
+### 4.47 移动端文字选区检测：selectionchange 是唯一可靠事件（2026-04-22 确立）
+
+**根因：** 移动端文字选区分两阶段——①长按识别（我们的 div 会收到 touchend）；②拖动选区 handle（浏览器原生 UI，touch 事件不冒泡到我们的 div）。因此 `touchend` 只能捕获到第一阶段，无法感知用户拖完后真正想要的选区范围。
+
+**症状：** 用户长按后立即弹菜单（未等拖拽），或拖完后什么都没有（touchend 已过时）。
+
+**解决方案：** 监听 `document.selectionchange` 事件并做 300ms 防抖。该事件在选区变化时持续触发（拖动中计时器不断重置），用户停手 300ms 后无新事件 → 弹菜单。
+
+```js
+useEffect(() => {
+  let timer = null
+  function onSelectionChange() {
+    clearTimeout(timer)
+    timer = setTimeout(tryShowMenu, 300)
+  }
+  document.addEventListener('selectionchange', onSelectionChange)
+  return () => {
+    document.removeEventListener('selectionchange', onSelectionChange)
+    clearTimeout(timer)
+  }
+}, [tryShowMenu])
+```
+
+**handleTouchEnd 保留为空 no-op**（接口存在，便于未来扩展），移动端完全由 selectionchange 驱动。
+
+**不要改成什么：**
+- 不要用 `touchend + setTimeout(300)` 替代（只捕获长按第一阶段，handle 拖动感知不到）
+- 不要把 debounce 时间设得太短（< 200ms）：选区 handle 拖动中会持续触发 selectionchange，太短会在拖完前提前弹菜单
+- 不要在 `tryShowMenu` 外面再套 `touchEndedRef` 门控：handle 拖动不触发 touchend，门控永远不开
+
 ---
 
-> 由架构 session 维护。这些是未来功能必须在当前架构内能容纳的边界。
+### 4.48 标注初始化：detail 页必须在 loadFull 后调 resetAnnotations（2026-04-22 确立）
+
+**根因：** 列表查询（RecordsPage、ReviewLetterListPage 的 select）不包含 `annotations` 字段，父组件传入的 `initialEntry/initialLetter/thread` 的 `annotations` 为 `undefined`。`useAnnotations(prop)` 用 `useState(prop ?? [])` 初始化，只初始化一次，后续 prop 变化不会重新初始化。
+
+因此：`setEntry(data)` 不会触发 `useAnnotations` 重新初始化，必须显式调 `resetAnnotations(data.annotations)`。
+
+**规律：** 凡使用标注系统的详情页，在任何完整数据加载（loadFull / load / mount fetch）完成后，必须调 `resetAnnotations(data.annotations ?? [])`：
+
+```js
+async function loadFull() {
+  const { data } = await db.from('journal_entries').select('*').eq('id', id).single()
+  if (data) {
+    setEntry(data)
+    resetAnnotations(data.annotations)   // ← 不能省略
+  }
+}
+```
+
+**不要改成什么：**
+- 不要依赖 `setEntry` 触发标注重置（useState 初始化只跑一次）
+- 不要只在 `useAnnotations` 的 prop 上做手脚（应在调用方 loadFull 里调 resetAnnotations）
+
+---
 
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
@@ -991,6 +1004,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-22 · 代码session · 文字标注系统完整实现：新建 annotationConfig.js / useAnnotations.js / useAnnotationInteraction.js / AnnotatedText.jsx / AnnotationMenu.jsx；RecordDetail / ReviewLetterDetail / ThreadDetailPage(current_state区) 接入标注；DB 新增三列（journal_entries.annotations / review_letters.annotations / threads.current_state_annotations jsonb）；reviewLetterService 新增 updateReviewLetter()；修复移动端选区（selectionchange 300ms 防抖）/ 标注不持久化（resetAnnotations in loadFull）/ 水平溢出（去 nowrap）/ 多行覆盖（SVG→CSS）；commit 已 push dev；新增 arch §4.47（selectionchange）/ §4.48（resetAnnotations 规律）；同步卡：docs/sync-cards/2026-04-22-annotation-system.md
 - 2026-04-21 · 代码session · 回顾信 JSON 清理正则兼容增强：格式C `\]\s*$` 末尾锚点在 ] 后有 ``` 等杂质时失配，导致 JSON 残留正文；三条清理 replace 均改为删至字符串末尾（[\s\S]*$）；新增格式A2（无 json 标签代码块）；commit 8560273；同步卡：docs/sync-cards/2026-04-21-review-letter-json-cleanup-fix.md；新增 arch §4.42
 - 2026-04-21 · 代码session · 脉络详情页 AI 分析完成：threads 表加 fragments/current_state/analysis_generated_at 三列（SQL 已执行）；prompts.js 新增 buildThreadAnalysisPrompt（挑碎片+写此刻，平实语言规则+分组格式）；threadService.js 新增 generateThreadAnalysis（读全文 content，一次 AI 调用输出 JSON，存 DB）；ThreadDetailPage 替换 arc_summary 区块为「此刻这里」+「一些碎片」（无框，上方）+「走过的路」；底部加「开始分析/再次分析」按钮；fetchThreadWithEntries 加 content 字段，entry_summary 为空时 content 前80字兜底；commit 3879c6a；同步卡：docs/sync-cards/2026-04-21-thread-detail-analysis.md
 - 2026-04-21 · 代码session · 回顾信 prompt 重设计：getTimeGreeting() 注入时间问候词（早/中/下午/晚/深夜随机选）；getReviewLetterPrompt 入参改为 {entriesSummary, timeGreeting}；新增格式A（一根线，贯穿词>50%条目）/格式B（关键时刻）AI 自选；THREAD_OUTPUT_INSTRUCTION 提为常量复用；commit 988c2e6；同步卡：已有 docs/sync-cards/2026-04-21-review-letter-threads-done.md
