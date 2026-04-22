@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>手写高亮效果 · 莫兰迪版</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #d8d4ce;
+      font-family: -apple-system, 'PingFang SC', sans-serif;
+      padding: 40px 24px 80px;
+    }
+    .page-title { font-size: 18px; font-weight: 700; color: #2a2a2a; margin-bottom: 4px; }
+    .page-sub { font-size: 12px; color: #aaa; margin-bottom: 36px; }
+
+    .layout { display: flex; gap: 36px; align-items: flex-start; flex-wrap: wrap; }
+
+    /* ─── 手机外框 ─── */
+    .phone {
+      width: 375px; height: 812px;
+      background: #faf8f4; border-radius: 46px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06), 0 12px 32px rgba(0,0,0,0.14),
+                  0 40px 80px rgba(0,0,0,0.16),
+                  inset 0 0 0 1.5px rgba(255,255,255,0.7),
+                  inset 0 0 0 3px rgba(0,0,0,0.06);
+      overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .status-bar {
+      height: 44px; background: #faf8f4;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 26px; flex-shrink: 0;
+    }
+    .status-time { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+    .status-icons { font-size: 11px; color: #555; letter-spacing: 2px; }
+    .nav {
+      background: #faf8f4; border-bottom: 1px solid #eae6df;
+      padding: 10px 18px; display: flex; align-items: center;
+      justify-content: space-between; flex-shrink: 0;
+    }
+    .nav-back { font-size: 24px; color: #c0bab2; font-weight: 300; }
+    .nav-title { font-size: 15px; font-weight: 600; color: #2a2a2a; }
+    .nav-more { font-size: 20px; color: #c0bab2; letter-spacing: 1px; }
+
+    .content-area {
+      flex: 1; overflow-y: auto; padding: 20px 22px; position: relative;
+    }
+
+    /* ─── 高亮核心：inline-block + SVG 绝对定位在文字之下 ─── */
+    .hl {
+      display: inline;
+      position: relative;
+      white-space: nowrap;
+    }
+    .hl svg {
+      position: absolute;
+      left: -3px;
+      top: 50%;
+      transform: translateY(-55%);
+      width: calc(100% + 6px);
+      height: 1.6em;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .hl > span {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ─── 加粗 ─── */
+    .bf { font-weight: 700; color: #1e1e1e; }
+
+    /* ─── 下划线（SVG 波浪）─── */
+    .ul-wrap {
+      display: inline;
+      position: relative;
+      white-space: nowrap;
+    }
+    .ul-wrap svg.ul-line {
+      position: absolute;
+      left: 0;
+      bottom: -3px;
+      width: 100%;
+      height: 6px;
+      pointer-events: none;
+    }
+    .ul-wrap > span { position: relative; z-index: 1; }
+
+    /* ─── 日记正文 ─── */
+    .journal-date { font-size: 11px; color: #c0bab2; margin-bottom: 14px; letter-spacing: 0.5px; }
+    .journal-body { font-size: 15px; line-height: 2.2; color: #2d2d2d; }
+
+    /* ─── 分割线 ─── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #e0dbd4 15%, #e0dbd4 85%, transparent);
+      margin: 22px 0;
+    }
+
+    /* ─── 回顾信 ─── */
+    .letter-label { font-size: 10px; color: #c9a96e; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 12px; }
+    .letter-body { font-size: 14px; line-height: 2.2; color: #3a3a3a; }
+
+    /* ─── 长按弹出菜单 ─── */
+    .popup {
+      position: absolute;
+      top: 156px;
+      left: 50%;
+      transform: translateX(-46%);
+      background: #1c1c1e;
+      border-radius: 12px;
+      padding: 9px 6px;
+      display: flex;
+      gap: 0;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+      z-index: 200;
+    }
+    .popup::after {
+      content: '';
+      position: absolute;
+      bottom: -7px; left: 50%;
+      transform: translateX(-50%);
+      border: 7px solid transparent;
+      border-top-color: #1c1c1e;
+      border-bottom: 0;
+    }
+    .pbtn {
+      padding: 3px 10px;
+      color: white;
+      font-size: 13px;
+      border-right: 1px solid #3a3a3c;
+      white-space: nowrap;
+      display: flex; align-items: center; gap: 5px;
+      cursor: pointer;
+    }
+    .pbtn:last-child { border-right: none; }
+    .pbtn.bold-btn { font-weight: 700; letter-spacing: 0.5px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+    /* ─── 莫兰迪色系 ─── */
+    /* 暖米 */
+    .c1 stop.s1 { stop-color: #C8A87A; }
+    /* 藕粉 */
+    .c2 stop.s1 { stop-color: #C4A0A2; }
+    /* 雾绿 */
+    .c3 stop.s1 { stop-color: #8DB0A4; }
+    /* 灰蓝 */
+    .c4 stop.s1 { stop-color: #8FAABC; }
+
+    /* 选中蓝遮罩 */
+    .sel { background: rgba(0,122,255,0.2); border-radius: 2px; }
+
+    /* ─── 右侧说明 ─── */
+    .notes { width: 280px; padding-top: 54px; }
+    .ng { margin-bottom: 26px; }
+    .nt { font-size: 12px; font-weight: 700; color: #333; margin-bottom: 8px; }
+    .nb { font-size: 12px; color: #777; line-height: 1.8; }
+    .nb code { font-size: 11px; background: #e4e0da; padding: 1px 5px; border-radius: 3px; color: #444; }
+
+    .swatches { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .sw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    .sw-dot { width: 36px; height: 20px; border-radius: 5px; }
+    .sw-name { font-size: 10px; color: #888; }
+  </style>
+</head>
+<body>
+
+<div class="page-title">手写高亮 · 莫兰迪版</div>
+<div class="page-sub">Highlight Design · Morandi Palette · 2026-04-22</div>
+
+<div class="layout">
+
+  <!-- ── 手机 ── -->
+  <div class="phone">
+
+    <div class="status-bar">
+      <span class="status-time">9:41</span>
+      <span class="status-icons">▲▲▲  WiFi  🔋</span>
+    </div>
+    <div class="nav">
+      <span class="nav-back">‹</span>
+      <span class="nav-title">4月20日</span>
+      <span class="nav-more">···</span>
+    </div>
+
+    <div class="content-area">
+
+      <div class="journal-date">4月20日  周日  下午 3:47</div>
+
+      <!-- ── 日记正文，高亮直接在文字上 ── -->
+      <div class="journal-body">在咖啡馆待了三个小时。<br>
+一开始旁边有人很大声讲电话，<br>
+
+<!-- 暖米高亮 -->
+<span class="hl">
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" class="c1">
+    <defs>
+      <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+        <stop class="s1" offset="0%"   stop-opacity="0.82"/>
+        <stop class="s1" offset="8%"   stop-opacity="0.50"/>
+        <stop class="s1" offset="50%"  stop-opacity="0.40"/>
+        <stop class="s1" offset="92%"  stop-opacity="0.52"/>
+        <stop class="s1" offset="100%" stop-opacity="0.82"/>
+      </linearGradient>
+    </defs>
+    <path d="M0.01,0.18 C0.08,0.10 0.22,0.22 0.38,0.14 C0.54,0.06 0.70,0.20 0.86,0.12 C0.94,0.08 0.98,0.14 0.99,0.16
+             L0.99,0.82 C0.92,0.90 0.78,0.78 0.62,0.86 C0.46,0.94 0.30,0.80 0.14,0.88 C0.07,0.92 0.02,0.86 0.01,0.84 Z"
+          fill="url(#g1)"/>
+  </svg>
+  <span>我没有因此分心，</span>
+</span><br>
+
+<!-- 藕粉高亮 -->
+<span class="hl">
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" class="c2">
+    <defs>
+      <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+        <stop class="s1" offset="0%"   stop-opacity="0.80"/>
+        <stop class="s1" offset="7%"   stop-opacity="0.48"/>
+        <stop class="s1" offset="50%"  stop-opacity="0.38"/>
+        <stop class="s1" offset="93%"  stop-opacity="0.50"/>
+        <stop class="s1" offset="100%" stop-opacity="0.82"/>
+      </linearGradient>
+    </defs>
+    <path d="M0.01,0.20 C0.09,0.10 0.25,0.24 0.42,0.14 C0.58,0.04 0.74,0.22 0.88,0.12 C0.94,0.08 0.99,0.16 0.99,0.18
+             L0.99,0.80 C0.91,0.90 0.75,0.76 0.58,0.86 C0.42,0.96 0.26,0.78 0.11,0.88 C0.06,0.92 0.01,0.84 0.01,0.82 Z"
+          fill="url(#g2)"/>
+  </svg>
+  <span>只是感受到那种对比——</span>
+</span><br>
+
+安静和吵闹同时在场，<br>
+我没有消除其中一个，<br>
+
+<!-- 加粗 -->
+<span class="bf">两个都感受到了。</span>
+<!-- 雾绿高亮（套在加粗上） -->
+<span class="hl">
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" class="c3" style="transform:translateY(-53%) rotate(-0.4deg)">
+    <defs>
+      <linearGradient id="g3" x1="0" y1="0" x2="1" y2="0">
+        <stop class="s1" offset="0%"   stop-opacity="0.78"/>
+        <stop class="s1" offset="8%"   stop-opacity="0.46"/>
+        <stop class="s1" offset="50%"  stop-opacity="0.36"/>
+        <stop class="s1" offset="92%"  stop-opacity="0.48"/>
+        <stop class="s1" offset="100%" stop-opacity="0.80"/>
+      </linearGradient>
+    </defs>
+    <path d="M0.01,0.22 C0.10,0.10 0.28,0.26 0.46,0.14 C0.62,0.04 0.78,0.22 0.90,0.12 C0.95,0.08 0.99,0.16 0.99,0.18
+             L0.99,0.82 C0.90,0.92 0.72,0.76 0.55,0.86 C0.39,0.96 0.23,0.78 0.09,0.88 C0.04,0.92 0.01,0.84 0.01,0.82 Z"
+          fill="url(#g3)"/>
+  </svg>
+  <span class="bf">这很新鲜。</span>
+</span><br>
+
+<!-- 下划线（灰蓝） -->
+觉得自己好像
+<span class="ul-wrap">
+  <svg class="ul-line" viewBox="0 0 100 6" preserveAspectRatio="none">
+    <path d="M0,3 C8,1 16,5 24,3 C32,1 40,5 48,3 C56,1 64,5 72,3 C80,1 88,5 96,3 C98,2.5 99.5,3 100,3"
+          fill="none" stroke="#8FAABC" stroke-width="1.8" stroke-opacity="0.75" stroke-linecap="round"/>
+  </svg>
+  <span>有点不一样了。</span>
+</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ── 回顾信，AI 加粗+高亮 ── -->
+      <div class="letter-label">回顾信</div>
+      <div class="letter-body">晚啊，这周你好像一直在
+等某种更轻的感觉。<br><br>
+
+4月18日你写：<br>
+<!-- 灰蓝高亮 -->
+<span class="hl">
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" class="c4" style="transform:translateY(-53%) rotate(0.2deg)">
+    <defs>
+      <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0">
+        <stop class="s1" offset="0%"   stop-opacity="0.80"/>
+        <stop class="s1" offset="7%"   stop-opacity="0.46"/>
+        <stop class="s1" offset="50%"  stop-opacity="0.36"/>
+        <stop class="s1" offset="93%"  stop-opacity="0.48"/>
+        <stop class="s1" offset="100%" stop-opacity="0.80"/>
+      </linearGradient>
+    </defs>
+    <path d="M0.01,0.20 C0.09,0.10 0.24,0.24 0.40,0.14 C0.56,0.04 0.72,0.22 0.86,0.12 C0.93,0.08 0.99,0.16 0.99,0.18
+             L0.99,0.82 C0.91,0.92 0.75,0.76 0.59,0.86 C0.43,0.96 0.27,0.78 0.11,0.88 C0.05,0.92 0.01,0.84 0.01,0.82 Z"
+          fill="url(#g4)"/>
+  </svg>
+  <span>「我没有因此分心」</span>
+</span><br>
+
+4月20日，又说：<br>
+
+<!-- 加粗 + 暖米高亮叠在一起 -->
+<span class="hl">
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" class="c1" style="transform:translateY(-54%) rotate(-0.3deg)">
+    <defs>
+      <linearGradient id="g5" x1="0" y1="0" x2="1" y2="0">
+        <stop class="s1" offset="0%"   stop-opacity="0.80"/>
+        <stop class="s1" offset="8%"   stop-opacity="0.48"/>
+        <stop class="s1" offset="50%"  stop-opacity="0.38"/>
+        <stop class="s1" offset="92%"  stop-opacity="0.50"/>
+        <stop class="s1" offset="100%" stop-opacity="0.82"/>
+      </linearGradient>
+    </defs>
+    <path d="M0.01,0.18 C0.10,0.08 0.26,0.24 0.43,0.14 C0.60,0.04 0.76,0.22 0.90,0.12 C0.95,0.08 0.99,0.16 0.99,0.18
+             L0.99,0.84 C0.90,0.94 0.74,0.78 0.57,0.88 C0.41,0.98 0.25,0.80 0.10,0.90 C0.05,0.94 0.01,0.86 0.01,0.84 Z"
+          fill="url(#g5)"/>
+  </svg>
+  <span class="bf">「两个都感受到了」</span>
+</span><br><br>
+
+好像不用非得让一种感受
+赢过另一种了。
+      </div>
+
+      <!-- ── 长按弹出菜单（停在日记第二行上方） ── -->
+      <div class="popup">
+        <div class="pbtn bold-btn">B</div>
+        <div class="pbtn" style="text-decoration: underline; text-decoration-color: #8FAABC; text-decoration-thickness: 1.5px;">U</div>
+        <div class="pbtn"><span class="dot" style="background:#C8A87A;opacity:0.9;"></span></div>
+        <div class="pbtn"><span class="dot" style="background:#C4A0A2;opacity:0.9;"></span></div>
+        <div class="pbtn"><span class="dot" style="background:#8DB0A4;opacity:0.9;"></span></div>
+        <div class="pbtn"><span class="dot" style="background:#8FAABC;opacity:0.9;"></span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 说明 ── -->
+  <div class="notes">
+
+    <div class="ng">
+      <div class="nt">莫兰迪色板</div>
+      <div class="swatches">
+        <div class="sw">
+          <div class="sw-dot" style="background:rgba(200,168,122,0.6);"></div>
+          <span class="sw-name">暖米</span>
+        </div>
+        <div class="sw">
+          <div class="sw-dot" style="background:rgba(196,160,162,0.6);"></div>
+          <span class="sw-name">藕粉</span>
+        </div>
+        <div class="sw">
+          <div class="sw-dot" style="background:rgba(141,176,164,0.6);"></div>
+          <span class="sw-name">雾绿</span>
+        </div>
+        <div class="sw">
+          <div class="sw-dot" style="background:rgba(143,170,188,0.6);"></div>
+          <span class="sw-name">灰蓝</span>
+        </div>
+      </div>
+      <div class="nb" style="margin-top:10px;">高亮和下划线共用这四色，低饱和度，不刺眼，与 app 的米白背景相融。</div>
+    </div>
+
+    <div class="ng">
+      <div class="nt">弹出菜单选项</div>
+      <div class="nb">
+        长按选中文字后弹出，共六个操作：<br><br>
+        <strong>B</strong> — 加粗（font-weight: 700）<br>
+        <strong>U</strong> — 下划线（SVG 波浪线，同色系）<br>
+        🟤 🌸 🌿 🔵 — 四色高亮<br><br>
+        同一段文字可以叠加加粗 + 高亮，如看板右侧回顾信的「两个都感受到了」。
+      </div>
+    </div>
+
+    <div class="ng">
+      <div class="nt">高亮笔质感原理</div>
+      <div class="nb">
+        SVG path 用单位坐标（0–1），<code>preserveAspectRatio="none"</code> 让它自动拉伸到任意文字宽度。<br><br>
+        · 上下边缘：贝塞尔曲线，每 15% 一个锚点，轻微抖动<br>
+        · 渐变：起止端 opacity 0.8，中段 0.38，模拟笔头在端点停顿时积墨<br>
+        · 每条轻微随机旋转 ±0.4°，不完全水平<br>
+        · 高亮层在文字之下（z-index 0），文字之上（z-index 1）
+      </div>
+    </div>
+
+    <div class="ng">
+      <div class="nt">下划线</div>
+      <div class="nb">
+        SVG 波浪线，绝对定位在文字 <code>bottom: -3px</code>，<code>width: 100%</code> 自动拉伸，<code>stroke-opacity: 0.75</code>，不喧宾夺主。
+      </div>
+    </div>
+
+    <div class="ng">
+      <div class="nt">存储格式（Markdown 扩展）</div>
+      <div class="nb">
+        <code>**加粗**</code><br>
+        <code>__下划线__</code>（灰蓝默认色）<br>
+        <code>==暖米高亮==</code><br>
+        <code>~~藕粉高亮~~</code>（借用删除线语法）<br><br>
+        渲染时解析这四种标记 → 对应 SVG 组件。存储仍是纯文本字符串，无需改 DB 字段类型。
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>
