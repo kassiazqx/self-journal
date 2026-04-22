@@ -24,6 +24,8 @@ export default function AnnotationMenu({
   onUnderline,
   onColorChange,
   onClose,
+  showCancel,
+  onCancel,
 }) {
   if (!visible) return null
 
@@ -94,7 +96,7 @@ export default function AnnotationMenu({
             key={c.id}
             style={{
               ...btnStyle,
-              borderRight: idx === DEFAULT_ANNOTATION_COLORS.length - 1 ? 'none' : '1px solid #3a3a3c',
+              borderRight: idx === DEFAULT_ANNOTATION_COLORS.length - 1 && !showCancel ? 'none' : '1px solid #3a3a3c',
               padding: '4px 8px',
             }}
             onClick={() => onColorChange(c.id)}
@@ -108,6 +110,23 @@ export default function AnnotationMenu({
             }} />
           </button>
         ))}
+
+        {/* ✕ 取消（仅选区与已有标注重叠时显示）*/}
+        {showCancel && (
+          <button
+            style={{
+              ...btnStyle,
+              borderRight: 'none',
+              borderLeft: '1px solid #3a3a3c',
+              color: '#ff453a',
+              fontWeight: 600,
+              padding: '4px 10px',
+            }}
+            onClick={onCancel}
+          >
+            ✕
+          </button>
+        )}
       </div>
     </>
   )
