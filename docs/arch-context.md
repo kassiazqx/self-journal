@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-22（文字标注系统：高亮/加粗/下划线 + 持久化 + 移动端适配）
+**最后更新：** 2026-04-22（编辑器框架升级：写作时即可标注，Lexical 富文本编辑器）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -265,9 +265,15 @@ src/
 │   ├── useSpeechRecognition.js 语音输入
 │   ├── useAnnotations.js       标注状态机（annotations/activeColor/addAnnotation/markSaved/resetAnnotations/dirty）
 │   │                           dedup guard：同 type+start+end 已存在则跳过；resetAnnotations(arr) 供外部覆盖初始状态
+│   │                           ✨ 新增：shiftAnnotations(annotations, changeStart, delta) 纯函数（named export）
+│   │                           ✨ 新增：applyShift(changeStart, delta) hook 方法，文字变更时移动标注偏移（不 set dirty）
 │   └── useAnnotationInteraction.js 选区→菜单交互（containerRef + rawText → menuVisible/menuPosition/handlers）
 │                               mobile：selectionchange 300ms 防抖（handle drag 不冒泡，selectionchange 是唯一可靠事件）
 │                               desktop：mouseup + 0ms setTimeout 读取 selection
+│                               ✨ 新增：openMenuAt(offsets, selectionRect: DOMRect) — Lexical 专用路径，由 MouseUpPlugin 调用
+│                               ✨ 新增：flipDown 逻辑 — 手机端 / 选区离顶部 < MENU_HEIGHT 时，菜单显示在选区下方
+│                               ✨ 新增：lastOpenMenuAtRef 防双触发（openMenuAt 打时间戳，selectionchange 500ms 内跳过）
+│                               menuPosition 形状：{ top, left, flipDown }（AnnotationMenu 读取 flipDown 决定方向）
 ├── lib/
 │   ├── supabase.js             DB客户端（仅供 db.js 使用）
 │   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
@@ -336,6 +342,17 @@ src/
 │   │                           ⚠️ 不用 SVG：CSS background/text-decoration 天然跨行，SVG absolute 只能覆盖 bounding box
 │   ├── AnnotationMenu.jsx      标注操作浮层（B/高亮/下划线 按钮 + 颜色选择器）
 │   │                           props: visible / position / activeColor / onBold / onHighlight / onUnderline / onColorChange / onClose
+│   │                           ✨ 新增：flipDown prop（position.flipDown=true 时显示在选区下方，箭头朝上；否则朝下）
+│   ├── RichTextEditor.jsx      ✨ 新建：Lexical 富文本编辑器封装（写作时即可标注）
+│   │                           props: initialValue / annotations / onChange(plaintext) / onRangeSelect({start,end},DOMRect) / placeholder / style / ref
+│   │                           内嵌 Plugin：AnnotationTransformPlugin（渲染标注）/ MouseUpPlugin（选区→回调）/ OnChangePlugin（纯文本同步）
+│   │                           IME 安全：isComposingRef 守门，compositionstart/end 期间不触发 onChange
+│   │                           存储模型不变：onChange 仍返回纯文本（$getRoot().getTextContent()），标注 JSONB 独立存储
+│   ├── RichTextEditor/
+│   │   ├── AnnotatedNode.js    ✨ 新建：TextNode 子类，携带 __annotationStyle CSS 对象，createDOM/_applyStyle 渲染内联样式
+│   │   ├── annotationTransform.js ✨ 新建：editor.update() 将 TextNode 按标注边界分割并替换为 AnnotatedNode
+│   │   │                           guard：JSON.stringify 比较旧新 style，相同则跳过（防止无限 update 循环）
+│   │   └── selectionToOffsets.js  ✨ 新建：Lexical RangeSelection → {start, end} 绝对字符偏移，处理段落隐式换行
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
@@ -355,6 +372,8 @@ src/
     ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
     │                           日期 pill：inferDatetime debounce 800ms + manualOverride + localStorage 持久化
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
+    │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
+    │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
     │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
     │                           🔍 FilterBar 五维筛选（有筛选时隐藏回顾信卡片）
@@ -374,6 +393,9 @@ src/
     │                           ⚠️ 去掉了 mount 时的额外 useEffect resetAnnotations，load() 里的已足够，双重调用会在异步间隙产生闪烁
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
+    │                           ✨ 编辑器升级：raw_entry / 无觉察流单框均换为 RichTextEditor（写作时即可标注）
+    │                           handleRawChange：计算 delta + 调 applyShift 同步标注偏移；contentMap['__raw__'] 同步写入
+    │                           handleSave flow 分支：从 contentMap['__raw__'] 读 raw_entry 内容（而非 contentMap[msg.id]）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
                                 数据导出：新 UI（勾选图片 + 导出备份按钮 + 两阶段失败处理）
                                 旧「导出 JSON」「导出 TXT」已移除，由 exportService 全量备份替代
@@ -1031,6 +1053,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-22 · 代码session · 编辑器框架升级完成：写作页 + 编辑页 textarea 全部换为 Lexical 富文本编辑器（RichTextEditor.jsx + RichTextEditor/ 三子模块）；写作时即可圈字标注；新增 shiftAnnotations/applyShift 在文字变更时移动标注偏移；useAnnotationInteraction 新增 openMenuAt + flipDown + lastOpenMenuAtRef；AnnotationMenu 支持 flipDown（手机/近顶端选区下方显示）；修复 handleDone/handleDeepAwareness stale closure（补 annotations dep）；修复 EditEntryPage flow 分支保存路径；commit 4c8497e；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md
 - 2026-04-22 · 代码session · 修复标注系统五个代码审查问题：#1 RecordDetail raw_entry 分支改渲染 entry.content（与 rawText 同源，消除编辑后偏移错位）；#3 handleAIAnalyze re-fetch 后补调 resetAnnotations；#4 openMenuForRange 加越界守卫；#6 closeMenu 空 deps 加注释；#9 ThreadDetailPage 去掉冗余 useEffect resetAnnotations。新增 §4.49（rawText 与渲染文本同源规律）；更新 §4.48「不要在 loadFull 外额外写 useEffect reset」；commit 73c0f15；同步卡：docs/sync-cards/2026-04-22-annotation-bugfixes.md
 - 2026-04-22 · 代码session · 标注交互增强（Part 2.5）：Rule 1 取消（✕按钮 clipAll）/ Rule 2 同类型 toggle / Rule 3 单击已标注文字弹菜单（union range）/ 颜色替换（完全覆盖时点颜色=换色，不叠加）；新增 clipAnnotations hook；useAnnotationInteraction 重写；AnnotationMenu 新增 showCancel/onCancel；AnnotatedText 新增 onAnnotatedClick；三个详情页全部接入；commit 已在之前批次 push；新增 §4.47/§4.48；同步卡：docs/sync-cards/2026-04-22-annotation-system.md
 - 2026-04-21 · 代码session · 回顾信 JSON 清理正则兼容增强：格式C `\]\s*$` 末尾锚点在 ] 后有 ``` 等杂质时失配，导致 JSON 残留正文；三条清理 replace 均改为删至字符串末尾（[\s\S]*$）；新增格式A2（无 json 标签代码块）；commit 8560273；同步卡：docs/sync-cards/2026-04-21-review-letter-json-cleanup-fix.md；新增 arch §4.42
