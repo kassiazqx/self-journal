@@ -6,6 +6,23 @@ const LS_COLOR_KEY = 'annotation_active_color'
 /**
  * @param {Array} initialAnnotations - 从 DB 读取的初始标注数组（可为 null/undefined）
  */
+/**
+ * 文字变更后同步标注偏移。
+ * @param {Array} annotations
+ * @param {number} changeStart - 第一个变化字符的索引
+ * @param {number} delta       - 正 = 插入，负 = 删除
+ */
+export function shiftAnnotations(annotations, changeStart, delta) {
+  return annotations.map(a => {
+    if (a.end <= changeStart) return a
+    if (a.start >= changeStart) {
+      return { ...a, start: Math.max(0, a.start + delta), end: Math.max(0, a.end + delta) }
+    }
+    // changeStart 在标注内部：只移动右边界
+    return { ...a, end: Math.max(a.start + 1, a.end + delta) }
+  }).filter(a => a.start < a.end)
+}
+
 export function useAnnotations(initialAnnotations) {
   const [annotations, setAnnotations] = useState(
     Array.isArray(initialAnnotations) ? initialAnnotations : []
@@ -102,5 +119,10 @@ export function useAnnotations(initialAnnotations) {
     setDirty(false)
   }, [])
 
-  return { annotations, activeColor, setActiveColor, addAnnotation, removeAnnotation, markSaved, clearAll, clipAnnotations, resetAnnotations, dirty }
+  const applyShift = useCallback((changeStart, delta) => {
+    setAnnotations(prev => shiftAnnotations(prev, changeStart, delta))
+    // 偏移同步不是内容变更，不设 dirty
+  }, [])
+
+  return { annotations, activeColor, setActiveColor, addAnnotation, removeAnnotation, markSaved, clearAll, clipAnnotations, resetAnnotations, applyShift, dirty }
 }

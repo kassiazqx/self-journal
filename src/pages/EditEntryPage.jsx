@@ -2,13 +2,17 @@
 // 统一编辑器：原始正文 + 觉察流引导&回答，连续展示，可全量编辑
 // 保存：updateEntry(content) + upsert conversations.messages
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
 import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 import DatetimePicker from '../components/DatetimePicker'
 import { formatPill } from '../lib/dateUtils'
+import RichTextEditor from '../components/RichTextEditor'
+import { useAnnotations } from '../hooks/useAnnotations'
+import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
+import AnnotationMenu from '../components/AnnotationMenu'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -59,6 +63,15 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   // contentMap: { [msg.id]: string } 保存所有可编辑字段的当前值
   const [contentMap, setContentMap] = useState({})
 
+  // ── 标注 ──────────────────────────────────────────────────────────
+  const {
+    annotations, activeColor, setActiveColor,
+    addAnnotation, clipAnnotations, applyShift, markSaved,
+  } = useAnnotations(entry.annotations ?? [])
+
+  const editorContainerRef = useRef(null)
+  const prevTextRef = useRef(entry.content ?? '')
+
   // 加载 conversations 表
   useEffect(() => {
     async function load() {
@@ -85,6 +98,9 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
             map[msg.id] = msg.content ?? ''
           }
         })
+        // raw_entry 内容同时写入 '__raw__' 键，供 handleRawChange 和 handleSave 统一读取
+        const rawMsg = msgs.find(m => m.nodeType === 'raw_entry')
+        if (rawMsg) map['__raw__'] = rawMsg.content ?? ''
         setContentMap(map)
       }
     }
@@ -123,6 +139,37 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     e.target.value = ''
   }
 
+  // ── 标注交互 ───────────────────────────────────────────────────────
+  const {
+    menuVisible, menuPosition,
+    closeMenu,
+    handleBold, handleHighlight, handleUnderline,
+    handleCancel, openMenuForRange, openMenuAt, hasOverlap,
+  } = useAnnotationInteraction({
+    containerRef: editorContainerRef,
+    rawText: contentMap['__raw__'] ?? '',
+    addAnnotation,
+    clipAnnotations,
+    activeColor,
+    annotations,
+  })
+
+  const handleRangeSelect = useCallback((offsets, selectionRect) => {
+    if (offsets.start >= offsets.end) return
+    openMenuAt(offsets, selectionRect)
+  }, [openMenuAt])
+
+  function handleRawChange(newText) {
+    const oldText = prevTextRef.current
+    prevTextRef.current = newText
+    let changeStart = 0
+    const minLen = Math.min(oldText.length, newText.length)
+    while (changeStart < minLen && oldText[changeStart] === newText[changeStart]) changeStart++
+    const delta = newText.length - oldText.length
+    if (delta !== 0) applyShift(changeStart, delta)
+    setContentMap(m => ({ ...m, '__raw__': newText }))
+  }
+
   async function handleSave() {
     if (saving) return
     setSaving(true)
@@ -133,16 +180,17 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
       if (!hasFlow) {
         const newContent = (contentMap['__raw__'] ?? '').trim()
-        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations: null } })
+        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations } })
       } else {
         const updatedMessages = messages.map(msg => {
+          // raw_entry 的编辑结果写在 contentMap['__raw__']
+          if (msg.nodeType === 'raw_entry') return { ...msg, content: contentMap['__raw__'] ?? msg.content }
           if (msg.id in contentMap) return { ...msg, content: contentMap[msg.id] }
           return msg
         })
-        const rawMsg = updatedMessages.find(m => m.nodeType === 'raw_entry')
-        const newContent = (rawMsg?.content ?? entry.content ?? '').trim()
+        const newContent = (contentMap['__raw__'] ?? entry.content ?? '').trim()
         await Promise.all([
-          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations: null } }),
+          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations } }),
           db.from('conversations').upsert(
             { user_id: user.id, entry_id: entry.id, context_type: 'entry',
               messages: updatedMessages, updated_at: new Date().toISOString() },
@@ -164,6 +212,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         pathsToDeleteRef.current = []
       }
 
+      markSaved()
       onDone?.()
     } catch (err) {
       console.error('[EditEntryPage handleSave]', err)
@@ -247,15 +296,27 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
           {/* ── 无觉察流：单个大文本框 ── */}
           {messages.length === 0 && (
-            <AutoTextarea
-              value={contentMap['__raw__'] ?? ''}
-              onChange={e => setContentMap(m => ({ ...m, '__raw__': e.target.value }))}
-              autoFocus
-              style={{
-                fontSize: 15, lineHeight: 1.85, color: '#2d2d2d',
-                minHeight: '60vh',
-              }}
-            />
+            <div ref={editorContainerRef} style={{ position: 'relative' }}>
+              <RichTextEditor
+                initialValue={contentMap['__raw__'] ?? ''}
+                annotations={annotations}
+                onChange={handleRawChange}
+                onRangeSelect={handleRangeSelect}
+                style={{ minHeight: '60vh', fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
+              />
+              <AnnotationMenu
+                position={menuPosition}
+                visible={menuVisible}
+                activeColor={activeColor}
+                onBold={handleBold}
+                onHighlight={handleHighlight}
+                onUnderline={handleUnderline}
+                onColorChange={setActiveColor}
+                onClose={closeMenu}
+                showCancel={hasOverlap}
+                onCancel={handleCancel}
+              />
+            </div>
           )}
 
           {/* ── 有觉察流：逐条渲染 ── */}
@@ -264,16 +325,27 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
             // 原始日记（可编辑大文本框）
             if (msg.nodeType === 'raw_entry') {
               return (
-                <AutoTextarea
-                  key={msg.id}
-                  value={contentMap[msg.id] ?? ''}
-                  onChange={e => setContentMap(m => ({ ...m, [msg.id]: e.target.value }))}
-                  autoFocus={i === 0}
-                  style={{
-                    fontSize: 15, lineHeight: 1.85, color: '#2d2d2d',
-                    marginBottom: 20, minHeight: 60,
-                  }}
-                />
+                <div key={msg.id} ref={editorContainerRef} style={{ position: 'relative', marginBottom: 20 }}>
+                  <RichTextEditor
+                    initialValue={contentMap[msg.id] ?? ''}
+                    annotations={annotations}
+                    onChange={handleRawChange}
+                    onRangeSelect={handleRangeSelect}
+                    style={{ minHeight: 60, fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
+                  />
+                  <AnnotationMenu
+                    position={menuPosition}
+                    visible={menuVisible}
+                    activeColor={activeColor}
+                    onBold={handleBold}
+                    onHighlight={handleHighlight}
+                    onUnderline={handleUnderline}
+                    onColorChange={setActiveColor}
+                    onClose={closeMenu}
+                    showCancel={hasOverlap}
+                    onCancel={handleCancel}
+                  />
+                </div>
               )
             }
 

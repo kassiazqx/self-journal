@@ -27,7 +27,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  *   pendingRange: { start: number, end: number } | null,
  * }}
  */
-export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations }) {
+export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations, disableSelectionChange = false }) {
   // 判断 [selStart, selEnd) 内每个字符是否都被 type 类型标注覆盖
   function isFullyCovered(selStart, selEnd, type) {
     const ofType = (annotations ?? []).filter(
@@ -45,9 +45,13 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
   }
 
   const [menuVisible, setMenuVisible] = useState(false)
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, flipDown: false })
   const [hasOverlap, setHasOverlap] = useState(false)
   const pendingRangeRef = useRef(null)
+  const lastOpenMenuAtRef = useRef(0)  // 防止 mouseup + selectionchange 双触发
+
+  const MENU_HEIGHT = 52  // AnnotationMenu 近似高度（px）
+  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
   /**
    * 从 DOM Range 计算相对于 containerRef 纯文本的 start/end 偏移。
@@ -113,9 +117,12 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     const rawLeft = rect.left - containerRect.left + rect.width / 2
     const containerW = containerRef.current.offsetWidth
     const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
-    const top  = rect.top - containerRect.top - 4
+    // 手机始终放选区下方；桌面如果选区离顶部太近也放下方
+    const rawTop = rect.top - containerRect.top
+    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
+    const top = flipDown ? rect.bottom - containerRect.top : rawTop
 
-    setMenuPosition({ top, left })
+    setMenuPosition({ top, left, flipDown })
     setMenuVisible(true)
   }, [rawText, containerRef, annotations]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -127,17 +134,22 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
 
   // 移动端：selectionchange 防抖 300ms
   useEffect(() => {
+    if (disableSelectionChange) return   // ⬅️ Lexical 场景下跳过全局监听
     let timer = null
     function onSelectionChange() {
       clearTimeout(timer)
-      timer = setTimeout(tryShowMenu, 300)
+      timer = setTimeout(() => {
+        // mouseup 已经通过 openMenuAt 处理过了，跳过避免双触发
+        if (Date.now() - lastOpenMenuAtRef.current < 500) return
+        tryShowMenu()
+      }, 300)
     }
     document.addEventListener('selectionchange', onSelectionChange)
     return () => {
       document.removeEventListener('selectionchange', onSelectionChange)
       clearTimeout(timer)
     }
-  }, [tryShowMenu])
+  }, [tryShowMenu, disableSelectionChange])
 
   const closeMenu = useCallback(() => {
     setMenuVisible(false)
@@ -200,9 +212,37 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     const containerW = containerRef.current.offsetWidth
     const rawLeft = e.clientX - containerRect.left
     const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
-    const top  = e.clientY - containerRect.top - 4
+    const rawTop = e.clientY - containerRect.top
+    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
+    const top = flipDown ? rawTop + 24 : rawTop
     setHasOverlap(true)
-    setMenuPosition({ top, left })
+    setMenuPosition({ top, left, flipDown })
+    setMenuVisible(true)
+  }, [annotations, containerRef])
+
+  /**
+   * Lexical 场景专用：接收已计算好的 {start, end} 偏移和选区 DOMRect，直接弹菜单。
+   * 用于替代 selectionchange 路径。
+   *
+   * @param {{ start: number, end: number }} offsets
+   * @param {DOMRect} selectionRect  - window.getSelection().getRangeAt(0).getBoundingClientRect()
+   */
+  const openMenuAt = useCallback((offsets, selectionRect) => {
+    if (!containerRef.current) return
+    lastOpenMenuAtRef.current = Date.now()  // 标记时间，抑制后续 selectionchange 重复触发
+    pendingRangeRef.current = { start: offsets.start, end: offsets.end }
+    const overlaps = (annotations ?? []).some(
+      a => a.start < offsets.end && a.end > offsets.start
+    )
+    setHasOverlap(overlaps)
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const containerW = containerRef.current.offsetWidth
+    const rawLeft = selectionRect.left + selectionRect.width / 2 - containerRect.left
+    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
+    const rawTop = selectionRect.top - containerRect.top
+    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
+    const top = flipDown ? selectionRect.bottom - containerRect.top : rawTop
+    setMenuPosition({ top, left, flipDown })
     setMenuVisible(true)
   }, [annotations, containerRef])
 
@@ -218,6 +258,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     handleCancel,
     handleColorChange,
     openMenuForRange,
+    openMenuAt,
     hasOverlap,
     pendingRange: pendingRangeRef.current,
   }

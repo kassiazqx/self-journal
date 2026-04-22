@@ -60,8 +60,10 @@ export default function AnnotationMenu({
           position: 'absolute',
           top: position.top,
           left: position.left,
-          transform: 'translateX(-50%) translateY(-100%)',
-          marginTop: -8,
+          transform: position.flipDown
+            ? 'translateX(-50%) translateY(0)'
+            : 'translateX(-50%) translateY(-100%)',
+          marginTop: position.flipDown ? 8 : -8,
           background: '#1c1c1e',
           borderRadius: 12,
           padding: '6px 0',
@@ -70,16 +72,28 @@ export default function AnnotationMenu({
           zIndex: 200,
         }}
       >
-        {/* 向下箭头 */}
-        <div style={{
-          position: 'absolute',
-          bottom: -7, left: '50%',
-          transform: 'translateX(-50%)',
-          width: 0, height: 0,
-          borderLeft: '7px solid transparent',
-          borderRight: '7px solid transparent',
-          borderTop: '7px solid #1c1c1e',
-        }} />
+        {/* 箭头：flipDown 时向上，否则向下 */}
+        {position.flipDown ? (
+          <div style={{
+            position: 'absolute',
+            top: -7, left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0, height: 0,
+            borderLeft: '7px solid transparent',
+            borderRight: '7px solid transparent',
+            borderBottom: '7px solid #1c1c1e',
+          }} />
+        ) : (
+          <div style={{
+            position: 'absolute',
+            bottom: -7, left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0, height: 0,
+            borderLeft: '7px solid transparent',
+            borderRight: '7px solid transparent',
+            borderTop: '7px solid #1c1c1e',
+          }} />
+        )}
 
         {/* B 加粗 */}
         <button style={{ ...btnStyle, fontWeight: 700, letterSpacing: 0.5, borderRight: '1px solid #3a3a3c' }} onClick={onBold}>B</button>

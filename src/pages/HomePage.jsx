@@ -42,6 +42,10 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
+import RichTextEditor from '../components/RichTextEditor'
+import { useAnnotations } from '../hooks/useAnnotations'
+import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
+import AnnotationMenu from '../components/AnnotationMenu'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
@@ -212,6 +216,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   // 写作内容
   const [content, setContent] = useState(editEntry?.content ?? '')
 
+  // ── 标注 ──────────────────────────────────────────────────────────
+  const {
+    annotations, activeColor, setActiveColor,
+    addAnnotation, clipAnnotations, applyShift,
+  } = useAnnotations([])
+
+  const editorContainerRef = useRef(null)
+  const prevTextRef = useRef(editEntry?.content ?? '')
+
   // 草稿恢复提示
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const draftRef = useRef(null)
@@ -251,6 +264,21 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   const textareaRef = useRef(null)
   const draftTimerRef = useRef(null)
+
+  // ── 标注交互 ───────────────────────────────────────────────────────
+  const {
+    menuVisible, menuPosition,
+    closeMenu,
+    handleBold, handleHighlight, handleUnderline,
+    handleCancel, openMenuForRange, openMenuAt, hasOverlap,
+  } = useAnnotationInteraction({
+    containerRef: editorContainerRef,
+    rawText: content,
+    addAnnotation,
+    clipAnnotations,
+    activeColor,
+    annotations,
+  })
   // 手动 ✕ 过的人物（session 内永久 dismiss，文字里再出现也不重现）
   const [dismissedPeople, setDismissedPeople] = useState(new Set())
 
@@ -362,21 +390,27 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   }
 
   // ── 监听 @ 字符（实时识别由 render 时计算，不在此累积）──────
-  const handleContentChange = (e) => {
-    const val = e.target.value
-    setContent(val)
+  const handleEditorChange = (newText) => {
+    const oldText = prevTextRef.current
+    prevTextRef.current = newText
 
-    // 检测 @ 触发：找光标前最近一个 @，且 @ 后无空格
-    const cursor = e.target.selectionStart
-    const before = val.slice(0, cursor)
-    const atIdx = before.lastIndexOf('@')
+    // 偏移同步
+    let changeStart = 0
+    const minLen = Math.min(oldText.length, newText.length)
+    while (changeStart < minLen && oldText[changeStart] === newText[changeStart]) changeStart++
+    const delta = newText.length - oldText.length
+    if (delta !== 0) applyShift(changeStart, delta)
+
+    setContent(newText)
+
+    // 检测 @ 触发：找最后一个 @ 后跟非空白字符（光标大概在末尾）
+    const atIdx = newText.lastIndexOf('@')
     if (atIdx !== -1) {
-      const afterAt = before.slice(atIdx + 1)
-      if (!afterAt.includes(' ') && !afterAt.includes('\n')) {
-        // 计算浮窗 top：@ 所在行数 × 行高 + 上方 padding + 一行偏移（显示在光标下方）
+      const afterAt = newText.slice(atIdx + 1)
+      if (!afterAt.includes(' ') && !afterAt.includes('\n') && afterAt.length > 0) {
         const LINE_H = 28  // 15px × 1.85 ≈ 28px
         const TOP_PAD = 14 // pt-[14px]
-        const linesBefore = (val.slice(0, atIdx).match(/\n/g) || []).length
+        const linesBefore = (newText.slice(0, atIdx).match(/\n/g) || []).length
         setMentionTop(linesBefore * LINE_H + LINE_H + TOP_PAD)
         setMentionQuery(afterAt)
         setMentionAnchor(atIdx)
@@ -385,6 +419,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     }
     setMentionQuery(null)
   }
+
+  const handleRangeSelect = useCallback((offsets, selectionRect) => {
+    if (offsets.start >= offsets.end) return
+    openMenuAt(offsets, selectionRect)
+  }, [openMenuAt])
 
   // ── @ 选人 ────────────────────────────────────────────────────
   const handleMentionSelect = async (contact) => {
@@ -430,6 +469,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         people_involved: allPeople,
         image_urls: imagePaths,
         created_at: selectedDatetime.toISOString(),
+        annotations,
       }
       const updatedEntry = { ...editEntry, ...fields }
       onDone?.(updatedEntry, false)
@@ -475,6 +515,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       template_type: template.id,
       created_at: selectedDatetime.toISOString(),
       people_involved: allPeople,
+      annotations,
     }
 
     clearDraft()
@@ -517,7 +558,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       })()
     }
   }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts,
-      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify])
+      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
@@ -529,6 +570,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       content: content.trim(),
       template_type: template.id,
       created_at: selectedDatetime.toISOString(),
+      annotations,
     })
 
     setSaving(false)
@@ -536,7 +578,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
     clearDraft()
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
-  }, [content, saving, template, user, onDone])
+  }, [content, saving, template, user, onDone, annotations])
 
   // ── 图片选择 ──────────────────────────────────────────────────
   const handleImageSelect = (e) => {
@@ -756,23 +798,27 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       </div>
 
       {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}
-      <div className="flex-1 px-[18px] pt-[14px] pb-[80px]" style={{ position: 'relative' }}>
-        <textarea
+      <div ref={editorContainerRef} className="flex-1 px-[18px] pt-[14px] pb-[80px]" style={{ position: 'relative' }}>
+        <RichTextEditor
           ref={textareaRef}
-          value={content}
-          onChange={handleContentChange}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setMentionQuery(null)
-          }}
+          initialValue={content}
+          annotations={annotations}
+          onChange={handleEditorChange}
+          onRangeSelect={handleRangeSelect}
           placeholder="把脑子里的写下来…"
-          className="w-full h-full border-none outline-none bg-transparent resize-none"
-          style={{
-            fontSize: '15px',
-            lineHeight: 1.85,
-            color: '#2d2d2d',
-            caretColor: '#aaa',
-            fontFamily: 'inherit',
-          }}
+          style={{ minHeight: '60vh' }}
+        />
+        <AnnotationMenu
+          position={menuPosition}
+          visible={menuVisible}
+          activeColor={activeColor}
+          onBold={handleBold}
+          onHighlight={handleHighlight}
+          onUnderline={handleUnderline}
+          onColorChange={setActiveColor}
+          onClose={closeMenu}
+          showCancel={hasOverlap}
+          onCancel={handleCancel}
         />
 
         {/* @ 浮层 */}
