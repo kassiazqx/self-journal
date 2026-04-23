@@ -197,12 +197,13 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
     if (!user) return
     setLoading(true)
 
-    // 先检查是否需要生成回顾信，完成后再查列表（保证新信能出现在当次加载结果中）
-    await checkAndGenerateLetter(user.id).catch(() => {})
+    // 后台异步检查是否需要生成回顾信，不阻塞列表加载
+    // tradeoff：如果恰好触发生成，新信需要下次刷新才能出现（低频事件，可接受）
+    checkAndGenerateLetter(user.id).catch(() => {})
 
     const [entriesRes, lettersRes] = await Promise.all([
       db.from('journal_entries')
-        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls')
+        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls, annotations, people_involved, category_tags, core_needs, current_thought, body_sensations, cognitive_analysis, reflection_insight, entry_summary, overall_state_score')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(0, ENTRY_PAGE - 1),

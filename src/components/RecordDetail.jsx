@@ -175,8 +175,15 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   const tpl = resolveTemplate(entry.template_type)
 
-  // 读取完整 entry 数据（列表页传来的对象可能是简化版；refreshToken 变化时重新拉取）
+  // 读取完整 entry 数据
+  // refreshToken > 0 说明数据刚被编辑更新，必须重新查
+  // refreshToken === 0 且 initialEntry 已含完整字段（列表查询已扩展 select），直接用
   useEffect(() => {
+    if (refreshToken === 0 && 'people_involved' in initialEntry) {
+      setEntry(initialEntry)
+      resetAnnotations(initialEntry.annotations)
+      return
+    }
     async function loadFull() {
       const { data } = await db.from('journal_entries')
         .select('*').eq('id', initialEntry.id).single()

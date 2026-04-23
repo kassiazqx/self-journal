@@ -44,7 +44,7 @@ function AutoTextarea({ value, onChange, autoFocus, style }) {
 
 export default function EditEntryPage({ entry, onBack, onDone }) {
   const { user } = useAuth()
-  const [messages, setMessages] = useState(null) // null = 加载中
+  const [messages, setMessages] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [editDatetime, setEditDatetime] = useState(new Date(entry.created_at ?? Date.now()))
@@ -60,8 +60,10 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   // 延迟删除：保存时才真正删 Storage，Cancel 时不删（避免孤儿文件）
   const pathsToDeleteRef = useRef([])
 
-  // contentMap: { [msg.id]: string } 保存所有可编辑字段的当前值
-  const [contentMap, setContentMap] = useState({})
+  // contentMap 用 entry.content 立即初始化，不等 conversations 查询
+  const [contentMap, setContentMap] = useState({ '__raw__': entry.content ?? '' })
+  // 用户开始编辑后，conversations 查询结果不再覆盖 contentMap
+  const hasStartedEditingRef = useRef(false)
 
   // ── 标注 ──────────────────────────────────────────────────────────
   const {
@@ -72,7 +74,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   const editorContainerRef = useRef(null)
   const prevTextRef = useRef(entry.content ?? '')
 
-  // 加载 conversations 表
+  // 后台加载 conversations 表（不阻塞编辑器渲染）
   useEffect(() => {
     async function load() {
       const { data } = await db.from('conversations')
@@ -82,27 +84,27 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         .maybeSingle()
 
       const msgs = data?.messages ?? []
+      if (msgs.length === 0) return  // 无觉察流，contentMap 已用 entry.content 初始化好了
+
       setMessages(msgs)
 
-      // 初始化 contentMap
-      if (msgs.length === 0) {
-        setContentMap({ __raw__: entry.content ?? '' })
-      } else {
-        const map = {}
-        msgs.forEach(msg => {
-          if (
-            msg.nodeType === 'raw_entry' ||
-            msg.nodeType === 'local_answer' ||
-            msg.nodeType === 'ai_answer'
-          ) {
-            map[msg.id] = msg.content ?? ''
-          }
-        })
-        // raw_entry 内容同时写入 '__raw__' 键，供 handleRawChange 和 handleSave 统一读取
-        const rawMsg = msgs.find(m => m.nodeType === 'raw_entry')
-        if (rawMsg) map['__raw__'] = rawMsg.content ?? ''
-        setContentMap(map)
-      }
+      // 用户已开始编辑则不覆盖（防止输入丢失）
+      if (hasStartedEditingRef.current) return
+
+      const map = { '__raw__': entry.content ?? '' }
+      msgs.forEach(msg => {
+        if (
+          msg.nodeType === 'raw_entry' ||
+          msg.nodeType === 'local_answer' ||
+          msg.nodeType === 'ai_answer'
+        ) {
+          map[msg.id] = msg.content ?? ''
+        }
+      })
+      // raw_entry 内容同时写入 '__raw__' 键，供 handleRawChange 和 handleSave 统一读取
+      const rawMsg = msgs.find(m => m.nodeType === 'raw_entry')
+      if (rawMsg) map['__raw__'] = rawMsg.content ?? ''
+      setContentMap(map)
     }
     load()
   }, [entry.id])
@@ -160,6 +162,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   }, [openMenuAt])
 
   function handleRawChange(newText) {
+    hasStartedEditingRef.current = true
     const oldText = prevTextRef.current
     prevTextRef.current = newText
     let changeStart = 0
@@ -222,8 +225,6 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     }
   }
 
-  const isLoading = messages === null
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
       background: '#faf8f4' }}>
@@ -275,24 +276,18 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         >
           {formatPill(editDatetime)}
         </button>
-        <button onClick={handleSave} disabled={saving || isLoading}
+        <button onClick={handleSave} disabled={saving}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 14, fontWeight: 500,
-            color: saving || isLoading ? '#ccc' : saveError ? '#e05252' : '#c9a96e',
+            color: saving ? '#ccc' : saveError ? '#e05252' : '#c9a96e',
           }}>
           {saving ? '保存中…' : saveError ? '保存失败，重试' : '保存'}
         </button>
       </div>
 
       {/* 内容区 */}
-      {isLoading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
-          加载中…
-        </div>
-      ) : (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 18px 40px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 18px 40px' }}>
 
           {/* ── 无觉察流：单个大文本框 ── */}
           {messages.length === 0 && (
@@ -468,7 +463,6 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
             </div>
           </div>
         </div>
-      )}
     </div>
   )
 }
