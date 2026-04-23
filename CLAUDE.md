@@ -105,13 +105,97 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 - **用户说「帮我上线」= 执行上面这四条命令**，不需要解释，直接执行
 
 ## 🔄 Multi-Session 协作规范
-- **完整规范**：见 `docs/session-protocol.md`
-- **架构上下文**：见 `docs/arch-context.md`（所有 session 冷启动必读）
-- **产品变更 → 同步卡 → 代码 Task 0 确认 → 继续**
-- 代码 session 发现偏差时：停下来报告，不自行修复，等用户确认
-- **每个 plan 对应一个新对话框**：一个 spec/plan 的所有 Task 在同一个代码 session 里跑完，下一个 plan 再开新的，保持每个功能批次的上下文干净
-- **每个 plan 全部 Task 完成后必须跑 code-reviewer**：用 superpowers:requesting-code-review skill 审查整个 plan 的改动，发现问题当场修，确认没问题再上线
-- **代码 session 开始时加一句**：「完成所有 Task 后，主动用 superpowers:requesting-code-review 做代码审查」
+
+### 三种 Session 的职责、输入、输出
+
+#### 产品 Session
+**职责：** 需求采访、设计决策、文档编写
+
+**必读文件：**
+- CLAUDE.md（项目规范和协作流程）
+- docs/arch-context.md §1（产品目标和当前阶段）
+- docs/session-protocol.md（多 session 协作规范）
+
+**产出物：**
+- `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`（详细 spec）
+- `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`（实施 plan）
+- `docs/sync-cards/YYYY-MM-DD-<topic>.md`（决策汇总）
+- 更新 arch-context.md §1 和 §6
+
+**何时换新 session：**
+- 完成一个完整功能批次（1-3 个相关功能）
+- 讨论超过 2 小时
+- 已写 3+ 个 spec 文档
+
+**不做：** 不写代码、不改代码、不做架构审查
+
+---
+
+#### 架构 Session
+**职责：** 兼容性审查、风险识别、文档更新
+
+**必读文件：**
+- CLAUDE.md（项目规范）
+- docs/arch-context.md（架构约束和已知风险）
+- docs/sync-cards/YYYY-MM-DD-<topic>.md（本轮决策）
+- docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md（详细 spec）
+- docs/superpowers/plans/YYYY-MM-DD-<topic>.md（实施 plan）
+
+**产出物：**
+- 审查报告（通过/有风险/需调整）
+- 新增风险条目到 arch-context.md §4
+- 更新 arch-context.md §6 日志
+
+**何时换新 session：**
+- 审查完成后立即关掉（不需要保持活跃）
+- 可以在同一个 session 里审查多个功能
+
+**不做：** 不写代码、不改 spec、不做代码审查
+
+---
+
+#### 代码 Session
+**职责：** 按 plan 实施、代码审查、上线部署
+
+**必读文件：**
+- CLAUDE.md（项目规范和协作流程）
+- docs/arch-context.md（架构约束和当前代码状态）
+- docs/sync-cards/YYYY-MM-DD-<topic>.md（本轮所有决策）
+- docs/superpowers/plans/YYYY-MM-DD-<topic>.md（实施 plan）
+
+**产出物：**
+- 按 plan Task 顺序完成代码实施
+- 每个 plan 完成后跑 superpowers:requesting-code-review
+- 更新 docs/arch-context.md §3（代码 session 维护的区块）
+- 更新 arch-context.md §6 日志
+
+**何时换新 session：**
+- 每个 plan 对应一个新 session（不跨 plan）
+- plan 完成 + code-reviewer 通过后关掉
+
+**约束：**
+- 所有开发在 dev 分支
+- 每个 commit 要清晰（一个 Task 一个 commit）
+- 改代码前读 docs/coding-lessons.md 的 8 条规则
+- 有 spec 的功能必须先读对应 spec 章节
+
+**上线指令：** 用户说「帮我上线」= 执行 `git checkout main && git merge dev && git push && git checkout dev`
+
+---
+
+### 流程总结
+
+```
+产品 session：采访 → spec → plan → 同步卡 → 提交 dev 分支
+    ↓
+架构 session：读同步卡和 spec → 审查 → 报告
+    ↓
+代码 session：读同步卡和 plan → 实施 → code-reviewer → 上线
+```
+
+**产品变更 → 同步卡 → 代码 Task 0 确认 → 继续**
+
+代码 session 发现偏差时：停下来报告，不自行修复，等用户确认
 
 ## 🚦 Git 提交强制流程（每个节点都必须走完）
 
