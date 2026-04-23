@@ -278,6 +278,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     clipAnnotations,
     activeColor,
     annotations,
+    disableSelectionChange: true,  // Lexical 场景：禁用全局 selectionchange，完全依赖 onRangeSelect 回调
   })
   // 手动 ✕ 过的人物（session 内永久 dismiss，文字里再出现也不重现）
   const [dismissedPeople, setDismissedPeople] = useState(new Set())
@@ -454,10 +455,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   // ── 点 ✓（完成写作）──────────────────────────────────────────
   const handleDone = useCallback(async () => {
-    if (!content.trim() || saving) return
+    // 保存时直接从 Lexical editor 读最新文本，防止 onChange 异步延迟导致 content state 落后
+    const latestContent = textareaRef.current?.getValue?.() ?? content
+    if (!latestContent.trim() || saving) return
     setSaving(true)
 
-    const trimmed = content.trim()
+    const trimmed = latestContent.trim()
     const autoDetected = detectPeopleFromText(trimmed, contacts)
     const allPeople = [...new Set([...selectedPeople, ...autoDetected])]
       .filter(p => !dismissedPeople.has(p))
@@ -562,12 +565,13 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
-    if (!content.trim() || saving) return
+    const latestContent = textareaRef.current?.getValue?.() ?? content
+    if (!latestContent.trim() || saving) return
     setSaving(true)
 
     const { data: entry, error } = await insertEntry({
       user_id: user.id,
-      content: content.trim(),
+      content: latestContent.trim(),
       template_type: template.id,
       created_at: selectedDatetime.toISOString(),
       annotations,

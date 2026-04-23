@@ -34,24 +34,33 @@ function MouseUpPlugin({ onRangeSelect }) {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     function handleMouseUp() {
-      setTimeout(() => {
-        editor.read(() => {
-          const offsets = selectionToOffsets($getSelection())
-          if (!offsets) return
-          try {
-            const sel = window.getSelection()
-            if (sel && sel.rangeCount > 0) {
-              const rect = sel.getRangeAt(0).getBoundingClientRect()
-              onRangeSelect?.(offsets, rect)
-            }
-          } catch { /* ignore */ }
-        })
-      }, 0)
+      // 直接在 mouseup 里同步读取，不用 setTimeout
+      // setTimeout(0) 在桌面上有时 selection 已被清除
+      editor.read(() => {
+        const offsets = selectionToOffsets($getSelection())
+        if (!offsets) return
+        try {
+          const sel = window.getSelection()
+          if (sel && sel.rangeCount > 0) {
+            const rect = sel.getRangeAt(0).getBoundingClientRect()
+            onRangeSelect?.(offsets, rect)
+          }
+        } catch { /* ignore */ }
+      })
     }
     const root = editor.getRootElement()
     root?.addEventListener('mouseup', handleMouseUp)
     return () => root?.removeEventListener('mouseup', handleMouseUp)
   }, [editor, onRangeSelect])
+  return null
+}
+
+// ── Plugin：把 editor 实例暴露给 ref ──
+function EditorRefPlugin({ editorRef }) {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    if (editorRef) editorRef.current = editor
+  }, [editor, editorRef])
   return null
 }
 
@@ -64,7 +73,7 @@ function MouseUpPlugin({ onRangeSelect }) {
  *   placeholder    {string}
  *   style          {object}
  *
- * ref: { focus() }
+ * ref: { focus(), getValue() }
  */
 const RichTextEditor = forwardRef(function RichTextEditor(
   { initialValue = '', annotations = [], onChange, onRangeSelect, placeholder, style },
@@ -72,9 +81,16 @@ const RichTextEditor = forwardRef(function RichTextEditor(
 ) {
   const contentEditableRef = useRef(null)
   const isComposingRef = useRef(false)
+  const lexicalEditorRef = useRef(null)
 
   useImperativeHandle(ref, () => ({
     focus() { contentEditableRef.current?.focus() },
+    getValue() {
+      if (!lexicalEditorRef.current) return ''
+      let text = ''
+      lexicalEditorRef.current.read(() => { text = $getRoot().getTextContent() })
+      return text
+    },
   }))
 
   const initialConfig = {
@@ -146,6 +162,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <AnnotationTransformPlugin annotations={annotations} />
         <MouseUpPlugin onRangeSelect={onRangeSelect} />
+        <EditorRefPlugin editorRef={lexicalEditorRef} />
       </div>
     </LexicalComposer>
   )

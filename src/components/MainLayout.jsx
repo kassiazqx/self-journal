@@ -298,7 +298,7 @@ export default function MainLayout() {
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
           <RecordsPage
-            key={refreshKey}
+            refreshTrigger={refreshKey}
             onOpenDetail={handleOpenDetail}
             onOpenLetter={handleOpenLetter}
             onOpenLetterList={handleOpenLetterList}

@@ -153,7 +153,7 @@ function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onTogg
 
 const ENTRY_PAGE = 50   // 每次加载的条数
 
-export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterList, onEdit }) {
+export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter, onOpenLetterList, onEdit }) {
   const { user } = useAuth()
   // ── 多选模式 ────────────────────────────────────────────────
   const [isSelecting, setIsSelecting] = useState(false)
@@ -162,6 +162,7 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
   const [allEntries, setAllEntries] = useState([])
   const [allLetters, setAllLetters] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)  // 增量刷新态：旧数据保留，顶部小指示器
   const [loadingMore, setLoadingMore] = useState(false)
   const [entryOffset, setEntryOffset] = useState(0)
   const [hasMoreEntries, setHasMoreEntries] = useState(false)
@@ -229,6 +230,40 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
     setLoading(false)
   }, [user])
 
+  // 增量刷新：保留旧数据，后台拉新数据后 merge，不出现整页 loading
+  const refresh = useCallback(async () => {
+    if (!user) return
+    setRefreshing(true)
+
+    checkAndGenerateLetter(user.id).catch(() => {})
+
+    const [entriesRes, lettersRes] = await Promise.all([
+      db.from('journal_entries')
+        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls, annotations, people_involved, category_tags, core_needs, current_thought, body_sensations, cognitive_analysis, reflection_insight, entry_summary, overall_state_score')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(0, ENTRY_PAGE - 1),
+      db.from('review_letters')
+        .select('id, content, period_start, period_end, is_read, created_at, entry_ids')
+        .eq('user_id', user.id)
+        .order('period_end', { ascending: false })
+        .limit(20),
+    ])
+
+    const entries = entriesRes.data ?? []
+    const letters = lettersRes.data ?? []
+
+    setAllEntries(entries)
+    setAllLetters(letters)
+    setEntryOffset(ENTRY_PAGE)
+    setHasMoreEntries(entries.length === ENTRY_PAGE)
+
+    const count = await getPendingCoreNeedsCount()
+    setPendingCount(count ?? 0)
+
+    setRefreshing(false)
+  }, [user])
+
   async function loadMoreEntries() {
     if (loadingMoreRef.current || !hasMoreEntries) return
     loadingMoreRef.current = true
@@ -255,6 +290,13 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
   }
 
   useEffect(() => { load() }, [load])
+
+  // refreshTrigger 变化时做增量刷新（保留旧数据，不出现整页 loading）
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    if (refreshTrigger > 0) refresh()
+  }, [refreshTrigger, refresh])
 
   // 检查跨会话图片上传失败标记
   useEffect(() => {
@@ -650,14 +692,17 @@ export default function RecordsPage({ onOpenDetail, onOpenLetter, onOpenLetterLi
             {filteredEntries !== null ? '没有符合条件的记录' : '还没有记录，去写第一条吧'}
           </div>
         ) : (
-          groups.map(group => (
+          groups.map((group, groupIdx) => (
             <div key={group.date} style={{ marginBottom: 20 }}>
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 marginBottom: 8,
               }}>
-                <div style={{ fontSize: 11, color: '#bbb', letterSpacing: '0.5px' }}>
+                <div style={{ fontSize: 11, color: '#bbb', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {group.date}
+                  {refreshing && groupIdx === 0 && (
+                    <span style={{ color: '#ddd', letterSpacing: 2 }}>……</span>
+                  )}
                 </div>
                 {isSelecting && (() => {
                   const dayIds = group.items.map(i => i.id)
