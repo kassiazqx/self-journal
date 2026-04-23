@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自我觉察日记 · V3 莫兰迪 + 高亮笔 + 纸张质感</title>
+
+<!-- Gloock (衬线点缀) + Figtree (主UI) -->
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Figtree:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" rel="stylesheet">
+
+<!-- 高亮笔滤镜 + 纸张颗粒 SVG -->
+<svg width="0" height="0" style="position:absolute;overflow:hidden;">
+  <defs>
+    <!-- 高亮笔边缘微波动 -->
+    <filter id="wavy" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035 0.06"
+        numOctaves="3" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise"
+        scale="2.5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <!-- 纸张颗粒噪点 -->
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.68"
+        numOctaves="4" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix type="saturate" values="0" result="greyNoise"/>
+      <feBlend in="SourceGraphic" in2="greyNoise" mode="multiply" result="blended"/>
+      <feComposite in="blended" in2="SourceGraphic" operator="in"/>
+    </filter>
+  </defs>
+</svg>
+
+<style>
+/* ─── 全局 ─── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+-webkit-font-smoothing: antialiased;
+
+:root {
+  /* 莫兰迪色板 */
+  --m-rose:     #C4A5A0;   /* 尘玫瑰 */
+  --m-rose-bg:  rgba(196,165,160,0.22);
+  --m-rose-txt: #6E3A36;
+
+  --m-sage:     #8FA896;   /* 鼠尾草绿 */
+  --m-sage-bg:  rgba(143,168,150,0.22);
+  --m-sage-txt: #2E5040;
+
+  --m-blue:     #8897B0;   /* 石板蓝 */
+  --m-blue-bg:  rgba(136,151,176,0.22);
+  --m-blue-txt: #28385A;
+
+  --m-clay:     #C4A882;   /* 陶土 */
+  --m-clay-bg:  rgba(196,168,130,0.22);
+  --m-clay-txt: #5A3C18;
+
+  --m-lav:      #A895B5;   /* 薰衣草 */
+  --m-lav-bg:   rgba(168,149,181,0.22);
+  --m-lav-txt:  #3E2858;
+
+  --m-moss:     #8A9A7E;   /* 苔藓 */
+  --m-moss-bg:  rgba(138,154,126,0.22);
+  --m-moss-txt: #2A3E22;
+
+  /* 中性色 */
+  --ink:  #1E1E2A;
+  --ink2: #6E6E82;
+  --ink3: #ADADBF;
+  --f-ui: 'Figtree', -apple-system, sans-serif;
+  --f-ser: 'Gloock', Georgia, serif;
+}
+
+body {
+  background: #E0DDD8;
+  font-family: var(--f-ui);
+  color: var(--ink);
+  padding: 52px 36px 96px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 全局纸张颗粒覆盖 */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.030; pointer-events: none; z-index: 9999;
+  mix-blend-mode: multiply;
+}
+
+/* ─── 页头 ─── */
+.ph { max-width: 1360px; margin: 0 auto 52px; }
+.ph h1 {
+  font-family: var(--f-ser);
+  font-size: 26px; font-weight: 400;
+  letter-spacing: -0.02em; color: #1A1A24; margin-bottom: 6px;
+}
+.ph p { font-size: 13px; color: #8A8A9A; line-height: 1.65; max-width: 480px; }
+.ph-tags { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.ph-tag {
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 2px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(0,0,0,0.1); color: #888;
+}
+
+/* ─── 区块 ─── */
+.sec { max-width: 1360px; margin: 0 auto 72px; }
+.sec-head { margin-bottom: 24px; }
+.sec-tag { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); margin-bottom: 5px; }
+.sec-title {
+  font-family: var(--f-ser); font-size: 22px; font-weight: 400;
+  letter-spacing: -0.02em; color: var(--ink); margin-bottom: 6px;
+}
+.sec-desc { font-size: 13px; color: var(--ink2); line-height: 1.65; max-width: 540px; }
+
+/* ─── 帧排列 ─── */
+.row { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.fw { flex-shrink: 0; }
+.fl { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); margin-bottom: 8px; text-align: center; }
+
+/* ─── 手机壳 ─── */
+.ph-frame {
+  width: 390px; height: 750px; border-radius: 44px;
+  overflow: hidden; position: relative;
+  border: 1px solid rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 16px 40px rgba(0,0,0,0.07);
+}
+/* 每帧内部纸张颗粒 */
+.ph-frame::before {
+  content: ''; position: absolute; inset: 0; z-index: 80;
+  pointer-events: none; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.70' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.036;
+}
+
+.pstat {
+  padding: 13px 22px 5px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: relative; z-index: 5;
+}
+.pstat-t { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.pstat-i { display: flex; gap: 5px; align-items: center; }
+.pcont { height: calc(750px - 38px); overflow: hidden; position: relative; }
+
+
+/* ═══════════════════════════════════════
+   高亮笔 tag v3：SVG 手绘路径高亮
+   - isolation:isolate 解决 z-index 穿透问题
+   - ::before + z-index:-1 在文字下、父背景上
+   - SVG preserveAspectRatio=none 水平拉伸
+   - linearGradient：两端深（起笔/落笔停留）中间浅
+   - 底部 stroke 细线：笔尖侧刃划过的压力线
+   - top:28% 高亮不覆盖完整字高
+═══════════════════════════════════════ */
+.hl {
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 2px 9px 3px;
+  white-space: nowrap;
+  font-family: var(--f-ui);
+}
+.hl::before {
+  content: '';
+  position: absolute;
+  top: -1px; bottom: -1px;
+  left: 0; right: 0;
+  z-index: -1;
+}
+
+.hl-rose { color: #5C2E2A; }
+.hl-sage { color: #284838; }
+.hl-blue { color: #1E3050; }
+.hl-clay { color: #4E3214; }
+.hl-lav  { color: #322048; }
+.hl-moss { color: #223620; }
+
+.hl-rose::before { border-radius: 1px 5px 2px 6px; background: radial-gradient(ellipse at 50% 50%, rgba(196,165,160,.44) 0%, rgba(196,165,160,.34) 100%); }
+.hl-sage::before { border-radius: 2px 6px 1px 5px; background: radial-gradient(ellipse at 50% 50%, rgba(143,168,150,.42) 0%, rgba(143,168,150,.32) 100%); }
+.hl-blue::before { border-radius: 1px 5px 1px 6px; background: radial-gradient(ellipse at 50% 50%, rgba(136,151,176,.42) 0%, rgba(136,151,176,.32) 100%); }
+.hl-clay::before { border-radius: 2px 5px 1px 6px; background: radial-gradient(ellipse at 50% 50%, rgba(196,168,130,.40) 0%, rgba(196,168,130,.30) 100%); }
+.hl-lav::before  { border-radius: 1px 6px 2px 5px; background: radial-gradient(ellipse at 50% 50%, rgba(168,149,181,.43) 0%, rgba(168,149,181,.33) 100%); }
+.hl-moss::before { border-radius: 2px 5px 1px 5px; background: radial-gradient(ellipse at 50% 50%, rgba(138,154,126,.41) 0%, rgba(138,154,126,.31) 100%); }
+
+/* 未激活的tag（细线 / 无高亮） */
+.tag-plain {
+  display: inline-block; font-size: 10px; letter-spacing: 0.07em;
+  text-transform: uppercase; padding: 2px 9px 3px;
+  border: 0.5px solid rgba(30,30,42,0.15); color: var(--ink3);
+  border-radius: 2px; background: transparent;
+}
+
+
+/* ═══════════════════════════════════════
+   写作页 P1：奶黄横线纸 + 玫瑰色高亮
+   纸色 #FAF6EE，横线暖灰，左竖红线
+═══════════════════════════════════════ */
+.wp1 { background: #FAF6EE; height: 100%; display: flex; flex-direction: column; }
+.wp1-paper {
+  flex: 1;
+  background-color: #FAF6EE;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 27px,
+    rgba(160,130,100,0.1) 27px, rgba(160,130,100,0.1) 28px
+  );
+  position: relative;
+}
+.wp1-paper::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 54px;
+  width: 1px;
+  background: rgba(196,140,140,0.18);
+}
+.wp1-top {
+  background: #FAF6EE;
+  padding: 14px 22px 8px;
+  display: flex; align-items: baseline; justify-content: space-between;
+  position: relative;
+}
+.wp1-top::after {
+  content: ''; position: absolute; bottom: 0; left: 22px; right: 22px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(160,130,100,0.12) 15%, rgba(160,130,100,0.12) 85%, transparent);
+}
+.wp1-date {
+  font-family: var(--f-ser); font-size: 20px; letter-spacing: -0.02em; color: var(--ink);
+}
+.wp1-meta { font-size: 10px; color: var(--ink3); letter-spacing: 0.08em; text-transform: uppercase; }
+.wp1-tags { padding: 8px 22px; display: flex; gap: 7px; flex-wrap: wrap; background: #FAF6EE; }
+.wp1-write { flex: 1; padding: 18px 20px 14px 62px; position: relative; z-index: 3; }
+.wp1-guide {
+  font-family: var(--f-ser); font-style: italic; font-size: 14px;
+  color: rgba(30,30,42,0.22); line-height: 1.9; margin-bottom: 0;
+}
+.wp1-txt { font-size: 15px; color: var(--ink); line-height: 1.87; font-weight: 400; }
+.cur { display: inline-block; width: 1.5px; height: 16px; background: var(--m-rose); vertical-align: middle; margin-left: 1px; animation: blink 1.1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.wp1-bar {
+  background: #FAF6EE; padding: 11px 22px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: relative;
+}
+.wp1-bar::before {
+  content: ''; position: absolute; top: 0; left: 22px; right: 22px; height: 1px;
+  background: linear-gradient(to right, transparent, rgba(160,130,100,0.1) 20%, rgba(160,130,100,0.1) 80%, transparent);
+}
+.awareness-link { font-size: 12px; color: var(--m-rose); letter-spacing: 0.02em; display: flex; align-items: center; gap: 5px; }
+.aw-dot { width: 14px; height: 14px; border: 1px solid rgba(196,165,160,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; }
+.save-btn { width: 38px; height: 38px; background: var(--ink); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #FAF6EE; font-size: 15px; }
+
+
+/* ═══════════════════════════════════════
+   写作页 P2：浅绿格子纸 + 鼠尾草高亮
+   纸色 #F4F7F3，格线淡苔绿
+═══════════════════════════════════════ */
+.wp2 { background: #F4F7F3; height: 100%; display: flex; flex-direction: column; }
+.wp2-paper {
+  flex: 1;
+  background-color: #F4F7F3;
+  background-image:
+    repeating-linear-gradient(to right, rgba(100,140,110,0.08) 0px, rgba(100,140,110,0.08) 1px, transparent 1px, transparent 24px),
+    repeating-linear-gradient(to bottom, rgba(100,140,110,0.08) 0px, rgba(100,140,110,0.08) 1px, transparent 1px, transparent 24px);
+}
+.wp2-top {
+  background: #F4F7F3; padding: 14px 22px 8px;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  position: relative;
+}
+.wp2-top::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  background: rgba(100,140,110,0.15);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.7);
+}
+.wp2-date-big {
+  font-family: var(--f-ser); font-size: 32px; letter-spacing: -0.03em;
+  color: var(--ink); line-height: 1.05;
+}
+.wp2-weekday { font-size: 10px; color: var(--ink3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+.wp2-tags { padding: 10px 22px; display: flex; gap: 7px; background: #F4F7F3; }
+.wp2-write { flex: 1; padding: 20px 28px; }
+.wp2-guide {
+  font-family: var(--f-ser); font-style: italic; font-size: 14px;
+  color: rgba(30,30,42,0.2); line-height: 1.8; margin-bottom: 16px;
+}
+.wp2-txt { font-size: 15px; color: var(--ink); line-height: 1.85; }
+.cur-sage { display: inline-block; width: 1.5px; height: 16px; background: var(--m-sage); vertical-align: middle; margin-left: 1px; animation: blink 1.1s step-end infinite; }
+.wp2-bar {
+  background: #F4F7F3; padding: 11px 22px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: relative;
+}
+.wp2-bar::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: rgba(100,140,110,0.14);
+  box-shadow: 0 -0.5px 0 rgba(255,255,255,0.8);
+}
+.awareness-sage { font-size: 12px; color: var(--m-sage); letter-spacing: 0.02em; }
+.save-sage { width: 38px; height: 38px; background: var(--m-sage); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px; }
+
+
+/* ═══════════════════════════════════════
+   写作页 P3：米白空白纸 + 石板蓝高亮 + 边注栏
+   纸色 #F8F7F4，仿高档空白本
+═══════════════════════════════════════ */
+.wp3 { background: #F8F7F4; height: 100%; display: flex; }
+.wp3-gutter {
+  width: 64px; flex-shrink: 0; background: #F0EDE7;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 18px 0 20px; position: relative;
+}
+.wp3-gutter::after {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 0;
+  width: 1px;
+  background: rgba(30,30,42,0.07);
+  box-shadow: 1px 0 0 rgba(255,255,255,0.8);
+}
+.wp3-date-v {
+  font-family: var(--f-ser); font-size: 13px; letter-spacing: 0.03em;
+  color: var(--ink2); writing-mode: vertical-rl;
+  text-orientation: mixed; transform: rotate(180deg); white-space: nowrap;
+}
+.wp3-tpl-v {
+  font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink3); writing-mode: vertical-rl;
+  text-orientation: mixed; transform: rotate(180deg); margin-top: 12px;
+}
+.wp3-dot { margin-top: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--m-blue); opacity: 0.5; }
+
+.wp3-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #F8F7F4; }
+.wp3-trow { padding: 14px 18px 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.wp3-dashed {
+  margin: 0 18px;
+  height: 1px;
+  background-image: repeating-linear-gradient(to right, rgba(30,30,42,0.1) 0px, rgba(30,30,42,0.1) 3px, transparent 3px, transparent 7px);
+}
+.wp3-write { flex: 1; padding: 20px 18px 12px; }
+.wp3-guide {
+  font-family: var(--f-ser); font-style: italic; font-size: 14px;
+  color: rgba(30,30,42,0.2); line-height: 1.8; margin-bottom: 16px;
+}
+.wp3-txt { font-size: 15px; color: var(--ink); line-height: 1.85; }
+.cur-blue { display: inline-block; width: 1.5px; height: 16px; background: var(--m-blue); vertical-align: middle; margin-left: 1px; animation: blink 1.1s step-end infinite; }
+.wp3-bar {
+  padding: 10px 18px 20px; display: flex;
+  align-items: center; justify-content: space-between; position: relative;
+}
+.wp3-bar::before {
+  content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 1px;
+  background: linear-gradient(to right, transparent, rgba(30,30,42,0.08) 25%, rgba(30,30,42,0.08) 75%, transparent);
+}
+.awareness-blue { font-size: 12px; color: var(--m-blue); letter-spacing: 0.02em; }
+.save-blue { width: 38px; height: 38px; background: var(--ink); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #F8F7F4; font-size: 15px; }
+</style>
+</head>
+<body>
+
+<div class="ph">
+  <h1>V3 · 莫兰迪色 + 高亮笔 + 纸张质感</h1>
+  <p>在冷灰基础上加入莫兰迪点缀：尘玫瑰/鼠尾草/石板蓝。高亮笔标签用 SVG feTurbulence 做边缘微波动，模拟真实笔触感。</p>
+  <div class="ph-tags">
+    <span class="ph-tag">Gloock 衬线点缀</span>
+    <span class="ph-tag">Figtree 主UI</span>
+    <span class="ph-tag">高亮笔 feTurbulence</span>
+    <span class="ph-tag">莫兰迪色板 6色</span>
+    <span class="ph-tag">纸张颗粒 opacity 0.036</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════
+  写作页 · 三种纸张方向
+══════════════════════ -->
+<section class="sec">
+  <div class="sec-head">
+    <div class="sec-tag">写作页 · 三个方向</div>
+    <div class="sec-title">纸张 × 莫兰迪高亮笔</div>
+    <div class="sec-desc">
+      P1 奶黄横线纸 + 尘玫瑰高亮；P2 浅苔绿格子纸 + 鼠尾草高亮；P3 米白空白纸 + 石板蓝高亮 + 边注栏。
+      激活的模板标签用高亮笔效果（SVG wavy filter），未激活保持细线无色。
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- P1: 奶黄横线纸 -->
+    <div class="fw">
+      <div class="fl">P1 · 奶黄横线 × 尘玫瑰</div>
+      <div class="ph-frame" style="background:#FAF6EE;">
+        <div class="pstat" style="background:#FAF6EE;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i">
+            <svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg>
+          </div>
+        </div>
+        <div class="pcont">
+          <div class="wp1">
+            <div class="wp1-top">
+              <div class="wp1-date">四月廿二</div>
+              <div class="wp1-meta">星期二</div>
+            </div>
+            <div class="wp1-tags">
+              <span class="hl hl-rose">感恩</span>
+              <span class="tag-plain">情绪</span>
+              <span class="tag-plain">学习</span>
+              <span class="tag-plain">行动</span>
+              <span class="tag-plain">随手记</span>
+            </div>
+            <div class="wp1-paper">
+              <div class="wp1-write">
+                <div class="wp1-guide">今天有什么让你感到感激的事？</div>
+                <div class="wp1-txt">今天和妈妈通话了半个小时，她说她最近睡眠好多了。我发现自己听到这个消息时，心里有一种真实的松动感——原来我一直在悄悄担心她。<span class="cur"></span></div>
+              </div>
+            </div>
+            <div class="wp1-bar">
+              <div class="awareness-link"><div class="aw-dot">&#10022;</div>深入觉察</div>
+              <div class="save-btn">&#10003;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- P2: 浅苔绿格子纸 -->
+    <div class="fw">
+      <div class="fl">P2 · 苔绿格纸 × 鼠尾草</div>
+      <div class="ph-frame" style="background:#F4F7F3;">
+        <div class="pstat" style="background:#F4F7F3;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i">
+            <svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg>
+          </div>
+        </div>
+        <div class="pcont">
+          <div class="wp2">
+            <div class="wp2-top">
+              <div class="wp2-date-big">4月22日</div>
+              <div style="text-align:right;padding-bottom:4px;">
+                <div class="wp2-weekday">星期二</div>
+              </div>
+            </div>
+            <div class="wp2-tags">
+              <span class="tag-plain">感恩</span>
+              <span class="hl hl-sage">情绪</span>
+              <span class="tag-plain">学习</span>
+              <span class="tag-plain">行动</span>
+              <span class="tag-plain">随手记</span>
+            </div>
+            <div class="wp2-paper">
+              <div class="wp2-write">
+                <div class="wp2-guide">此刻你感受到什么？身体哪里有感觉？</div>
+                <div class="wp2-txt">今天的会议被突然取消，我感到一种奇怪的失落。明明是我一直不想开的会，为什么取消了反而有点空——我意识到自己可能需要那个结构感。<span class="cur-sage"></span></div>
+              </div>
+            </div>
+            <div class="wp2-bar">
+              <div class="awareness-sage">深入觉察</div>
+              <div class="save-sage">&#10003;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- P3: 米白空白 + 边注 -->
+    <div class="fw">
+      <div class="fl">P3 · 米白空白 × 石板蓝 + 边注</div>
+      <div class="ph-frame" style="background:#F0EDE7;">
+        <div class="pstat" style="background:#F0EDE7;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i">
+            <svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg>
+          </div>
+        </div>
+        <div class="pcont">
+          <div class="wp3">
+            <div class="wp3-gutter">
+              <div class="wp3-date-v">4月22日</div>
+              <div class="wp3-tpl-v">学习</div>
+              <div class="wp3-dot"></div>
+            </div>
+            <div class="wp3-main">
+              <div class="wp3-trow">
+                <span class="tag-plain">感恩</span>
+                <span class="tag-plain">情绪</span>
+                <span class="hl hl-blue">学习</span>
+                <span class="tag-plain">行动</span>
+                <span class="tag-plain">随手记</span>
+              </div>
+              <div class="wp3-dashed"></div>
+              <div class="wp3-write">
+                <div class="wp3-guide">今天学到了什么让你印象深刻的事？</div>
+                <div class="wp3-txt">今天读到了关于"具身认知"的一篇文章——原来身体的感受会直接影响我们的决策。我想到自己每次焦虑时胸口发紧，也许那不只是心理反应。<span class="cur-blue"></span></div>
+              </div>
+              <div class="wp3-bar">
+                <div class="awareness-blue">深入觉察</div>
+                <div class="save-blue">&#10003;</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /row -->
+</section>
+
+
+<!-- ══════════════════════
+  笔记详情页 · 两个方案
+══════════════════════ -->
+
+<style>
+/* ─── 情绪小插画 SVG 容器 ─── */
+.emo-wrap { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.emo-svg { opacity: 0.72; }
+
+/* ─── 详情 D1：横向插画布局（插画右上角浮动）───
+   奶黄纸底，玫瑰高亮，插画是SVG线稿
+*/
+.d1 { background: #FAF6EE; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.d1-nav {
+  padding: 14px 22px 0;
+  display: flex; align-items: center; gap: 10px;
+}
+.d1-back { font-size: 17px; color: var(--ink2); }
+.d1-head {
+  padding: 14px 22px 16px; position: relative;
+}
+.d1-head::after {
+  content: ''; position: absolute; bottom: 0; left: 22px; right: 22px; height: 1px;
+  background: linear-gradient(to right, transparent, rgba(160,130,100,0.13) 15%, rgba(160,130,100,0.13) 85%, transparent);
+}
+.d1-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); margin-bottom: 5px; }
+.d1-title-row { display: flex; align-items: flex-end; justify-content: space-between; }
+.d1-date {
+  font-family: var(--f-ser); font-size: 22px; letter-spacing: -0.022em; color: var(--ink); line-height: 1.1;
+}
+/* 情绪小插画 — 右上角，鼠尾草绿线稿 */
+.d1-emo {
+  width: 56px; height: 56px; flex-shrink: 0;
+}
+
+.d1-body { padding: 18px 22px 0; flex: 1; overflow: hidden; position: relative; }
+.d1-text {
+  font-size: 15px; color: var(--ink); line-height: 1.85; margin-bottom: 22px;
+  max-width: 54ch;
+}
+/* 提取字段 — 虚线分组，无 card */
+.d1-ext-label { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); margin-bottom: 12px; }
+.d1-row {
+  display: flex; gap: 12px; padding: 9px 0;
+  border-bottom: 1px dashed rgba(160,130,100,0.15);
+  align-items: flex-start;
+}
+.d1-row:first-of-type { border-top: 1px dashed rgba(160,130,100,0.15); }
+.d1-key { font-size: 10.5px; color: var(--ink3); width: 58px; flex-shrink: 0; padding-top: 1px; }
+.d1-val { flex: 1; font-size: 13px; color: var(--ink); line-height: 1.6; }
+
+.d1-cta {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 14px 22px 24px;
+  background: linear-gradient(to bottom, transparent, #FAF6EE 35%);
+}
+.d1-btn {
+  width: 100%; padding: 13px; background: var(--ink); color: #FAF6EE;
+  border-radius: 6px; font-size: 13px; text-align: center; letter-spacing: 0.03em;
+}
+
+/* ─── 详情 D2：网格提取 + 大情绪色块 ───
+   米白底，每个提取字段放格子里，情绪用莫兰迪色块突出显示
+*/
+.d2 { background: #F8F7F4; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.d2-nav { padding: 14px 22px 0; display: flex; align-items: center; gap: 10px; }
+.d2-back { font-size: 17px; color: var(--ink2); }
+.d2-head {
+  padding: 12px 22px 14px; position: relative;
+}
+.d2-head::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: rgba(30,30,42,0.07);
+  box-shadow: 0 -0.5px 0 rgba(255,255,255,0.75);
+}
+.d2-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); margin-bottom: 4px; }
+.d2-date {
+  font-family: var(--f-ser); font-size: 22px; letter-spacing: -0.022em; color: var(--ink);
+}
+
+.d2-body { padding: 16px 22px 0; flex: 1; overflow: hidden; position: relative; }
+/* 日记正文 */
+.d2-text {
+  font-size: 15px; color: var(--ink); line-height: 1.85; margin-bottom: 20px;
+  max-width: 54ch;
+}
+/* 情绪大标签 — radial-gradient 扩散渐变 */
+.d2-emotion-row {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.d2-emo-tag {
+  font-size: 13px; font-weight: 500;
+  padding: 6px 14px 7px;
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  letter-spacing: 0.02em;
+  transform: rotate(-0.2deg);
+}
+.d2-emo-tag::before {
+  content: '';
+  position: absolute;
+  top: -2px; bottom: -2px;
+  left: 0; right: 0;
+  z-index: -1;
+}
+.et-rose { color: var(--m-rose-txt); }
+.et-rose::before { border-radius: 3px 11px 4px 12px; background: radial-gradient(ellipse at 50% 50%, rgba(196,165,160,.46) 0%, rgba(196,165,160,.36) 100%); }
+.et-sage { color: var(--m-sage-txt); }
+.et-sage::before { border-radius: 4px 12px 3px 11px; background: radial-gradient(ellipse at 50% 50%, rgba(143,168,150,.44) 0%, rgba(143,168,150,.34) 100%); }
+.et-lav  { color: var(--m-lav-txt); }
+.et-lav::before  { border-radius: 3px 12px 4px 11px; background: radial-gradient(ellipse at 50% 50%, rgba(168,149,181,.45) 0%, rgba(168,149,181,.35) 100%); }
+
+/* 小格子提取区 */
+.d2-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;
+}
+.d2-cell {
+  background: rgba(255,255,255,0.6);
+  border: 0.5px solid rgba(30,30,42,0.1);
+  border-radius: 6px; padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 0 rgba(30,30,42,0.03);
+}
+.d2-cell-key { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink3); margin-bottom: 5px; }
+.d2-cell-val { font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+.d2-cell.wide { grid-column: 1/-1; }
+
+.d2-cta {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 14px 22px 24px;
+  background: linear-gradient(to bottom, transparent, #F8F7F4 35%);
+}
+.d2-btn { width: 100%; padding: 13px; background: var(--ink); color: #F8F7F4; border-radius: 6px; font-size: 13px; text-align: center; letter-spacing: 0.03em; }
+</style>
+
+<section class="sec" style="margin-top:8px;">
+  <div class="sec-head">
+    <div class="sec-tag">笔记详情页 · 两个方案</div>
+    <div class="sec-title">情绪插画 × 提取字段布局</div>
+    <div class="sec-desc">
+      D1：日期右上角浮放 SVG 线稿情绪插画（与识别情绪联动），提取字段用虚线隔开，纸感一致。
+      D2：情绪词用更大的莫兰迪高亮笔色块突出，其余字段放入轻微凹陷的小格子，信息密度更高。
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- D1: 插画浮动 + 虚线列表 -->
+    <div class="fw">
+      <div class="fl">D1 · 情绪插画 + 虚线分组</div>
+      <div class="ph-frame" style="background:#FAF6EE;">
+        <div class="pstat" style="background:#FAF6EE;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg></div>
+        </div>
+        <div class="pcont" style="position:relative;">
+          <div class="d1">
+            <div class="d1-nav"><div class="d1-back">&#8592;</div></div>
+            <div class="d1-head">
+              <div class="d1-label">感恩 · 2026</div>
+              <div class="d1-title-row">
+                <div class="d1-date">4月21日 · 周一</div>
+                <!-- 情绪插画：温暖/释然 — 一朵简笔小花 -->
+                <svg class="d1-emo" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- 花茎 -->
+                  <line x1="28" y1="52" x2="28" y2="32" stroke="#8FA896" stroke-width="1.4" stroke-linecap="round"/>
+                  <!-- 叶子 -->
+                  <path d="M28 42 Q20 36 22 30 Q28 38 28 42Z" fill="#8FA896" opacity="0.5"/>
+                  <!-- 花瓣 -->
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.55"/>
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.55" transform="rotate(60 28 20)"/>
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.55" transform="rotate(120 28 20)"/>
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.4" transform="rotate(180 28 20)"/>
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.4" transform="rotate(240 28 20)"/>
+                  <ellipse cx="28" cy="20" rx="4.5" ry="7" fill="#C4A5A0" opacity="0.4" transform="rotate(300 28 20)"/>
+                  <!-- 花心 -->
+                  <circle cx="28" cy="20" r="5" fill="#FAF6EE" stroke="#C4A5A0" stroke-width="1"/>
+                  <circle cx="28" cy="20" r="2.5" fill="#C4A5A0" opacity="0.6"/>
+                  <!-- 小星点 -->
+                  <circle cx="14" cy="12" r="1.2" fill="#C4A5A0" opacity="0.4"/>
+                  <circle cx="42" cy="8" r="0.9" fill="#8FA896" opacity="0.5"/>
+                  <circle cx="46" cy="18" r="1.4" fill="#C4A5A0" opacity="0.3"/>
+                </svg>
+              </div>
+            </div>
+            <div class="d1-body">
+              <div class="d1-text">今天和妈妈通话了半个小时，她说她最近睡眠好多了。我发现自己听到这个消息时，心里有一种真实的松动感——原来我一直在悄悄担心她。</div>
+              <div class="d1-ext-label">觉察提取</div>
+              <div class="d1-row">
+                <div class="d1-key">情绪</div>
+                <div class="d1-val"><span class="hl hl-rose">温暖</span>&nbsp;<span class="hl hl-sage">释然</span></div>
+              </div>
+              <div class="d1-row">
+                <div class="d1-key">核心需求</div>
+                <div class="d1-val">对亲人健康的安全感与持续关注</div>
+              </div>
+              <div class="d1-row">
+                <div class="d1-key">觉察洞见</div>
+                <div class="d1-val">潜在担忧在好消息时才得以释放——感受常常延后于事实</div>
+              </div>
+              <div class="d1-row" style="border-bottom:none;">
+                <div class="d1-key">涉及的人</div>
+                <div class="d1-val"><span class="hl hl-clay">妈妈</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="d1-cta"><div class="d1-btn">继续觉察对话</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- D2: 大情绪色块 + 小格子网格 -->
+    <div class="fw">
+      <div class="fl">D2 · 大情绪色块 + 信息网格</div>
+      <div class="ph-frame" style="background:#F8F7F4;">
+        <div class="pstat" style="background:#F8F7F4;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg></div>
+        </div>
+        <div class="pcont" style="position:relative;">
+          <div class="d2">
+            <div class="d2-nav"><div class="d2-back">&#8592;</div></div>
+            <div class="d2-head">
+              <div class="d2-label">感恩 · 2026年4月21日</div>
+              <div class="d2-date">心里的松动感</div>
+            </div>
+            <div class="d2-body">
+              <div class="d2-text">今天和妈妈通话了半小时，她说睡眠好多了。听到这个消息时心里有一种真实的松动感——原来我一直在悄悄担心她。</div>
+              <div class="d2-emotion-row">
+                <span class="d2-emo-tag et-rose">温暖</span>
+                <span class="d2-emo-tag et-sage">释然</span>
+                <span class="d2-emo-tag et-lav">轻盈</span>
+              </div>
+              <div class="d2-grid">
+                <div class="d2-cell">
+                  <div class="d2-cell-key">情绪强度</div>
+                  <div class="d2-cell-val" style="font-family:var(--f-ser);font-size:22px;letter-spacing:-0.02em;color:var(--ink);">6 <span style="font-size:11px;color:var(--ink3);font-family:var(--f-ui);">/ 10</span></div>
+                </div>
+                <div class="d2-cell">
+                  <div class="d2-cell-key">身体感受</div>
+                  <div class="d2-cell-val">胸口放松，呼吸变深</div>
+                </div>
+                <div class="d2-cell wide">
+                  <div class="d2-cell-key">核心需求</div>
+                  <div class="d2-cell-val">对亲人健康的安全感和持续关注</div>
+                </div>
+                <div class="d2-cell wide">
+                  <div class="d2-cell-key">觉察洞见</div>
+                  <div class="d2-cell-val">潜在担忧在获得好消息时才浮现，感受常常延后于事实</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="d2-cta"><div class="d2-btn">继续觉察对话</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /row -->
+</section>
+
+<!-- ══════════════════════
+  回顾信 · 小票/打印纸风格
+══════════════════════ -->
+
+<style>
+/* ─── 小票容器 ─── */
+.receipt-bg { background: #F2EFE8; height: 100%; display: flex; flex-direction: column; align-items: center; padding: 20px 20px 0; overflow: hidden; }
+
+/* 打印纸整体 */
+.receipt-paper {
+  width: 280px;
+  background: #FDFCF8;
+  position: relative;
+  /* 轻微纸张投影 */
+  box-shadow: 0 2px 12px rgba(30,20,10,0.12), 0 1px 3px rgba(30,20,10,0.08);
+}
+/* 顶部锯齿撕边 */
+.receipt-paper::before {
+  content: '';
+  position: absolute; top: -8px; left: 0; right: 0; height: 10px;
+  background:
+    radial-gradient(circle at 50% 100%, #FDFCF8 6px, transparent 6px),
+    repeating-linear-gradient(to right, #FDFCF8 0px, #FDFCF8 10px, transparent 10px, transparent 12px);
+  background-size: 12px 10px, 12px 10px;
+  background-position: 0 0, 0 0;
+  /* 模拟撕边：一系列小半圆 */
+}
+/* 顶部锯齿 — 用 SVG clip-path 方式 */
+.receipt-tear-top {
+  width: 100%;
+  height: 10px;
+  background: #F2EFE8;
+  position: relative;
+  overflow: hidden;
+}
+.receipt-tear-top::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; top: 0;
+  background-image: radial-gradient(circle at 6px 0px, #FDFCF8 5px, transparent 5px);
+  background-size: 12px 10px;
+  background-repeat: repeat-x;
+}
+.receipt-tear-bottom {
+  width: 100%; height: 10px;
+  background: #F2EFE8; position: relative; overflow: hidden;
+}
+.receipt-tear-bottom::before {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; top: 0;
+  background-image: radial-gradient(circle at 6px 10px, #FDFCF8 5px, transparent 5px);
+  background-size: 12px 10px; background-repeat: repeat-x;
+}
+
+/* 小票内容 */
+.receipt-inner {
+  padding: 14px 16px 12px;
+  font-family: 'Courier New', 'Courier', monospace;
+  /* 纸张颗粒感 */
+  position: relative;
+}
+.receipt-inner::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.048;
+}
+.receipt-content { position: relative; z-index: 1; }
+
+.r-logo {
+  text-align: center; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #5A5040; margin-bottom: 8px;
+}
+.r-divider {
+  font-size: 11px; color: #BBA88A; letter-spacing: 0.05em;
+  text-align: center; margin: 6px 0;
+  user-select: none;
+}
+.r-title {
+  font-family: var(--f-ser); font-size: 16px;
+  color: #2A2018; text-align: center; line-height: 1.35; margin: 8px 0 10px;
+  letter-spacing: -0.01em;
+}
+.r-meta { display: flex; justify-content: space-between; font-size: 9px; color: #8A7860; margin-bottom: 10px; letter-spacing: 0.04em; }
+.r-body { font-size: 11px; color: #3A2C1E; line-height: 1.7; margin-bottom: 10px; }
+.r-body p + p { margin-top: 8px; }
+
+.r-section { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #BBA88A; margin: 8px 0 5px; }
+.r-field { display: flex; justify-content: space-between; font-size: 10px; color: #5A4A3A; padding: 3px 0; border-bottom: 1px dotted rgba(90,74,58,0.18); }
+.r-field-key { }
+.r-field-val { color: #2A2018; font-weight: bold; }
+
+.r-stamp {
+  text-align: center; margin: 12px 0 8px;
+  font-size: 9px; letter-spacing: 0.1em; color: #BBA88A;
+}
+.r-barcode {
+  display: flex; justify-content: center; gap: 1px; margin: 8px 0 4px;
+}
+.r-bar { background: #3A2C1E; height: 24px; }
+.r-barcode-num { text-align: center; font-size: 8px; color: #BBA88A; letter-spacing: 0.08em; }
+
+/* ─── 小票 T2：更长版本，像从打印机里慢慢出来 ─── */
+.receipt-bg-2 { background: #EAEAE6; height: 100%; display: flex; flex-direction: column; padding: 0 20px; overflow: hidden; padding-top: 0; }
+.receipt-printing {
+  background: #F0EEE8;
+  padding: 0 0 16px;
+  position: relative;
+  /* 模拟从顶部打印机出来 */
+  transform-origin: top center;
+}
+.receipt-machine {
+  width: 280px; height: 28px; background: #D5D0C8;
+  border-radius: 0 0 6px 6px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; z-index: 5;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.receipt-machine::before {
+  content: ''; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 80px; height: 4px; border-radius: 2px;
+  background: #B8B4AA;
+}
+.receipt-machine-slot {
+  position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
+  width: 160px; height: 3px; background: #AAA49C; border-radius: 0 0 2px 2px;
+}
+.receipt-paper-2 {
+  width: 280px; margin: 0 auto;
+  background: #FDFCF8;
+  box-shadow: 0 4px 20px rgba(30,20,10,0.14);
+}
+.r2-inner { padding: 16px 18px 14px; font-family: 'Courier New', monospace; position: relative; overflow: hidden; }
+</style>
+
+<section class="sec" style="margin-top:8px;">
+  <div class="sec-head">
+    <div class="sec-tag">回顾信 · 两个小票方案</div>
+    <div class="sec-title">热敏打印纸 / 小票感</div>
+    <div class="sec-desc">
+      T1：悬浮的打印纸，顶底有锯齿撕边，等宽字体，有条形码装饰。
+      T2：打印机正在"吐纸"的感觉——顶部是打印机机身，纸从槽里出来。
+      两种都用莫兰迪温暖奶棕色系，不是纯黑。
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- T1: 悬浮打印纸 -->
+    <div class="fw">
+      <div class="fl">T1 · 悬浮小票</div>
+      <div class="ph-frame" style="background:#F2EFE8;">
+        <div class="pstat" style="background:#F2EFE8;color:#3A3020;">
+          <span class="pstat-t" style="font-family:var(--f-ui);">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E5E48" opacity="0.5"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E5E48" opacity="0.7"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#3A3020"/></svg></div>
+        </div>
+        <div class="pcont">
+          <div class="receipt-bg">
+            <!-- 顶部用navigation占位 -->
+            <div style="width:100%;display:flex;justify-content:space-between;padding:0 0 14px;font-size:12px;color:#8A7860;">
+              <span>&#8592; 回顾信</span>
+              <span style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;">分享</span>
+            </div>
+
+            <div class="receipt-paper">
+              <div class="receipt-tear-top"></div>
+              <div class="receipt-inner">
+                <div class="receipt-content">
+                  <div class="r-logo">自我觉察日记</div>
+                  <div class="r-divider">- - - - - - - - - - - - - -</div>
+                  <div class="r-title">亲爱的自己，<br>这是你最近的回顾</div>
+                  <div class="r-meta">
+                    <span>2026.04.22</span>
+                    <span>共 10 条记录</span>
+                  </div>
+                  <div class="r-divider">* * * * * * * * * * * * * *</div>
+
+                  <div class="r-body">
+                    <p>这两周，你在照顾妈妈的情绪这件事上花了很多心力。你常常担心她，却很少说出口。那份松动感，说明你的心是柔软的。</p>
+                    <p>你也在试着理解自己对"失控感"的恐惧。会议取消后的失落，揭示了你对结构和可预期性的依赖——这不是软弱，这是认识自己。</p>
+                  </div>
+
+                  <div class="r-divider">- - - - - - - - - - - - - -</div>
+                  <div class="r-section">出现最多的主题</div>
+                  <div class="r-field"><span class="r-field-key">亲密关系</span><span class="r-field-val">4次</span></div>
+                  <div class="r-field"><span class="r-field-key">情绪感知</span><span class="r-field-val">3次</span></div>
+                  <div class="r-field"><span class="r-field-key">自我认知</span><span class="r-field-val">2次</span></div>
+                  <div class="r-field" style="border:none;"><span class="r-field-key">行动觉察</span><span class="r-field-val">1次</span></div>
+
+                  <div class="r-stamp">谢谢你，一直在记录。</div>
+                  <div class="r-barcode">
+                    <div class="r-bar" style="width:2px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:3px;"></div><div class="r-bar" style="width:2px;background:transparent;"></div>
+                    <div class="r-bar" style="width:1px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:4px;"></div><div class="r-bar" style="width:2px;background:transparent;"></div>
+                    <div class="r-bar" style="width:2px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:1px;"></div><div class="r-bar" style="width:3px;background:transparent;"></div>
+                    <div class="r-bar" style="width:3px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:2px;"></div><div class="r-bar" style="width:2px;background:transparent;"></div>
+                    <div class="r-bar" style="width:1px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:4px;"></div><div class="r-bar" style="width:2px;background:transparent;"></div>
+                    <div class="r-bar" style="width:2px;"></div><div class="r-bar" style="width:1px;background:transparent;"></div>
+                    <div class="r-bar" style="width:3px;"></div>
+                  </div>
+                  <div class="r-barcode-num">2026 · 04 · 22 · REV-010</div>
+                </div>
+              </div>
+              <div class="receipt-tear-bottom"></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- T2: 打印机吐纸 -->
+    <div class="fw">
+      <div class="fl">T2 · 打印机吐纸感</div>
+      <div class="ph-frame" style="background:#EAEAE6;">
+        <div class="pstat" style="background:#D5D0C8;color:#3A3020;">
+          <span class="pstat-t" style="font-family:var(--f-ui);">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#8A8070" opacity="0.6"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#8A8070" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#3A3020"/></svg></div>
+        </div>
+        <div class="pcont">
+          <div style="background:#D5D0C8;padding:10px 20px 0;position:relative;z-index:2;">
+            <!-- 打印机顶 -->
+            <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#8A8070;text-align:center;padding-bottom:8px;">
+              回顾信 · 正在打印
+            </div>
+            <div style="display:flex;justify-content:center;">
+              <div style="width:260px;height:20px;background:#C8C4BC;border-radius:4px 4px 0 0;position:relative;display:flex;align-items:center;justify-content:center;">
+                <div style="width:70px;height:3px;background:#B0AC A4;border-radius:2px;"></div>
+                <!-- 出纸槽 -->
+                <div style="position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);width:180px;height:4px;background:#B0ACA4;border-radius:0 0 2px 2px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#EAEAE6;padding:0 20px;display:flex;justify-content:center;overflow:hidden;">
+            <!-- 打印纸从槽里出来 -->
+            <div style="width:260px;">
+              <div style="background:#FDFCF8;box-shadow:0 4px 20px rgba(30,20,10,0.13);position:relative;">
+                <!-- 纸张颗粒 -->
+                <div style="padding:14px 16px 16px;font-family:'Courier New',monospace;position:relative;">
+                  <div style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:#8A7860;text-align:center;margin-bottom:6px;">自我觉察日记</div>
+                  <div style="font-size:11px;color:#BBA88A;text-align:center;margin:5px 0;letter-spacing:0.04em;">- - - - - - - - - - - - -</div>
+
+                  <div style="font-family:var(--f-ser);font-size:15px;color:#2A2018;text-align:center;line-height:1.4;margin:8px 0 10px;letter-spacing:-0.01em;">
+                    亲爱的自己，<br>这是你最近的回顾
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:9px;color:#8A7860;margin-bottom:8px;">
+                    <span>2026.04.22</span><span>共 10 条</span>
+                  </div>
+
+                  <div style="font-size:11px;color:#3A2C1E;line-height:1.7;margin-bottom:8px;">
+                    这两周，你在照顾妈妈的情绪这件事上花了很多心力。那份松动感，说明你的心是柔软的。
+                  </div>
+                  <div style="font-size:11px;color:#3A2C1E;line-height:1.7;margin-bottom:10px;">
+                    你也在试着理解自己对「失控感」的恐惧。这不是软弱，这是认识自己。
+                  </div>
+
+                  <div style="font-size:11px;color:#BBA88A;text-align:center;margin:6px 0;letter-spacing:0.04em;">* * * * * * * * * * * *</div>
+
+                  <div style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:#BBA88A;margin:6px 0 4px;">最常出现的情绪</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+                    <span style="font-size:10px;font-family:'Courier New';color:#3A2C1E;border:0.5px solid rgba(58,44,30,0.25);padding:1px 6px;">温暖</span>
+                    <span style="font-size:10px;font-family:'Courier New';color:#3A2C1E;border:0.5px solid rgba(58,44,30,0.25);padding:1px 6px;">释然</span>
+                    <span style="font-size:10px;font-family:'Courier New';color:#3A2C1E;border:0.5px solid rgba(58,44,30,0.25);padding:1px 6px;">失落</span>
+                    <span style="font-size:10px;font-family:'Courier New';color:#3A2C1E;border:0.5px solid rgba(58,44,30,0.25);padding:1px 6px;">困惑</span>
+                  </div>
+
+                  <div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:#BBA88A;text-align:center;margin-top:8px;">谢谢你，一直在记录。</div>
+                </div>
+              </div>
+              <!-- 纸张下方继续延伸（模拟还在打印） -->
+              <div style="background:#FDFCF8;height:60px;width:100%;box-shadow:0 4px 12px rgba(30,20,10,0.08);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+<style>
+/* ─── T3 打印机 + 冷调 ─── */
+.t3-bg { background:#ECEAE5;height:100%;display:flex;flex-direction:column;align-items:center;padding:16px 20px 0;overflow:hidden; }
+
+/*
+  打印机结构：宽机身 + 两侧唇边（中间透明=出纸口）
+  机身 300px，出纸口 190px，两侧唇边各 55px
+*/
+.t3-machine { width:300px;position:relative;z-index:3;flex-shrink:0; }
+
+/* 上半机身 */
+.t3-machine-body {
+  width:300px; height:46px;
+  background:#C8D0BC;
+  border-radius:7px 7px 0 0;
+  position:relative;
+}
+.t3-machine-body::before {
+  content:''; position:absolute;
+  top:50%; left:20px; right:20px; height:1px;
+  background:rgba(40,40,40,0.09); transform:translateY(-50%);
+}
+
+/* 两侧唇边，中间 190px 透明 = 出纸口 */
+.t3-machine-lips {
+  width:300px; height:11px;
+  background:linear-gradient(
+    to right,
+    #A8B4A0 0, #A8B4A0 55px,
+    transparent 55px, transparent 245px,
+    #A8B4A0 245px, #A8B4A0 300px
+  );
+}
+
+/* 纸张区：宽度与出纸口对齐 (190px)，居中 */
+.t3-paper-wrap {
+  width:190px;
+  position:relative; z-index:1; overflow:hidden; flex:1;
+}
+.t3-paper-wrap::before {
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:7px;z-index:2;pointer-events:none;
+  background-image:radial-gradient(circle at 4.5px 0,#ECEAE5 3.2px,transparent 3.2px);
+  background-size:8px 7px;background-repeat:repeat-x;background-position:1px 0;
+}
+.t3-paper {
+  width:190px; background:#FCFCFA;
+  box-shadow:0 6px 24px rgba(0,0,0,0.09),0 1px 3px rgba(0,0,0,0.05);
+  font-family:'Courier New',monospace;
+}
+.t3-header { text-align:center;padding:6px 0 12px;width:100%;flex-shrink:0; }
+.t3-header-date { font-family:var(--f-ser);font-size:24px;color:#3A3C38;letter-spacing:-0.02em;line-height:1;margin-bottom:5px; }
+.t3-header-sub  { font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:#A4A6A0; }
+@keyframes t3Feed {
+  0%, 4%  { transform:translateY(-480px); }
+  90%     { transform:translateY(0); }
+  100%    { transform:translateY(0); }
+}
+
+/* ─── T4 打印机在底部，纸往上吐 ─── */
+.t4-bg { background:#E8E5DF;height:100%;display:flex;flex-direction:column;align-items:center;padding:16px 20px 0;overflow:hidden; }
+
+/* T4 纸张区：与出纸口对齐 */
+.t4-paper-wrap {
+  width:190px;
+  position:relative; z-index:1; overflow:hidden; flex:1;
+}
+.t4-paper-wrap::after {
+  content:'';
+  position:absolute;bottom:0;left:0;right:0;height:7px;z-index:2;pointer-events:none;
+  background-image:radial-gradient(circle at 4.5px 7px,#E8E5DF 3.2px,transparent 3.2px);
+  background-size:8px 7px;background-repeat:repeat-x;background-position:1px 0;
+}
+.t4-paper {
+  position:absolute;bottom:0;left:0;right:0;
+  background:#FCFCFA;
+  box-shadow:0 -4px 20px rgba(0,0,0,0.09);
+  font-family:'Courier New',monospace;
+}
+@keyframes t4Feed {
+  0%,4%  { transform:translateY(520px); }
+  90%    { transform:translateY(0); }
+  100%   { transform:translateY(0); }
+}
+.t4-anim { animation:t4Feed 7s linear infinite; }
+
+/* T4 打印机：两侧唇边在上，机身在下 */
+.t4-machine { width:300px;flex-shrink:0;position:relative;z-index:3; }
+
+.t4-machine-lips {
+  width:300px; height:11px;
+  background:linear-gradient(
+    to right,
+    #A8B4A0 0, #A8B4A0 55px,
+    transparent 55px, transparent 245px,
+    #A8B4A0 245px, #A8B4A0 300px
+  );
+}
+.t4-machine-body {
+  width:300px; height:46px;
+  background:#C8D0BC;
+  border-radius:0 0 7px 7px; position:relative;
+}
+.t4-machine-body::before {
+  content:''; position:absolute;
+  top:50%; left:20px; right:20px; height:1px;
+  background:rgba(40,40,40,0.09); transform:translateY(-50%);
+}
+
+.t3-paper-anim { animation:t3Feed 7s linear infinite; }
+
+/* 纸张内容 */
+.t3-pad { padding:14px 16px 16px; }
+.t3-logo { text-align:center;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:#8A8C88;margin-bottom:7px; }
+.t3-div  { font-size:11px;color:#C8CAC6;text-align:center;margin:5px 0;letter-spacing:0.04em;user-select:none; }
+.t3-title { font-family:var(--f-ser);font-size:15px;color:#2A2C30;text-align:center;line-height:1.38;margin:7px 0 8px;letter-spacing:-0.01em; }
+.t3-meta  { display:flex;justify-content:space-between;font-size:9px;color:#8A8C88;margin-bottom:7px; }
+.t3-body p { font-size:10.5px;color:#3A3C40;line-height:1.75;margin:0 0 6px; }
+.t3-section { font-size:8.5px;letter-spacing:0.14em;text-transform:uppercase;color:#A8AAA6;margin:6px 0 4px; }
+.t3-field { display:flex;justify-content:space-between;font-size:10px;padding:3px 0;border-bottom:0.5px dotted #D4D6D2; }
+.t3-field:last-of-type { border-bottom:none; }
+.t3-field-k { color:#6A6C68; }
+.t3-field-v { color:#3A3C40;letter-spacing:0.04em; }
+
+/* 关联记录 */
+.t3-record { padding:5px 0;border-bottom:0.5px dotted #D4D6D2; }
+.t3-record:last-of-type { border-bottom:none; }
+.t3-rec-date { font-size:8.5px;color:#A8AAA6;letter-spacing:0.06em;margin-bottom:2px; }
+.t3-rec-text { font-size:10px;color:#4A4C50;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.t3-rec-tags { display:flex;gap:4px;margin-top:3px; }
+.t3-rec-tag  { font-size:8px;color:#8A8C88;border:0.5px solid #CACCC8;padding:0 4px;letter-spacing:0.04em; }
+
+/* 脉络推荐 */
+.t3-thread { font-size:10px;color:#4A4C50;padding:3px 0;display:flex;align-items:center;gap:6px; }
+.t3-thread-arrow { color:#B0B2AE;flex-shrink:0; }
+
+.t3-stamp { font-size:9px;letter-spacing:0.1em;color:#A8AAA6;text-align:center;margin-top:8px;padding-top:8px; }
+.t3-barcode { display:flex;justify-content:center;align-items:flex-end;height:22px;gap:0;margin-top:6px; }
+.t3-bar { background:#C8CAC6;height:100%; }
+.t3-barnum { font-size:7.5px;color:#B8BAB6;text-align:center;letter-spacing:0.08em;margin-top:2px; }
+</style>
+
+    <!-- T3: 打印机动效 · 冷调 · 关联记录 + 脉络推荐 -->
+    <div class="fw">
+      <div class="fl">T3 · 打印机动效 · 冷调 · 关联记录 + 脉络推荐</div>
+      <div class="ph-frame" style="background:#ECEAE5;">
+        <div class="pstat" style="background:#ECEAE5;color:#2A2C30;">
+          <span class="pstat-t" style="font-family:var(--f-ui);">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6A6C68" opacity="0.5"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6A6C68" opacity="0.7"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#2A2C30"/></svg></div>
+        </div>
+        <div class="pcont">
+          <div class="t3-bg">
+            <!-- 顶部导航 -->
+            <div style="width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 0 12px;font-size:12px;color:#8A8C88;font-family:var(--f-ui);">
+              <span>← 回顾信</span>
+              <div style="text-align:center;">
+                <div style="font-family:var(--f-ser);font-size:18px;color:#3A3C38;letter-spacing:-0.02em;line-height:1;">2026.04.22</div>
+                <div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:#A4A6A0;margin-top:2px;">近 10 条记录 · 过去 2 周</div>
+              </div>
+              <div style="text-align:right;"><span style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;">分享</span></div>
+            </div>
+
+            <!-- 打印机：宽机身 + 两侧唇边（中间透明=出纸口） -->
+            <div class="t3-machine">
+              <div class="t3-machine-body"></div>
+              <div class="t3-machine-lips"></div>
+            </div>
+
+            <!-- 纸张（translateY 整体下移，尾巴先出） -->
+            <div class="t3-paper-wrap">
+              <div class="t3-paper t3-paper-anim">
+                <div class="t3-pad">
+                  <div class="t3-logo">自我觉察日记</div>
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+                  <div class="t3-title">亲爱的自己，<br>这是你最近的回顾</div>
+                  <div class="t3-meta">
+                    <span>2026.04.22</span><span>共 10 条记录</span>
+                  </div>
+                  <div class="t3-div">* * * * * * * * * * * * *</div>
+
+                  <div class="t3-body">
+                    <p>这两周，你在照顾妈妈的情绪这件事上花了很多心力。那份松动感，说明你的心是柔软的。</p>
+                    <p>你也在试着理解自己对「失控感」的恐惧。这不是软弱，这是认识自己。</p>
+                  </div>
+
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+
+                  <!-- 出现最多的主题 -->
+                  <div class="t3-section">出现最多的主题</div>
+                  <div class="t3-field"><span class="t3-field-k">亲密关系</span><span class="t3-field-v">4次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">情绪感知</span><span class="t3-field-v">3次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">自我认知</span><span class="t3-field-v">2次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">行动觉察</span><span class="t3-field-v">1次</span></div>
+
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+
+                  <!-- 关联记录 -->
+                  <div class="t3-section">这段时间的记录</div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.10 周四</div>
+                    <div class="t3-rec-text">很长时间没有这样笑了，整个人都松了...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">温暖</span><span class="t3-rec-tag">释然</span></div>
+                  </div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.14 周一</div>
+                    <div class="t3-rec-text">会议又被取消，那种失落很难说清楚...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">失落</span><span class="t3-rec-tag">困惑</span></div>
+                  </div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.18 周五</div>
+                    <div class="t3-rec-text">和妈妈通话之后，我说出来了一些话...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">温暖</span><span class="t3-rec-tag">紧张</span></div>
+                  </div>
+
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+
+                  <!-- 脉络推荐 -->
+                  <div class="t3-section">浮现中的脉络</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>与妈妈的关系</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>对失控的恐惧</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>边界感的探索</div>
+
+                  <div class="t3-stamp">谢谢你，一直在记录。</div>
+                  <div class="t3-barcode">
+                    <div class="t3-bar" style="width:2px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:3px;"></div><div style="width:2px;"></div>
+                    <div class="t3-bar" style="width:1px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:4px;"></div><div style="width:2px;"></div>
+                    <div class="t3-bar" style="width:2px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:1px;"></div><div style="width:3px;"></div>
+                    <div class="t3-bar" style="width:3px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:2px;"></div><div style="width:2px;"></div>
+                    <div class="t3-bar" style="width:4px;"></div>
+                  </div>
+                  <div class="t3-barnum">2026 · 04 · 22 · REV-010</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- T4: 打印机在底部，纸往上吐 -->
+    <div class="fw">
+      <div class="fl">T4 · 打印机在底 · 纸往上吐 · 标题先出</div>
+      <div class="ph-frame" style="background:#E8E5DF;">
+        <div class="pstat" style="background:#E8E5DF;color:#2A2C30;">
+          <span class="pstat-t" style="font-family:var(--f-ui);">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6A6C68" opacity="0.5"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6A6C68" opacity="0.7"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#2A2C30"/></svg></div>
+        </div>
+        <div class="pcont">
+          <div class="t4-bg">
+            <!-- 顶部导航 -->
+            <div style="width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 0 12px;font-size:12px;color:#8A8C88;font-family:var(--f-ui);">
+              <span>← 回顾信</span>
+              <div style="text-align:center;">
+                <div style="font-family:var(--f-ser);font-size:18px;color:#3A3C38;letter-spacing:-0.02em;line-height:1;">2026.04.22</div>
+                <div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:#A4A6A0;margin-top:2px;">近 10 条记录 · 过去 2 周</div>
+              </div>
+              <div style="text-align:right;"><span style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;">分享</span></div>
+            </div>
+
+            <!-- 纸张区（标题头部先从底部slot吐出） -->
+            <div class="t4-paper-wrap">
+              <div class="t4-paper t4-anim">
+                <div class="t3-pad">
+                  <div class="t3-logo">自我觉察日记</div>
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+                  <div class="t3-title">亲爱的自己，<br>这是你最近的回顾</div>
+                  <div class="t3-meta">
+                    <span>2026.04.22</span><span>共 10 条记录</span>
+                  </div>
+                  <div class="t3-div">* * * * * * * * * * * * *</div>
+                  <div class="t3-body">
+                    <p>这两周，你在照顾妈妈的情绪这件事上花了很多心力。那份松动感，说明你的心是柔软的。</p>
+                    <p>你也在试着理解自己对「失控感」的恐惧。这不是软弱，这是认识自己。</p>
+                  </div>
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+                  <div class="t3-section">出现最多的主题</div>
+                  <div class="t3-field"><span class="t3-field-k">亲密关系</span><span class="t3-field-v">4次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">情绪感知</span><span class="t3-field-v">3次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">自我认知</span><span class="t3-field-v">2次</span></div>
+                  <div class="t3-field"><span class="t3-field-k">行动觉察</span><span class="t3-field-v">1次</span></div>
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+                  <div class="t3-section">这段时间的记录</div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.10 周四</div>
+                    <div class="t3-rec-text">很长时间没有这样笑了，整个人都松了...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">温暖</span><span class="t3-rec-tag">释然</span></div>
+                  </div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.14 周一</div>
+                    <div class="t3-rec-text">会议又被取消，那种失落很难说清楚...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">失落</span><span class="t3-rec-tag">困惑</span></div>
+                  </div>
+                  <div class="t3-record">
+                    <div class="t3-rec-date">04.18 周五</div>
+                    <div class="t3-rec-text">和妈妈通话之后，我说出来了一些话...</div>
+                    <div class="t3-rec-tags"><span class="t3-rec-tag">温暖</span><span class="t3-rec-tag">紧张</span></div>
+                  </div>
+                  <div class="t3-div">- - - - - - - - - - - - - -</div>
+                  <div class="t3-section">浮现中的脉络</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>与妈妈的关系</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>对失控的恐惧</div>
+                  <div class="t3-thread"><span class="t3-thread-arrow">→</span>边界感的探索</div>
+                  <div class="t3-stamp">谢谢你，一直在记录。</div>
+                  <div class="t3-barcode">
+                    <div class="t3-bar" style="width:2px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:3px;"></div><div style="width:2px;"></div>
+                    <div class="t3-bar" style="width:1px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:4px;"></div><div style="width:2px;"></div>
+                    <div class="t3-bar" style="width:2px;"></div><div style="width:1px;"></div>
+                    <div class="t3-bar" style="width:4px;"></div>
+                  </div>
+                  <div class="t3-barnum">2026 · 04 · 22 · REV-010</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 底部打印机：两侧唇边（中间透明=出纸口）+ 宽机身 -->
+            <div class="t4-machine">
+              <div class="t4-machine-lips"></div>
+              <div class="t4-machine-body"></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 高亮笔效果展示板 -->
+    <div class="fw">
+      <div class="fl">高亮笔效果 · 六种莫兰迪色</div>
+      <div class="ph-frame" style="background:#F5F4F0;">
+        <div class="pstat" style="background:#F5F4F0;color:#1E1E2A;">
+          <span class="pstat-t">9:41</span>
+          <div class="pstat-i"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="3" width="3" height="7" rx="0.4" fill="#6E6E82" opacity="0.7"/><rect x="4" y="2" width="3" height="8" rx="0.4" fill="#6E6E82" opacity="0.8"/><rect x="8" y="0" width="3" height="10" rx="0.4" fill="#1E1E2A"/></svg></div>
+        </div>
+        <div class="pcont">
+          <div style="background:#F5F4F0;height:100%;padding:24px 28px;display:flex;flex-direction:column;gap:0;">
+            <div style="font-family:var(--f-ser);font-size:18px;letter-spacing:-0.02em;color:var(--ink);margin-bottom:4px;">高亮笔标签</div>
+            <div style="font-size:11px;color:var(--ink3);letter-spacing:0.04em;margin-bottom:24px;">SVG wavy filter · 六种莫兰迪色</div>
+
+            <!-- 六色高亮展示 -->
+            <div style="display:flex;flex-direction:column;gap:20px;">
+              <div>
+                <div style="font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;">情绪标签</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <span class="hl hl-rose">温暖</span>
+                  <span class="hl hl-sage">释然</span>
+                  <span class="hl hl-blue">平静</span>
+                  <span class="hl hl-lav">轻盈</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;">涉及的人</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <span class="hl hl-clay">妈妈</span>
+                  <span class="hl hl-moss">自己</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;">模板（激活态）</div>
+                <div style="display:flex;gap:7px;flex-wrap:wrap;">
+                  <span class="hl hl-rose">感恩</span>
+                  <span class="tag-plain">情绪</span>
+                  <span class="tag-plain">学习</span>
+                  <span class="tag-plain">行动</span>
+                  <span class="tag-plain">随手记</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;">大尺寸情绪词</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <span class="d2-emo-tag et-rose" style="font-size:14px;padding:6px 14px 7px;">失落</span>
+                  <span class="d2-emo-tag et-sage" style="font-size:14px;padding:6px 14px 7px;">困惑</span>
+                  <span class="d2-emo-tag et-lav" style="font-size:14px;padding:6px 14px 7px;">焦虑</span>
+                </div>
+              </div>
+              <div style="margin-top:4px;">
+                <div style="font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;">色板参考</div>
+                <div style="display:flex;gap:6px;">
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-rose);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">玫瑰</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-sage);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">鼠尾草</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-blue);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">石板蓝</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-clay);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">陶土</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-lav);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">薰衣草</div>
+                  </div>
+                  <div style="text-align:center;">
+                    <div style="width:32px;height:32px;border-radius:3px;background:var(--m-moss);margin-bottom:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div>
+                    <div style="font-size:8px;color:var(--ink3);letter-spacing:0.04em;">苔藓</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /row -->
+</section>
+
+</body>
+</html>
+
+</body>
+</html>

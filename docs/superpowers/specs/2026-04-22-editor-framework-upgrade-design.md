@@ -14,7 +14,7 @@
 
 ## 二、当前架构限制
 
-`<textarea>` 由浏览器内核控制文本渲染，无法在其内部注入 SVG 高亮层。现有标注系统（AnnotatedText + SVG overlay）只能在只读视图下工作。
+`<textarea>` 由浏览器内核控制文本渲染，无法在其内部注入任何自定义 HTML 元素（CSS inline spans、标注覆盖层等）。现有标注系统（AnnotatedText）是纯 CSS inline spans，只能在只读视图下工作。
 
 当前存储设计（纯文本 `content` + 独立 `annotations` JSON）与编辑器框架**完全兼容**，不需要改数据模型。
 
@@ -49,12 +49,14 @@ DB 存储：
 
 ### 4.2 编辑器内的标注渲染
 
-Lexical 支持自定义 decorator nodes，可在编辑器内叠加 SVG 高亮层。
+Lexical 支持自定义 inline 节点，可在编辑器内部对文本节点应用 CSS 样式。
 
 原理：
 - 编辑器文本层：Lexical 管理（负责光标、输入、IME）
-- 标注渲染层：自定义 decorator，复用现有 `AnnotatedText` 的 SVG 逻辑
-- 两层叠加在同一 DOM 节点内
+- 标注渲染：通过 Lexical **transform**，在 `onChange` 后把标注范围内的 TextNode 替换为带 CSS inline style 的自定义 `AnnotatedNode`（复用 AnnotatedText 的同一套样式逻辑：highlight 用 `linear-gradient` 背景色，underline 用 `text-decoration wavy`，bold 用 `fontWeight: 700`）
+- 提取纯文本：`editor.getEditorState().read(() => $getRoot().getTextContent())`，不含任何格式标记，直接存 DB
+
+**注意：** 不使用 Lexical 内置的 bold/italic 格式系统，保持 annotations 独立于 Lexical 内部状态，只在渲染层生效。
 
 ### 4.3 输入时偏移同步
 
@@ -128,14 +130,16 @@ iOS Safari：无法压制系统 copy/paste 菜单。
 
 ```
 Task 0：安装 Lexical + @lexical/react，验证基础 render
-Task 1：封装 RichTextEditor 组件（替代 textarea，支持中文输入）
-Task 2：实现 shiftAnnotations（onChange 时偏移同步）
-Task 3：实现编辑器内标注渲染（decorator node 复用 SVG 逻辑）
-Task 4：替换 NewEntryPage 的 textarea
-Task 5：替换 EditEntryPage 的 textarea
-Task 6：替换 AwarenessFlow 的 textarea
+Task 1：封装 RichTextEditor 组件（替代 textarea，支持中文输入，提取纯文本）
+Task 2：实现 shiftAnnotations（onChange 时偏移同步），加入 useAnnotations
+Task 3：实现编辑器内标注渲染（AnnotatedNode 自定义节点 + Lexical transform，复用 CSS 样式逻辑）
+Task 4：选区接入（Lexical 选区 → 偏移 → useAnnotationInteraction，弹菜单）
+Task 5：替换 NewEntryPage 的 textarea
+Task 6：替换 EditEntryPage 的 textarea
 Task 7：集成测试（写日记 → 标注 → 保存 → AI 提取 → 验证纯文本正确）
 ```
+
+**注：** AwarenessFlow 的觉察流输入区（结构化短文本）暂不接入，优先级低。
 
 ---
 
