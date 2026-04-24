@@ -30,3 +30,8 @@ dist-ssr
 
 # Brainstorming mockups
 .superpowers/
+
+# cc-starter
+.vibe-stats.json
+stats/report.html
+.claude/memory/user_profile.md

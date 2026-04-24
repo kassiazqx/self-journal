@@ -1027,6 +1027,59 @@ async function loadFull() {
 
 ---
 
+### 4.54 Lexical 编辑器场景下禁用全局 selectionchange 监听（2026-04-23 尝试，未完全解决）
+
+**根因：** `useAnnotationInteraction` 同时监听全局 `document.selectionchange` 事件和 Lexical 的 `onRangeSelect` 回调。第一次选中文字时，DOM Range 和 Lexical selection 可能不同步：`selectionchange` 触发后用 DOM Range 重新计算 offsets，覆盖了正确的 Lexical offsets，导致高亮位置错误。
+
+**症状：** 用户在 Lexical 编辑器内选中文字点高亮，第一次无反应，需要点两次才上色。
+
+**尝试修复（2026-04-23）：** HomePage 传入 `disableSelectionChange: true` 给 `useAnnotationInteraction`，禁用全局 selectionchange 监听，完全依赖 Lexical 的 `onRangeSelect` 回调。同时 RichTextEditor 的 MouseUpPlugin 删除 `setTimeout(0)`，改为同步读取 selection（防止 selection 被清除）。
+
+**当前状态：** 问题仍未完全解决，根因可能更复杂（涉及 Lexical 内部 selection 状态与 DOM Range 的时序问题）。暂搁置，标记为待深入调查。
+
+**规律（待验证）：** 凡使用 Lexical 富文本编辑器的场景，应传 `disableSelectionChange: true` 给 `useAnnotationInteraction`；其他场景（纯 DOM 文本）保持默认 false。
+
+**不要改成什么：**
+- 不要在 Lexical 场景下仍监听全局 selectionchange（可能导致 offset 计算错误）
+- 不要在 MouseUpPlugin 里加 setTimeout（会导致 selection 被浏览器清除）
+
+**优先级：** 中（功能可用，但需要点两次才能高亮，用户体验不佳；需要后续深入调查）
+
+---
+
+### 4.55 异步 onChange 场景下必须直接读编辑器实例（2026-04-23 确立）
+
+**根因：** Lexical 的 `onChange` 是异步的，React state `content` 可能落后。用户快速点保存时，`handleDone` 读的 `content` 是旧值（空或上一次的值），导致保存为空。
+
+**症状：** 纯文字日记保存后为空；只有文字+标点符号或文字+标记才正常保存。
+
+**修复（2026-04-23）：** RichTextEditor 新增 `EditorRefPlugin` 暴露 Lexical editor 实例，`useImperativeHandle` 新增 `getValue()` 方法直接从编辑器读最新文本。HomePage 的 `handleDone` / `handleDeepAwareness` 改为调 `textareaRef.current?.getValue?.() ?? content` 而非直接用 `content` state。
+
+**规律：** 凡使用异步 onChange 的编辑器（Lexical / Draft.js 等），保存用户输入时必须直接从编辑器实例读取最新值，不能依赖 React state。React state 因异步更新而落后，导致保存旧值。
+
+**不要改成什么：**
+- 不要依赖 React state 的 onChange 回调（会丢失快速保存的内容）
+- 不要在 handleDone 里加 await 等待 onChange 完成（无法保证完成时机）
+
+---
+
+### 4.56 RecordsPage 增量刷新而非整页重载（2026-04-23 确立）
+
+**根因：** 原来用 `key={refreshKey}` 强制卸载重挂 RecordsPage，导致保存后回到列表时整页白屏 1-2 秒（等待列表重新加载）。
+
+**症状：** 写完保存跳到记录列表，出现 1-2 秒白屏；编辑保存后回列表也是白屏。
+
+**修复（2026-04-23）：** MainLayout 改为传 `refreshTrigger={refreshKey}` prop 而非 `key={refreshKey}`。RecordsPage 新增 `refresh()` 函数（与 `load()` 逻辑相同，但保留旧数据），useEffect 监听 `refreshTrigger` 变化时调 `refresh()`。保存后回列表时，旧数据立即显示，顶部小字"……"提示刷新中，新数据回来后 merge。
+
+**规律：** 列表页刷新时，优先用增量刷新（保留旧数据，后台更新）而非整页重载。只有在数据结构完全变化时才用 `key` 强制卸载。
+
+**不要改成什么：**
+- 不要用 `key={refreshKey}` 强制卸载（导致白屏）
+- 不要在刷新时清空 allEntries（应保留旧数据，新数据回来后 merge）
+- 不要隐藏刷新指示器（用户需要知道后台在更新）
+
+---
+
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
 - Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
