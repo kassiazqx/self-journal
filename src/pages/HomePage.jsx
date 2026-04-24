@@ -537,6 +537,8 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         if (error) {
           console.error('[insert]', error)
           notifyFn?.('记录保存失败，请检查网络后重试')
+        } else if (template.id === 'gratitude') {
+          fetchTodayGratitudeCount(userId).then(({ count }) => setGratitudeCount(count ?? 0))
         }
       })
 
