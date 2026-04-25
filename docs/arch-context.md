@@ -332,6 +332,9 @@ src/
 │   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
 │   │                           keyboardVisible：键盘打开时隐藏底部4-tab导航（visualViewport.resize）
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
+│   │                           键盘避让：内容区内层滚动 + fixed 底部按钮，仅响应 visualViewport.resize
+│   ├── AIConversation.jsx      AI 深入觉察对话页（entry 对话续聊 + 保存 full_conversation）
+│   │                           键盘避让：消息列表内层滚动 + fixed 输入栏，仅响应 visualViewport.resize
 │   ├── FilterBar.jsx           搜索框 + 情绪/类型/日期/人物/需求五维筛选（纯UI组件，不查DB）
 │   │                           props: onFilter / categoryOptions / peopleOptions / coreNeedOptions / showDate
 │   │                           文字搜索5字段：content/entry_summary/cognitive_analysis/body_sensations/reflection_insight
@@ -1163,6 +1166,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md
 - 2026-04-22 · 代码session · 觉察卡片扩展：AWARENESS_QUESTIONS 从 6 组扩展为 9 组，问题数从 3 个增至 4-7 个；context 重命名为 focus；新增 acceptance（tier 3, negative）/ behavior（tier 4）/ cognitive（tier 5）三组；测试文件两处 'context' 断言同步改为 'focus'，8/8 pass；commits 0b13d45 + 0da9a36；同步卡：docs/sync-cards/2026-04-22-awareness-questions-expansion.md
 - 2026-04-22 · 架构session · 编辑器框架升级同步：新增 §4.50（annotationTransform 防无限循环 guard）/ §4.51（mouseup+selectionchange 双触发防护，500ms 窗口）/ §4.52（useCallback stale closure：annotations 必须入 deps）/ §4.53（EditEntryPage contentMap['__raw__'] 约定）；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md

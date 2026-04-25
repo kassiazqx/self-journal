@@ -18,6 +18,8 @@ import {
   buildConversationMessages,
 } from '../lib/awarenessFlowState.js'
 
+const ACTION_BAR_RESERVED_HEIGHT = 96
+
 async function upsertConversation(userId, entryId, messages) {
   if (!messages.length) return
   const { error } = await db.from('conversations').upsert(
@@ -52,7 +54,7 @@ export default function AwarenessFlow({
   const [transitioning, setTransitioning] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
-  const [keyboardOffset, setKeyboardOffset] = useState(0)
+  const [bottomDockOffset, setBottomDockOffset] = useState(0)
 
   const textareaRef = useRef(null)
   const saveTimerRef = useRef(null)
@@ -66,20 +68,26 @@ export default function AwarenessFlow({
     latestStateRef.current = flowState
   }, [flowState])
 
-  // ── 键盘高度监听，防止底部按钮被软键盘遮挡 ────────────────────
+  // ── 键盘高度只在 resize 时更新；内容区自己滚动 ──────────────────
   useEffect(() => {
     const vv = window.visualViewport
-    if (!vv) return
-    function update() {
+
+    function handleResize() {
       const navEl = document.querySelector('nav')
-      const navH = navEl ? navEl.getBoundingClientRect().height : 0
-      setKeyboardOffset(Math.max(0, window.innerHeight - vv.height - navH))
+      const navHeight = navEl ? navEl.getBoundingClientRect().height : 0
+      const keyboardInset = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0
+      setBottomDockOffset(keyboardInset > 60 ? keyboardInset : navHeight)
     }
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+
+    handleResize()
+    if (!vv) return
+    vv.addEventListener('resize', handleResize)
+    window.addEventListener('resize', handleResize)
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      vv.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', handleResize)
     }
   }, [])
 
@@ -354,6 +362,7 @@ export default function AwarenessFlow({
   const canRefresh = mode === 'local' && (currentNode?.text ? flowState.localNodes[currentNode.localIndex]?.texts?.length > 1 : false)
   const isAtLastVisibleNode = flowState.currentIdx === flowState.visibleNodes.length - 1
   const nextLabel = mode === 'ai' ? '继续 →' : (isAtLastVisibleNode && flowState.visibleNodes.filter(node => node.kind === 'local').length === flowState.localNodes.length ? '完成 ✓' : '继续 →')
+  const scrollContentBottomPadding = bottomDockOffset + ACTION_BAR_RESERVED_HEIGHT
 
   return (
     <div style={{
@@ -362,6 +371,7 @@ export default function AwarenessFlow({
       height: '100%',
       background: '#faf8f4',
       position: 'relative',
+      overflow: 'hidden',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px 0', gap: 10 }}>
         <button
@@ -399,7 +409,13 @@ export default function AwarenessFlow({
 
       <div style={{
         flex: 1,
-        padding: '32px 24px 90px',
+        minHeight: 0,
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehaviorY: 'contain',
+        padding: '32px 24px 0',
+        paddingBottom: scrollContentBottomPadding,
+        scrollPaddingBottom: scrollContentBottomPadding,
         display: 'flex',
         flexDirection: 'column',
         gap: 20,
@@ -455,16 +471,18 @@ export default function AwarenessFlow({
       </div>
 
       <div style={{
-        position: 'absolute',
-        bottom: keyboardOffset,
-        left: 0,
-        right: 0,
+        position: 'fixed',
+        left: '50%',
+        width: '100%',
+        maxWidth: 480,
+        transform: 'translateX(-50%)',
+        bottom: bottomDockOffset,
         padding: '8px 18px 26px',
-        transition: 'bottom 0.1s',
         background: 'linear-gradient(transparent, #faf8f4 38%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        zIndex: 40,
       }}>
         <button
           onClick={handleToggleAI}

@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { resolveTemplate } from '../lib/templates'
 import { getChatSession, saveChatSession } from '../lib/storage'
 
+const INPUT_BAR_RESERVED_HEIGHT = 96
+
 // 单条气泡
 function Bubble({ msg }) {
   const isAI = msg.role === 'assistant'
@@ -38,7 +40,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [isRateLimit, setIsRateLimit] = useState(false)
-  const [keyboardOffset, setKeyboardOffset] = useState(0)
+  const [bottomDockOffset, setBottomDockOffset] = useState(0)
   const systemPromptRef = useRef('')
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
@@ -90,20 +92,26 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     startChat()
   }, [])
 
-  // ── 键盘高度监听，防止输入栏被软键盘遮挡 ────────────────────
+  // ── 键盘高度只在 resize 时更新；消息列表自己滚动 ─────────────────
   useEffect(() => {
     const vv = window.visualViewport
-    if (!vv) return
-    function update() {
+
+    function handleResize() {
       const navEl = document.querySelector('nav')
-      const navH = navEl ? navEl.getBoundingClientRect().height : 0
-      setKeyboardOffset(Math.max(0, window.innerHeight - vv.height - navH))
+      const navHeight = navEl ? navEl.getBoundingClientRect().height : 0
+      const keyboardInset = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0
+      setBottomDockOffset(keyboardInset > 60 ? keyboardInset : navHeight)
     }
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+
+    handleResize()
+    if (!vv) return
+    vv.addEventListener('resize', handleResize)
+    window.addEventListener('resize', handleResize)
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      vv.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', handleResize)
     }
   }, [])
 
@@ -209,8 +217,10 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     onClose?.()
   }
 
+  const scrollContentBottomPadding = bottomDockOffset + INPUT_BAR_RESERVED_HEIGHT
+
   return (
-    <div className="flex flex-col h-full bg-[#fdfaf7]" style={{ paddingBottom: keyboardOffset, transition: 'padding-bottom 0.1s' }}>
+    <div className="flex flex-col h-full bg-[#fdfaf7]" style={{ overflow: 'hidden' }}>
       {/* 顶栏 */}
       <div className="flex items-center justify-between px-4 pt-5 pb-3">
         <div className="flex items-center gap-3">
@@ -255,7 +265,15 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-4 pb-2">
+      <div
+        className="flex-1 overflow-y-auto px-4"
+        style={{
+          paddingBottom: scrollContentBottomPadding,
+          scrollPaddingBottom: scrollContentBottomPadding,
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorY: 'contain',
+        }}
+      >
         {visibleMsgs.map((m, i) => <Bubble key={i} msg={m} />)}
 
         {loading && (
@@ -288,7 +306,20 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       </div>
 
       {/* 输入栏 */}
-      <div className="px-4 pb-6 pt-2 flex gap-2 items-end">
+      <div
+        className="px-4 pt-2 flex gap-2 items-end"
+        style={{
+          position: 'fixed',
+          left: '50%',
+          width: '100%',
+          maxWidth: 480,
+          transform: 'translateX(-50%)',
+          bottom: bottomDockOffset,
+          paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+          background: '#fdfaf7',
+          zIndex: 40,
+        }}
+      >
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
