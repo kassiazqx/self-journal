@@ -49,6 +49,8 @@ import AnnotationMenu from '../components/AnnotationMenu'
 
 // ─── 草稿 localStorage ──────────────────────────────────────────
 const DRAFT_KEY = 'journal_draft'
+const FLOATING_BAR_HEIGHT = 84
+const FLOATING_BAR_GAP = 12
 
 // ─── UUID 生成（兼容非安全上下文 http://192.168.x.x）──────────────
 // crypto.randomUUID() 需要 secure context，localhost 豁免但 LAN IP 不行。
@@ -182,26 +184,30 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   useEffect(() => () => { if (letterReadTimer) clearTimeout(letterReadTimer) }, [letterReadTimer])
 
-  // 键盘弹起时底部栏贴键盘
-  const [keyboardOffset, setKeyboardOffset] = useState(0)
-  const vvRef = useRef(null)
+  // 键盘高度只在 resize 时更新；页面滚动限制在内层编辑区，底部栏不再追 scroll
+  const [bottomDockOffset, setBottomDockOffset] = useState(0)
   useEffect(() => {
     const vv = window.visualViewport
-    if (!vv) return
-    vvRef.current = vv
-    function update() {
+    function handleResize() {
       const navEl = document.querySelector('nav')
-      const navH = navEl ? navEl.getBoundingClientRect().height : 0
-      const keyboardHeight = window.innerHeight - vv.height - navH
-      setKeyboardOffset(Math.max(0, keyboardHeight))
+      const navHeight = navEl ? navEl.getBoundingClientRect().height : 0
+      const keyboardInset = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0
+      setBottomDockOffset(keyboardInset > 60 ? keyboardInset : navHeight)
     }
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+
+    handleResize()
+    if (!vv) return
+    vv.addEventListener('resize', handleResize)
+    window.addEventListener('resize', handleResize)
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      vv.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', handleResize)
     }
   }, [])
+
+  const scrollContentBottomPadding = bottomDockOffset + FLOATING_BAR_HEIGHT + FLOATING_BAR_GAP
 
   // 组件卸载时释放 ObjectURL，防止内存泄漏
   useEffect(() => {
@@ -645,7 +651,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   return (
     <div
       className="flex flex-col h-full relative"
-      style={{ backgroundColor: '#faf8f4' }}
+      style={{
+        backgroundColor: '#faf8f4',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
     >
       {/* ── 日期时间 picker sheet ── */}
       {showPicker && (
@@ -803,129 +813,144 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         </div>
       </div>
 
-      {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}
-      <div ref={editorContainerRef} className="flex-1 px-[18px] pt-[14px] pb-[80px]" style={{ position: 'relative' }}>
-        <RichTextEditor
-          ref={textareaRef}
-          initialValue={content}
-          annotations={annotations}
-          onChange={handleEditorChange}
-          onRangeSelect={handleRangeSelect}
-          placeholder="把脑子里的写下来…"
-          style={{ minHeight: '60vh' }}
-        />
-        <AnnotationMenu
-          position={menuPosition}
-          visible={menuVisible}
-          activeColor={activeColor}
-          onBold={handleBold}
-          onHighlight={handleHighlight}
-          onUnderline={handleUnderline}
-          onColorChange={setActiveColor}
-          onClose={closeMenu}
-          showCancel={hasOverlap}
-          onCancel={handleCancel}
-        />
-
-        {/* @ 浮层 */}
-        {mentionQuery !== null && (() => {
-          const uniqueContacts = [...new Map(contacts.map(c => [c.canonical, c])).values()]
-          const filtered = uniqueContacts.filter(c => {
-            const q = mentionQuery.toLowerCase()
-            return (
-              c.canonical.toLowerCase().includes(q) ||
-              (c.aliases || []).some(a => a.toLowerCase().includes(q))
-            )
-          })
-          return (
-            <div style={{
-              position: 'absolute',
-              left: 18,
-              top: mentionTop,
-              width: 200,
-              background: '#fff',
-              border: '1px solid #e5e7eb',
-              borderRadius: 12,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.14)',
-              zIndex: 50,
-              maxHeight: 200,
-              overflowY: 'auto',
-            }}>
-              {filtered.map(c => (
-                <div
-                  key={c.id}
-                  onClick={() => handleMentionSelect(c)}
-                  style={{
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    color: '#333',
-                    borderBottom: '1px solid #f3f4f6',
-                  }}
-                >
-                  {c.canonical}
-                </div>
-              ))}
-              {mentionQuery.trim() && (
-                <div
-                  onClick={() => handleMentionAddNew(mentionQuery)}
-                  style={{
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    color: '#c9a96e',
-                  }}
-                >
-                  ＋ 新增「{mentionQuery}」
-                </div>
-              )}
-            </div>
-          )
-        })()}
-      </div>
-
-      {/* ── 图片宫格（有图时渲染，位于输入区与底部浮动栏之间） ── */}
-      {imageItems.length > 0 && (
+      <div
+        className="flex-1 min-h-0"
+        style={{
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorY: 'contain',
+          paddingBottom: scrollContentBottomPadding,
+          scrollPaddingBottom: scrollContentBottomPadding,
+        }}
+      >
+        {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}
         <div
-          style={{ padding: '4px 18px 2px' }}
-          onTouchStart={handleImageTouchStart}
-          onTouchEnd={handleImageTouchEnd}
-          onMouseLeave={() => clearTimeout(touchTimerRef.current)}
-          onClick={e => { if (e.target === e.currentTarget) setEditingImages(false) }}
+          ref={editorContainerRef}
+          className="px-[18px] pt-[14px]"
+          style={{ position: 'relative', minHeight: 0 }}
         >
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={imageItems.map(it => it.id)} strategy={rectSortingStrategy}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
-                {imageItems.map(item => (
-                  <SortableImageItem
-                    key={item.id}
-                    id={item.id}
-                    previewSrc={item.previewSrc}
-                    editingImages={editingImages}
-                    onDelete={() => handleDeleteImage(item)}
-                    onFullscreen={() => setFullscreenSrc(item.previewSrc)}
-                  />
+          <RichTextEditor
+            ref={textareaRef}
+            initialValue={content}
+            annotations={annotations}
+            onChange={handleEditorChange}
+            onRangeSelect={handleRangeSelect}
+            placeholder="把脑子里的写下来…"
+            style={{ minHeight: '60vh' }}
+          />
+          <AnnotationMenu
+            position={menuPosition}
+            visible={menuVisible}
+            activeColor={activeColor}
+            onBold={handleBold}
+            onHighlight={handleHighlight}
+            onUnderline={handleUnderline}
+            onColorChange={setActiveColor}
+            onClose={closeMenu}
+            showCancel={hasOverlap}
+            onCancel={handleCancel}
+          />
+
+          {/* @ 浮层 */}
+          {mentionQuery !== null && (() => {
+            const uniqueContacts = [...new Map(contacts.map(c => [c.canonical, c])).values()]
+            const filtered = uniqueContacts.filter(c => {
+              const q = mentionQuery.toLowerCase()
+              return (
+                c.canonical.toLowerCase().includes(q) ||
+                (c.aliases || []).some(a => a.toLowerCase().includes(q))
+              )
+            })
+            return (
+              <div style={{
+                position: 'absolute',
+                left: 18,
+                top: mentionTop,
+                width: 200,
+                background: '#fff',
+                border: '1px solid #e5e7eb',
+                borderRadius: 12,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.14)',
+                zIndex: 50,
+                maxHeight: 200,
+                overflowY: 'auto',
+              }}>
+                {filtered.map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => handleMentionSelect(c)}
+                    style={{
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      color: '#333',
+                      borderBottom: '1px solid #f3f4f6',
+                    }}
+                  >
+                    {c.canonical}
+                  </div>
                 ))}
-                {totalImages < MAX_IMAGES && !editingImages && (
-                  <label style={{
-                    aspectRatio: '1/1', borderRadius: 6,
-                    border: '1.5px dashed #c9a96e', background: 'none',
-                    color: '#c9a96e', fontSize: 20, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <input type="file" accept="image/*" multiple style={{ display: 'none' }}
-                      disabled={uploading} onChange={handleImageSelect} />
-                    ＋
-                  </label>
+                {mentionQuery.trim() && (
+                  <div
+                    onClick={() => handleMentionAddNew(mentionQuery)}
+                    style={{
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      color: '#c9a96e',
+                    }}
+                  >
+                    ＋ 新增「{mentionQuery}」
+                  </div>
                 )}
               </div>
-            </SortableContext>
-          </DndContext>
-          <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>
-            长按拖动调序 · 最多{MAX_IMAGES}张
-          </div>
+            )
+          })()}
         </div>
-      )}
+
+        {/* ── 图片宫格（有图时渲染，位于输入区与底部浮动栏之间） ── */}
+        {imageItems.length > 0 && (
+          <div
+            style={{ padding: '4px 18px 2px' }}
+            onTouchStart={handleImageTouchStart}
+            onTouchEnd={handleImageTouchEnd}
+            onMouseLeave={() => clearTimeout(touchTimerRef.current)}
+            onClick={e => { if (e.target === e.currentTarget) setEditingImages(false) }}
+          >
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={imageItems.map(it => it.id)} strategy={rectSortingStrategy}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+                  {imageItems.map(item => (
+                    <SortableImageItem
+                      key={item.id}
+                      id={item.id}
+                      previewSrc={item.previewSrc}
+                      editingImages={editingImages}
+                      onDelete={() => handleDeleteImage(item)}
+                      onFullscreen={() => setFullscreenSrc(item.previewSrc)}
+                    />
+                  ))}
+                  {totalImages < MAX_IMAGES && !editingImages && (
+                    <label style={{
+                      aspectRatio: '1/1', borderRadius: 6,
+                      border: '1.5px dashed #c9a96e', background: 'none',
+                      color: '#c9a96e', fontSize: 20, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                        disabled={uploading} onChange={handleImageSelect} />
+                      ＋
+                    </label>
+                  )}
+                </div>
+              </SortableContext>
+            </DndContext>
+            <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>
+              长按拖动调序 · 最多{MAX_IMAGES}张
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── 全屏图片查看 ── */}
       {fullscreenSrc && (
@@ -943,15 +968,20 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       {/* ── 涉及的人 chip 区（浮动栏上方）── */}
       {/* ── 底部浮动栏（含人物 chip）── */}
       <div
-        className="absolute left-0 right-0"
         style={{
-          bottom: keyboardOffset,
+          position: 'fixed',
+          left: '50%',
+          width: '100%',
+          maxWidth: 480,
+          transform: 'translateX(-50%)',
+          bottom: bottomDockOffset,
           padding: '8px 18px 22px',
           background: 'linear-gradient(transparent, #faf8f4 38%)',
-          transition: 'bottom 0.1s',
+          zIndex: 40,
+          pointerEvents: 'none',
         }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" style={{ pointerEvents: 'auto' }}>
           {/* 最左：相机图标 */}
           <label
             style={{

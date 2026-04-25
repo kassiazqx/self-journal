@@ -330,6 +330,7 @@ src/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
 │   │                           writeResetKey：觉察流完成时重挂 HomePage
 │   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
+│   │                           keyboardVisible：键盘打开时隐藏底部4-tab导航（visualViewport.resize）
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
 │   ├── FilterBar.jsx           搜索框 + 情绪/类型/日期/人物/需求五维筛选（纯UI组件，不查DB）
 │   │                           props: onFilter / categoryOptions / peopleOptions / coreNeedOptions / showDate
@@ -374,6 +375,8 @@ src/
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
+    │                           键盘避让重构：顶部信息固定，只有“编辑器+图片区”内层滚动
+    │                           内层滚动区负责 paddingBottom/scrollPaddingBottom；底部悬浮栏 fixed + visualViewport.resize 贴键盘
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
     │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
     │                           🔍 FilterBar 五维筛选（有筛选时隐藏回顾信卡片）
@@ -1160,6 +1163,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md
 - 2026-04-22 · 代码session · 觉察卡片扩展：AWARENESS_QUESTIONS 从 6 组扩展为 9 组，问题数从 3 个增至 4-7 个；context 重命名为 focus；新增 acceptance（tier 3, negative）/ behavior（tier 4）/ cognitive（tier 5）三组；测试文件两处 'context' 断言同步改为 'focus'，8/8 pass；commits 0b13d45 + 0da9a36；同步卡：docs/sync-cards/2026-04-22-awareness-questions-expansion.md
 - 2026-04-22 · 架构session · 编辑器框架升级同步：新增 §4.50（annotationTransform 防无限循环 guard）/ §4.51（mouseup+selectionchange 双触发防护，500ms 窗口）/ §4.52（useCallback stale closure：annotations 必须入 deps）/ §4.53（EditEntryPage contentMap['__raw__'] 约定）；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md
 - 2026-04-22 · 代码session · 编辑器框架升级完成：写作页 + 编辑页 textarea 全部换为 Lexical 富文本编辑器（RichTextEditor.jsx + RichTextEditor/ 三子模块）；写作时即可圈字标注；新增 shiftAnnotations/applyShift 在文字变更时移动标注偏移；useAnnotationInteraction 新增 openMenuAt + flipDown + lastOpenMenuAtRef；AnnotationMenu 支持 flipDown（手机/近顶端选区下方显示）；修复 handleDone/handleDeepAwareness stale closure（补 annotations dep）；修复 EditEntryPage flow 分支保存路径；commit 4c8497e；同步卡：docs/sync-cards/2026-04-22-editor-framework-upgrade.md

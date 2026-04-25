@@ -36,6 +36,7 @@ export default function MainLayout() {
   const [writeResetKey, setWriteResetKey] = useState(0)
   const [settingsResetKey, setSettingsResetKey] = useState(0)
   const [toast, setToast] = useState(null)
+  const [keyboardVisible, setKeyboardVisible] = useState(false)
   const toastTimerRef = useRef(null)
 
   function notify(msg) {
@@ -48,6 +49,22 @@ export default function MainLayout() {
   useEffect(() => {
     localStorage.removeItem('nav_screens')
     localStorage.removeItem('active_tab')
+  }, [])
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    function updateKeyboardVisible() {
+      const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      setKeyboardVisible(keyboardHeight > 60)
+    }
+
+    updateKeyboardVisible()
+    vv.addEventListener('resize', updateKeyboardVisible)
+    return () => {
+      vv.removeEventListener('resize', updateKeyboardVisible)
+    }
   }, [])
 
   const currentScreen = screens[screens.length - 1] ?? null
@@ -330,7 +347,7 @@ export default function MainLayout() {
       </div>
 
       {/* 底部导航（全屏覆盖时隐藏） */}
-      {!currentScreen && (
+      {!currentScreen && !keyboardVisible && (
         <nav style={{
           display: 'flex',
           borderTop: '1px solid #ede9e2',
