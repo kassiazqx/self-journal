@@ -24,7 +24,6 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  *   handleCancel: Function,
  *   openMenuForRange: Function,
  *   hasOverlap: boolean,
- *   pendingRange: { start: number, end: number } | null,
  * }}
  */
 export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations, disableSelectionChange = false }) {
@@ -260,6 +259,5 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     openMenuForRange,
     openMenuAt,
     hasOverlap,
-    pendingRange: pendingRangeRef.current,
   }
 }

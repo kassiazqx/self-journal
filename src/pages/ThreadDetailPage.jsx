@@ -202,12 +202,9 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   useEffect(() => {
     if (!editingEntries) return
     if (!searchQuery.trim()) {
-      setSearchResults([])
-      // 有 FilterBar 筛选条件时，不重载默认列表（FilterBar 自己管理结果）
-      if (!filterConditions) {
-        loadDefaultEntries(0)
-      }
-      return
+      if (filterConditions) return
+      const timer = setTimeout(() => { loadDefaultEntries(0) }, 0)
+      return () => clearTimeout(timer)
     }
     const timer = setTimeout(() => doSearch(searchQuery), 300)
     return () => clearTimeout(timer)

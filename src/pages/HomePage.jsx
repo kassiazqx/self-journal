@@ -75,7 +75,9 @@ function saveDraft(content, templateId, selectedDatetime, manualOverride, dismis
       manualOverride: Boolean(manualOverride),
       dismissedPeople: dismissedPeople ? [...dismissedPeople] : [],
     }))
-  } catch (_) {}
+  } catch {
+    // localStorage 操作容错，失败不影响主流程
+  }
 }
 
 function loadDraft() {
@@ -94,13 +96,17 @@ function loadDraft() {
     }
     draft.dismissedPeople = new Set(draft.dismissedPeople ?? [])
     return draft
-  } catch (_) {
+  } catch {
     return null
   }
 }
 
 function clearDraft() {
-  try { localStorage.removeItem(DRAFT_KEY) } catch (_) {}
+  try {
+    localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    // localStorage 操作容错，失败不影响主流程
+  }
 }
 
 // ─── 图片宫格单项（支持拖拽） ─────────────────────────────────────
@@ -153,18 +159,25 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   // 今日感恩进度
   const [gratitudeCount, setGratitudeCount] = useState(0)
-  const loadGratitudeCount = useCallback(async () => {
-    if (!user?.id) {
-      setGratitudeCount(0)
-      return
-    }
-    const { count } = await fetchTodayGratitudeCount(user.id)
+  const displayedGratitudeCount = user?.id ? gratitudeCount : 0
+
+  async function refreshGratitudeCount(userId) {
+    if (!userId) return
+    const { count } = await fetchTodayGratitudeCount(userId)
     setGratitudeCount(count ?? 0)
-  }, [user?.id])
+  }
 
   useEffect(() => {
-    loadGratitudeCount()
-  }, [gratitudeRefreshTrigger, loadGratitudeCount])
+    if (!user?.id) return
+    let cancelled = false
+    ;(async () => {
+      const { count } = await fetchTodayGratitudeCount(user.id)
+      if (!cancelled) {
+        setGratitudeCount(count ?? 0)
+      }
+    })().catch(console.error)
+    return () => { cancelled = true }
+  }, [gratitudeRefreshTrigger, user?.id])
 
   useEffect(() => {
     if (!user) return
@@ -217,11 +230,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   const scrollContentBottomPadding = bottomDockOffset + FLOATING_BAR_HEIGHT + FLOATING_BAR_GAP
 
-  // 组件卸载时释放 ObjectURL，防止内存泄漏
-  useEffect(() => {
-    return () => { selectedPreviews.forEach(url => URL.revokeObjectURL(url)) }
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-
   // 当前激活模板
   const [template, setTemplate] = useState(() =>
     isEditMode ? resolveTemplate(editEntry.template_type) : DEFAULT_TEMPLATE
@@ -240,8 +248,13 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const prevTextRef = useRef(editEntry?.content ?? '')
 
   // 草稿恢复提示
-  const [showDraftBanner, setShowDraftBanner] = useState(false)
-  const draftRef = useRef(null)
+  const [initialDraft] = useState(() => {
+    if (isEditMode) return null
+    const draft = loadDraft()
+    return draft?.content ? draft : null
+  })
+  const [showDraftBanner, setShowDraftBanner] = useState(() => Boolean(initialDraft?.content))
+  const draftRef = useRef(initialDraft)
 
   // 保存中状态（防重复点击）
   const [saving, setSaving] = useState(false)
@@ -252,10 +265,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const [selectedPreviews, setSelectedPreviews] = useState([])
   const [imagePaths, setImagePaths] = useState(editEntry?.image_urls ?? [])
   const pathsToDeleteRef = useRef([])
-  const [uploading, setUploading] = useState(false)
+  const uploading = false
   const [editingImages, setEditingImages] = useState(false)
   const [fullscreenSrc, setFullscreenSrc] = useState(null)
   const touchTimerRef = useRef(null)
+
+  // 组件卸载时释放 ObjectURL，防止内存泄漏
+  useEffect(() => {
+    return () => { selectedPreviews.forEach(url => URL.revokeObjectURL(url)) }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalImages = imagePaths.length + selectedFiles.length
   const imageItems = [
@@ -284,7 +302,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     menuVisible, menuPosition,
     closeMenu,
     handleBold, handleHighlight, handleUnderline,
-    handleCancel, openMenuForRange, openMenuAt, hasOverlap,
+    handleCancel, openMenuAt, hasOverlap,
   } = useAnnotationInteraction({
     containerRef: editorContainerRef,
     rawText: content,
@@ -319,16 +337,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     }
     init().catch(console.error)
   }, [user])
-
-  // ── 草稿检查（仅新建模式）──────────────────────────────────────
-  useEffect(() => {
-    if (isEditMode) return
-    const draft = loadDraft()
-    if (draft?.content) {
-      draftRef.current = draft
-      setShowDraftBanner(true)
-    }
-  }, [isEditMode])
 
   // ── 自动保存草稿（新建模式，每 3 秒）──────────────────────────
   useEffect(() => {
@@ -552,7 +560,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           console.error('[insert]', error)
           notifyFn?.('记录保存失败，请检查网络后重试')
         } else if (template.id === 'gratitude') {
-          loadGratitudeCount()
+          refreshGratitudeCount(userId).catch(console.error)
         }
       })
 
@@ -572,12 +580,14 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
             failed.push({ entryId, createdAt: Date.now() })
             localStorage.setItem('image_upload_failed', JSON.stringify(failed))
-          } catch (_) {}
+          } catch {
+            // localStorage 操作容错，失败不影响主流程
+          }
         }
       })()
     }
   }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts,
-      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations, loadGratitudeCount])
+      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
@@ -815,7 +825,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           </p>
           {template.id === 'gratitude' && (
             <div style={{ paddingTop: 5, fontSize: 13, color: template.color, opacity: 0.7, letterSpacing: '4px' }}>
-              {'●'.repeat(gratitudeCount)}{'○'.repeat(3 - gratitudeCount)}
+              {'●'.repeat(displayedGratitudeCount)}{'○'.repeat(3 - displayedGratitudeCount)}
             </div>
           )}
         </div>

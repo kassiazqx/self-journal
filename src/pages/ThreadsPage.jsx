@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
-import { fetchThreads, createThread, updateThread, deleteThread, addEntryToThread, reAnalyzeThread } from '../lib/threadService'
+import { fetchThreads, createThread, deleteThread, addEntryToThread, reAnalyzeThread } from '../lib/threadService'
 import { resolveTemplate } from '../lib/templates'
 
 function formatDate(isoStr) {
@@ -110,12 +110,6 @@ export default function ThreadsPage({ onBack, onOpenThread, onOpenCandidate, def
       setAnalysisToast('暂时没有发现新脉络，稍后再试')
     }
     setTimeout(() => setAnalysisToast(''), 4000)
-  }
-
-  // ── 候选操作 ──────────────────────────────────────────────────
-  async function handleIgnore(thread) {
-    await updateThread(thread.id, user.id, { status: 'rejected' })
-    setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, status: 'rejected' } : t))
   }
 
   async function handleDelete(thread) {

@@ -5,7 +5,6 @@ import { fetchAllEntries } from '../lib/journalService'
 import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
-import { updateMemory } from '../lib/memory'
 import { db } from '../lib/db'
 import {
   loadContacts, addContact, updateContact, deleteContact,
@@ -34,7 +33,7 @@ const PROVIDERS = [
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth()
-  const [settings, setSettings] = useState({ provider: 'gemini', apiKey: '' })
+  const [settings, setSettings] = useState(() => getAISettings())
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null) // null | 'ok' | 'error'
   const [testMsg, setTestMsg] = useState('')
@@ -242,10 +241,6 @@ export default function SettingsPage() {
       setTimeout(() => setMemoryUpdateMsg(''), 4000)
     }
   }
-
-  useEffect(() => {
-    setSettings(getAISettings())
-  }, [])
 
   const currentProvider = PROVIDERS.find(p => p.id === settings.provider)
 

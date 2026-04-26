@@ -179,11 +179,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   // refreshToken > 0 说明数据刚被编辑更新，必须重新查
   // refreshToken === 0 且 initialEntry 已含完整字段（列表查询已扩展 select），直接用
   useEffect(() => {
-    if (refreshToken === 0 && 'people_involved' in initialEntry) {
-      setEntry(initialEntry)
-      resetAnnotations(initialEntry.annotations)
-      return
-    }
+    if (refreshToken === 0 && 'people_involved' in initialEntry) return
     async function loadFull() {
       const { data } = await db.from('journal_entries')
         .select('*').eq('id', initialEntry.id).single()
@@ -339,12 +335,6 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
     setEntry(e => ({ ...e, theme_hints: arr }))
     await handleFieldSave('theme_hints', arr)
-  }
-
-  async function handleCoreNeedsSave(value) {
-    const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
-    setEntry(e => ({ ...e, core_needs: arr }))
-    await handleFieldSave('core_needs', arr)
   }
 
   // ── people_involved 增删 ──────────────────────────────────────

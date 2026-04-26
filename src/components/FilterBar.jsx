@@ -114,12 +114,6 @@ export default function FilterBar({
     return () => clearTimeout(searchTimer.current)
   }, [searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate])
 
-  // 月历展开或切换月份时，查询当月哪些天有记录
-  useEffect(() => {
-    if (!showCalendar || !user) return
-    fetchDatesWithRecords()
-  }, [showCalendar, calendarYear, calendarMonth])
-
   async function fetchDatesWithRecords() {
     const start = new Date(calendarYear, calendarMonth, 1).toISOString()
     const end   = new Date(calendarYear, calendarMonth + 1, 0, 23, 59, 59).toISOString()
@@ -135,6 +129,13 @@ export default function FilterBar({
       })
     ))
   }
+
+  // 月历展开或切换月份时，查询当月哪些天有记录
+  useEffect(() => {
+    if (!showCalendar || !user) return
+    const timer = setTimeout(() => { fetchDatesWithRecords() }, 0)
+    return () => clearTimeout(timer)
+  }, [showCalendar, calendarYear, calendarMonth])
 
   function toggleEmotion(e) {
     setSelectedEmotions(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])

@@ -153,7 +153,7 @@ function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onTogg
 
 const ENTRY_PAGE = 50   // 每次加载的条数
 
-export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter, onOpenLetterList, onEdit, onEntriesMutated }) {
+export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetterList, onEdit, onEntriesMutated }) {
   const { user } = useAuth()
   // ── 多选模式 ────────────────────────────────────────────────
   const [isSelecting, setIsSelecting] = useState(false)
@@ -167,7 +167,19 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
   const [entryOffset, setEntryOffset] = useState(0)
   const [hasMoreEntries, setHasMoreEntries] = useState(false)
   const loadingMoreRef = useRef(false)
-  const [uploadFailedBanner, setUploadFailedBanner] = useState(false)
+  const [initialUploadFailed] = useState(() => {
+    try {
+      const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
+      return {
+        banner: failed.length > 0,
+        count: failed.length,
+      }
+    } catch {
+      // localStorage 操作容错，失败不影响主流程
+      return { banner: false, count: 0 }
+    }
+  })
+  const [uploadFailedBanner, setUploadFailedBanner] = useState(() => initialUploadFailed.banner)
 
   // 搜索 + 筛选
   const [showSearch, setShowSearch]         = useState(false)
@@ -177,7 +189,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
   const [filteredEntries, setFilteredEntries] = useState(null) // null = 无筛选，[] = 筛选结果空
   const [actionEntry, setActionEntry] = useState(null)   // 长按选中的条目
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [uploadFailedCount, setUploadFailedCount] = useState(0)
+  const [uploadFailedCount] = useState(() => initialUploadFailed.count)
 
   // pending_core_needs banner + 处理卡片
   const [pendingCount, setPendingCount]   = useState(0)
@@ -289,25 +301,19 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     }
   }
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = setTimeout(() => { load() }, 0)
+    return () => clearTimeout(timer)
+  }, [load])
 
   // refreshTrigger 变化时做增量刷新（保留旧数据，不出现整页 loading）
   const isFirstRender = useRef(true)
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
-    if (refreshTrigger > 0) refresh()
+    if (refreshTrigger <= 0) return
+    const timer = setTimeout(() => { refresh() }, 0)
+    return () => clearTimeout(timer)
   }, [refreshTrigger, refresh])
-
-  // 检查跨会话图片上传失败标记
-  useEffect(() => {
-    try {
-      const failed = JSON.parse(localStorage.getItem('image_upload_failed') ?? '[]')
-      if (failed.length > 0) {
-        setUploadFailedCount(failed.length)
-        setUploadFailedBanner(true)
-      }
-    } catch (_) {}
-  }, [])
 
   // 加载 core_needs 词库（供「合并到已有词条」）
   useEffect(() => {

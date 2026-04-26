@@ -138,11 +138,6 @@ export default function AwarenessFlow({
   }, [entry.id, entry.content, initialFlowState])
 
   useEffect(() => {
-    if (!flowState) return
-    setCurrentAnswer(getDraftAnswer(flowState))
-  }, [flowState?.currentNodeId])
-
-  useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       if (!latestStateRef.current) return
@@ -170,6 +165,7 @@ export default function AwarenessFlow({
     setOpacity(0)
     await new Promise(resolve => setTimeout(resolve, 260))
     setFlowState(nextState)
+    setCurrentAnswer(getDraftAnswer(nextState))
     setTransitioning(false)
     setOpacity(1)
     setTimeout(() => textareaRef.current?.focus(), 50)
@@ -194,6 +190,7 @@ export default function AwarenessFlow({
     const nextState = rotateLocalPrompt(flowState)
     setAiError('')
     setFlowState(nextState)
+    setCurrentAnswer(getDraftAnswer(nextState))
     scheduleSave(nextState)
   }
 
@@ -319,6 +316,7 @@ export default function AwarenessFlow({
       })
       setAiError('')
       setFlowState(nextState)
+      setCurrentAnswer(getDraftAnswer(nextState))
       scheduleSave(nextState)
       return
     }
@@ -346,6 +344,7 @@ export default function AwarenessFlow({
         now: new Date().toISOString(),
       })
       setFlowState(nextState)
+      setCurrentAnswer(getDraftAnswer(nextState))
       scheduleSave(nextState)
     } catch (error) {
       console.error('[AwarenessFlow] AI 调用失败:', error)

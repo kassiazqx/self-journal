@@ -4,7 +4,6 @@ import { callAI } from '../lib/aiClient'
 import { getSystemPrompt, getInitialUserMessage } from '../lib/prompts'
 import { getMemory } from '../lib/memory'
 import { saveConversation } from '../lib/conversationService'
-import { useAuth } from '../contexts/AuthContext'
 import { resolveTemplate } from '../lib/templates'
 import { getChatSession, saveChatSession } from '../lib/storage'
 
@@ -32,16 +31,40 @@ function Bubble({ msg }) {
 }
 
 export default function AIConversation({ entry, onClose, onSaved }) {
-  const { user } = useAuth()
+  const [initialSession] = useState(() => {
+    const saved = getChatSession(entry.id)
+    if (saved?.msgs?.length > 0) {
+      return {
+        msgs: saved.msgs,
+        systemPrompt: saved.systemPrompt || '',
+        shouldStartChat: false,
+      }
+    }
 
-  const [msgs, setMsgs] = useState([])
+    const dbConvo = entry.full_conversation
+    if (Array.isArray(dbConvo) && dbConvo.length > 0) {
+      return {
+        msgs: dbConvo.map((m, i) => ({ ...m, hidden: i === 0 && m.role === 'user' })),
+        systemPrompt: getSystemPrompt(entry.template_type, {}),
+        shouldStartChat: false,
+      }
+    }
+
+    return {
+      msgs: [],
+      systemPrompt: '',
+      shouldStartChat: true,
+    }
+  })
+
+  const [msgs, setMsgs] = useState(() => initialSession.msgs)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [isRateLimit, setIsRateLimit] = useState(false)
   const [bottomDockOffset, setBottomDockOffset] = useState(0)
-  const systemPromptRef = useRef('')
+  const systemPromptRef = useRef(initialSession.systemPrompt)
   const lastUserMsgRef = useRef('')   // for retry
   const bottomRef = useRef(null)
   const initDoneRef = useRef(false)   // StrictMode double-run guard
@@ -61,59 +84,6 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       })
     }
   }, [msgs])
-
-  // 进入页面：localStorage → DB full_conversation → 新对话
-  useEffect(() => {
-    if (initDoneRef.current) return   // React StrictMode 会跑两次，只跑一次
-    initDoneRef.current = true
-
-    const saved = getChatSession(entry.id)
-    if (saved) {
-      const { msgs: savedMsgs, systemPrompt: savedPrompt } = saved
-      if (savedMsgs?.length > 0) {
-        setMsgs(savedMsgs)
-        systemPromptRef.current = savedPrompt || ''
-        return
-      }
-    }
-
-    // 尝试从 DB 恢复历史对话（"继续聊"入口）
-    const dbConvo = entry.full_conversation
-    if (Array.isArray(dbConvo) && dbConvo.length > 0) {
-      // 重建 system prompt（不需要等 memory，用空记忆即可）
-      const sysPrompt = getSystemPrompt(entry.template_type, {})
-      systemPromptRef.current = sysPrompt
-      // 第一条 user 消息标记 hidden（原始日记内容）
-      const restored = dbConvo.map((m, i) => ({ ...m, hidden: i === 0 && m.role === 'user' }))
-      setMsgs(restored)
-      return
-    }
-
-    startChat()
-  }, [])
-
-  // ── 键盘高度只在 resize 时更新；消息列表自己滚动 ─────────────────
-  useEffect(() => {
-    const vv = window.visualViewport
-
-    function handleResize() {
-      const navEl = document.querySelector('nav')
-      const navHeight = navEl ? navEl.getBoundingClientRect().height : 0
-      const keyboardInset = vv
-        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-        : 0
-      setBottomDockOffset(keyboardInset > 60 ? keyboardInset : navHeight)
-    }
-
-    handleResize()
-    if (!vv) return
-    vv.addEventListener('resize', handleResize)
-    window.addEventListener('resize', handleResize)
-    return () => {
-      vv.removeEventListener('resize', handleResize)
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [])
 
   async function startChat() {
     setLoading(true)
@@ -141,6 +111,48 @@ export default function AIConversation({ entry, onClose, onSaved }) {
       setLoading(false)
     }
   }
+
+  // Bug B 修复：不用 msg.includes('rate')，"GenerateContentRequest" 含 "rate" 会误判
+  function handleError(e) {
+    const msg = e.message || ''
+    const limited = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
+    setIsRateLimit(limited)
+    setError(limited
+      ? '已达到 Gemini 免费额度上限，请稍等后重试，或前往设置更换 API Key'
+      : msg)
+  }
+
+  // 进入页面：localStorage → DB full_conversation → 新对话
+  useEffect(() => {
+    if (initDoneRef.current) return   // React StrictMode 会跑两次，只跑一次
+    initDoneRef.current = true
+    if (!initialSession.shouldStartChat) return
+    const timer = setTimeout(() => { startChat() }, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // ── 键盘高度只在 resize 时更新；消息列表自己滚动 ─────────────────
+  useEffect(() => {
+    const vv = window.visualViewport
+
+    function handleResize() {
+      const navEl = document.querySelector('nav')
+      const navHeight = navEl ? navEl.getBoundingClientRect().height : 0
+      const keyboardInset = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0
+      setBottomDockOffset(keyboardInset > 60 ? keyboardInset : navHeight)
+    }
+
+    handleResize()
+    if (!vv) return
+    vv.addEventListener('resize', handleResize)
+    window.addEventListener('resize', handleResize)
+    return () => {
+      vv.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
 
   async function sendMsg() {
     if (!input.trim() || loading) return
@@ -188,15 +200,6 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     }
   }
 
-  // Bug B 修复：不用 msg.includes('rate')，"GenerateContentRequest" 含 "rate" 会误判
-  function handleError(e) {
-    const msg = e.message || ''
-    const limited = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
-    setIsRateLimit(limited)
-    setError(limited
-      ? '已达到 Gemini 免费额度上限，请稍等后重试，或前往设置更换 API Key'
-      : msg)
-  }
   async function finishAndSave() {
     if (saving || loading) return
     setSaving(true)

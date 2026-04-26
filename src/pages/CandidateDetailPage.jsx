@@ -14,16 +14,11 @@ function formatDate(isoStr) {
 
 export default function CandidateDetailPage({ thread: initialThread, onBack, onAccepted, onIgnored, onOpenEntry }) {
   const { user } = useAuth()
-  const [thread, setThread] = useState(initialThread)
+  const thread = initialThread
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [toast, setToast] = useState('')
-
-  useEffect(() => {
-    if (!thread?.id) return
-    loadEntries()
-  }, [thread?.id])
 
   async function loadEntries() {
     setLoading(true)
@@ -35,6 +30,12 @@ export default function CandidateDetailPage({ thread: initialThread, onBack, onA
     setEntries((data ?? []).map(r => r.journal_entries).filter(Boolean))
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (!thread?.id) return
+    const timer = setTimeout(() => { loadEntries() }, 0)
+    return () => clearTimeout(timer)
+  }, [thread?.id])
 
   async function handleAccept() {
     if (acting) return

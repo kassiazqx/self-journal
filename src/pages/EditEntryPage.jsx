@@ -47,7 +47,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
   const [messages, setMessages] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
-  const [editDatetime, setEditDatetime] = useState(new Date(entry.created_at ?? Date.now()))
+  const [editDatetime, setEditDatetime] = useState(() => new Date(entry.created_at))
   const [showPicker, setShowPicker] = useState(false)
 
   // 图片：已有路径（从 entry.image_urls 初始化） + 新选文件
@@ -146,7 +146,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     menuVisible, menuPosition,
     closeMenu,
     handleBold, handleHighlight, handleUnderline,
-    handleCancel, openMenuForRange, openMenuAt, hasOverlap,
+    handleCancel, openMenuAt, hasOverlap,
   } = useAnnotationInteraction({
     containerRef: editorContainerRef,
     rawText: contentMap['__raw__'] ?? '',
@@ -315,7 +315,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
           )}
 
           {/* ── 有觉察流：逐条渲染 ── */}
-          {messages.map((msg, i) => {
+          {messages.map((msg) => {
 
             // 原始日记（可编辑大文本框）
             if (msg.nodeType === 'raw_entry') {

@@ -291,13 +291,6 @@ export async function checkAndGenerateLetter(userId) {
   const prefs = await getUserLetterPrefs(userId)
   if (prefs.type === 'manual') return  // 手动触发，不自动生成
 
-  const { data: lastLetter } = await db.from('review_letters')
-    .select('created_at, period_end')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
   const { count: newEntryCount } = await db.from('journal_entries')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
@@ -324,13 +317,6 @@ export async function updateReviewLetter(letterId, userId, fields) {
 
 // ── 手动立即生成（设置页按钮调用）──────────────────────────────
 export async function generateLetterNow(userId) {
-  const { data: lastLetter } = await db.from('review_letters')
-    .select('period_end')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
   const prefs = await getUserLetterPrefs(userId)
   // 手动触发不限制时间范围：covered_by_letter_id IS NULL 已能识别未覆盖条目
   // 不传 period_end 作为 periodStart，避免旧时间戳条目被排除

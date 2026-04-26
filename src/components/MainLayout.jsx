@@ -2,7 +2,6 @@
 // 4 Tab 导航：写 / 记录 / 洞察 / 我的
 // 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail 等）
 import { useState, useEffect, useRef } from 'react'
-import { useAuth } from '../contexts/AuthContext'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
 import HomePage from '../pages/HomePage'
 import RecordsPage from '../pages/RecordsPage'
@@ -25,7 +24,6 @@ const NAV_ITEMS = [
 ]
 
 export default function MainLayout() {
-  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
