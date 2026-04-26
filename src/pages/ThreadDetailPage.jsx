@@ -2,7 +2,7 @@
 // 脉络详情页：mode='confirmed'（默认）或 mode='archived'
 // mode=confirmed：··· 菜单（编辑名称/编辑记录/重新分析/归档/删除）+ 编辑关联记录模式
 // mode=archived：只读 banner + 底部恢复/永久删除
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import React from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
@@ -66,7 +66,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations, thread?.id])
+  }, [dirty, annotations, thread?.id, user?.id, markSaved])
 
   // ··· 菜单
   const [showMenu, setShowMenu] = useState(false)
@@ -106,8 +106,6 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   // 永久删除确认弹窗（归档态使用）
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  useEffect(() => { if (thread?.id) load() }, [thread?.id])
-
   // 加载内容类型标签（用于 FilterBar categoryOptions）
   useEffect(() => {
     if (!user) return
@@ -119,9 +117,9 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
     loadContacts().then(list => setPeopleOptions((list ?? []).map(c => c.canonical))).catch(() => {})
     loadCoreNeeds().then(list => setCoreNeedOptions((list ?? []).map(n => n.option_value))).catch(() => {})
-  }, [user?.id])
+  }, [user])
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     const { thread: t, entries: e } = await fetchThreadWithEntries(thread.id)
     if (t) {
@@ -137,7 +135,13 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     )
     setLoading(false)
-  }
+  }, [thread.id, resetAnnotations])
+
+  useEffect(() => {
+    if (!thread?.id) return
+    const timer = setTimeout(() => { load() }, 0)
+    return () => clearTimeout(timer)
+  }, [thread?.id, load])
 
   // ── 编辑名称 ──────────────────────────────────────────────────
   async function handleSaveName() {
@@ -163,7 +167,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
   }
 
   // ── 编辑关联记录：加载默认列表（按时间倒序，每页 30 条）─────
-  async function loadDefaultEntries(offset = 0) {
+  const loadDefaultEntries = useCallback(async (offset = 0) => {
     if (loadingRef.current) return   // 同步锁：防止并发
     loadingRef.current = true
     setLoadingMore(true)
@@ -183,7 +187,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     setDefaultOffset(offset)
     loadingRef.current = false
     setLoadingMore(false)
-  }
+  }, [rawEntries, user])
 
   async function loadMore() {
     await loadDefaultEntries(defaultOffset + 30)
@@ -198,19 +202,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     }
   }
 
-  // ── 编辑关联记录：搜索 ────────────────────────────────────────
-  useEffect(() => {
-    if (!editingEntries) return
-    if (!searchQuery.trim()) {
-      if (filterConditions) return
-      const timer = setTimeout(() => { loadDefaultEntries(0) }, 0)
-      return () => clearTimeout(timer)
-    }
-    const timer = setTimeout(() => doSearch(searchQuery), 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery, editingEntries, filterConditions])
-
-  async function doSearch(q) {
+  const doSearch = useCallback(async (q) => {
     setSearching(true)
     const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_')
     const { data } = await db.from('journal_entries')
@@ -223,11 +215,23 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     const allExistingIds = new Set((rawEntries ?? []).map(r => r.entry_id))
     setSearchResults((data ?? []).filter(e => !allExistingIds.has(e.id)))
     setSearching(false)
-  }
+  }, [rawEntries, user])
+
+  // ── 编辑关联记录：搜索 ────────────────────────────────────────
+  useEffect(() => {
+    if (!editingEntries) return
+    if (!searchQuery.trim()) {
+      if (filterConditions) return
+      const timer = setTimeout(() => { loadDefaultEntries(0) }, 0)
+      return () => clearTimeout(timer)
+    }
+    const timer = setTimeout(() => doSearch(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, editingEntries, filterConditions, doSearch, loadDefaultEntries])
 
   // 编辑模式：FilterBar 的 onFilter 回调
   // 有任意条件 → 执行筛选查询；无条件 → 恢复默认列表
-  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {
+  const handleFilter = useCallback(async ({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) => {
     const hasFilter = searchText.trim() || selectedEmotions.length ||
                       selectedCategories.length || selectedPeople.length ||
                       selectedCoreNeeds.length || selectedDate
@@ -283,7 +287,7 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
     const { data } = await query
     setSearchResults((data ?? []).filter(e => !allExistingIds.has(e.id)))
     setSearching(false)
-  }
+  }, [loadDefaultEntries, rawEntries, user])
 
   // ── 编辑关联记录：移除（软删除 removed_by_user=true）────────
   async function handleRemoveEntry(entryId) {

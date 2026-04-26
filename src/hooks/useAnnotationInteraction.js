@@ -28,7 +28,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  */
 export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations, disableSelectionChange = false }) {
   // 判断 [selStart, selEnd) 内每个字符是否都被 type 类型标注覆盖
-  function isFullyCovered(selStart, selEnd, type) {
+  const isFullyCovered = useCallback((selStart, selEnd, type) => {
     const ofType = (annotations ?? []).filter(
       a => a.type === type && a.end > selStart && a.start < selEnd
     )
@@ -41,7 +41,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
       if (covered >= selEnd) return true
     }
     return covered >= selEnd
-  }
+  }, [annotations])
 
   const [menuVisible, setMenuVisible] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, flipDown: false })
@@ -157,7 +157,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     window.getSelection()?.removeAllRanges()
   }, []) // intentionally empty — no captured vars
 
-  function applyAnnotation(type, color) {
+  const applyAnnotation = useCallback((type, color) => {
     const r = pendingRangeRef.current
     if (!r) return
     if (isFullyCovered(r.start, r.end, type)) {
@@ -167,11 +167,11 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
       addAnnotation(type, color, r.start, r.end)
     }
     closeMenu()
-  }
+  }, [isFullyCovered, clipAnnotations, addAnnotation, closeMenu])
 
-  const handleBold      = useCallback(() => applyAnnotation('bold', undefined),       [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
-  const handleHighlight = useCallback(() => applyAnnotation('highlight', activeColor), [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
-  const handleUnderline = useCallback(() => applyAnnotation('underline', activeColor), [addAnnotation, clipAnnotations, activeColor, closeMenu, annotations])
+  const handleBold      = useCallback(() => applyAnnotation('bold', undefined),       [applyAnnotation])
+  const handleHighlight = useCallback(() => applyAnnotation('highlight', activeColor), [applyAnnotation, activeColor])
+  const handleUnderline = useCallback(() => applyAnnotation('underline', activeColor), [applyAnnotation, activeColor])
 
   // Rule 1：取消 — 剪切选区内所有类型的所有标注
   const handleCancel = useCallback(() => {
@@ -193,7 +193,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
       }
     }
     // 不关闭菜单，用户可能继续操作
-  }, [setActiveColor, clipAnnotations, addAnnotation, annotations])
+  }, [setActiveColor, clipAnnotations, addAnnotation, isFullyCovered])
 
   // Rule 3：单击已标注 Segment → 以覆盖该 segment 的所有标注的并集为虚拟选区，弹出菜单
   const openMenuForRange = useCallback((e, segStart, segEnd) => {
@@ -217,7 +217,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     setHasOverlap(true)
     setMenuPosition({ top, left, flipDown })
     setMenuVisible(true)
-  }, [annotations, containerRef])
+  }, [annotations, containerRef, isTouchDevice, rawText.length])
 
   /**
    * Lexical 场景专用：接收已计算好的 {start, end} 偏移和选区 DOMRect，直接弹菜单。
@@ -243,7 +243,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     const top = flipDown ? selectionRect.bottom - containerRect.top : rawTop
     setMenuPosition({ top, left, flipDown })
     setMenuVisible(true)
-  }, [annotations, containerRef])
+  }, [annotations, containerRef, isTouchDevice])
 
   return {
     menuVisible,

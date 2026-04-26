@@ -168,7 +168,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations])
+  }, [dirty, annotations, entry.id, entry.user_id, markSaved])
 
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
@@ -189,7 +189,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       }
     }
     loadFull()
-  }, [initialEntry.id, refreshToken])
+  }, [initialEntry, refreshToken, resetAnnotations])
 
   // 读取对话记录（conversations 表；refreshToken 变化时重新拉取）
   useEffect(() => {
@@ -245,7 +245,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       setCategoryOptions([...userOptionLabels, ...orphans])
     }
     loadCategoryOptions()
-  }, [user?.id, entry.id])
+  }, [user?.id, entry.id, entry.category_tags])
 
   // 加载联系人列表（RecordDetail 编辑时用）
   useEffect(() => {

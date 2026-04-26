@@ -51,7 +51,7 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations])
+  }, [dirty, annotations, letter.id, user?.id, markSaved])
 
   // 进入后标记已读，同时补拉 annotations（列表查询不含此字段）
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
         setLetter(l => ({ ...l, is_read: true }))
         resetAnnotations(data.annotations)
       })
-  }, [letter?.id])
+  }, [letter?.id, letter.is_read, resetAnnotations])
 
   // 加载本封信关联的候选脉络
   useEffect(() => {

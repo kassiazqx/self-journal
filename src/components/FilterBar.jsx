@@ -112,7 +112,7 @@ export default function FilterBar({
       onFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate })
     }, 300)
     return () => clearTimeout(searchTimer.current)
-  }, [searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate])
+  }, [searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate, onFilter])
 
   const fetchDatesWithRecords = useCallback(async () => {
     const start = new Date(calendarYear, calendarMonth, 1).toISOString()

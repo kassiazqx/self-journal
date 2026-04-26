@@ -457,7 +457,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     }
   }
 
-  async function handleFilter({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) {
+  const handleFilter = useCallback(async ({ searchText, selectedEmotions, selectedCategories, selectedPeople, selectedCoreNeeds, selectedDate }) => {
     const hasFilter = searchText.trim() || selectedEmotions.length ||
                       selectedCategories.length || selectedPeople.length ||
                       selectedCoreNeeds.length || selectedDate
@@ -505,7 +505,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
 
     const { data } = await query
     setFilteredEntries(data ?? [])
-  }
+  }, [user])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f5f3ef' }}>
