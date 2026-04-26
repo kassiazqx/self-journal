@@ -37,7 +37,7 @@ function ScrollColumn({ items, selected, onSelect }) {
     if (!ref.current) return
     const idx = items.indexOf(selected)
     if (idx >= 0) ref.current.scrollTop = idx * ITEM_H
-  }, []) // 仅 mount 时执行
+  }, [items, selected])
 
   function handleScroll() {
     if (ticking.current) return

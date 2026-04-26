@@ -608,7 +608,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
     clearDraft()
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
-  }, [content, saving, template, user, onDone, annotations])
+  }, [content, saving, template, user, onDone, annotations, selectedDatetime])
 
   // ── 图片选择 ──────────────────────────────────────────────────
   const handleImageSelect = (e) => {

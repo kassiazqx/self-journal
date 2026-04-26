@@ -107,7 +107,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
       setContentMap(map)
     }
     load()
-  }, [entry.id])
+  }, [entry.id, entry.content])
 
   // 卸载时释放 ObjectURL，防止内存泄漏
   useEffect(() => {

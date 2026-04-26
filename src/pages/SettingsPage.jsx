@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { fetchAllEntries } from '../lib/journalService'
@@ -77,25 +77,26 @@ export default function SettingsPage() {
   const [needDraft, setNeedDraft]             = useState('')
   const [newNeedInput, setNewNeedInput]       = useState('')
 
-  useEffect(() => {
-    if (!user) return
-    loadTagOptions()
-    getUserLetterPrefs(user.id).then(prefs => {
-      if (prefs) {
-        setLetterPrefs(prefs)
-        setCountInput(String(prefs.count_threshold ?? 10))
-      }
-    }).catch(() => {})
-  }, [user])
-
-  async function loadTagOptions() {
+  const loadTagOptions = useCallback(async () => {
     const { data } = await db.from('user_options')
       .select('id, option_value, sort_order')
       .eq('user_id', user.id)
       .eq('field_name', 'content_category')
       .order('sort_order', { ascending: true })
     setTagOptions(data ?? [])
-  }
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const timer = setTimeout(() => { loadTagOptions() }, 0)
+    getUserLetterPrefs(user.id).then(prefs => {
+      if (prefs) {
+        setLetterPrefs(prefs)
+        setCountInput(String(prefs.count_threshold ?? 10))
+      }
+    }).catch(() => {})
+    return () => clearTimeout(timer)
+  }, [user, loadTagOptions])
 
   async function loadContactsData() {
     const data = await loadContacts()

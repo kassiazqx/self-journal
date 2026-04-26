@@ -404,7 +404,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
       .then(({ data }) => setCategoryOptions((data ?? []).map(r => r.option_value)))
     loadContacts().then(list => setPeopleOptions((list ?? []).map(c => c.canonical))).catch(() => {})
     loadCoreNeeds().then(list => setCoreNeedOptions((list ?? []).map(n => n.option_value))).catch(() => {})
-  }, [user?.id])
+  }, [user])
 
   // 按日期分组
   const groups = []

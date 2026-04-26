@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ArrowLeft, Send, Loader2, Sparkles, Check, RotateCcw } from 'lucide-react'
 import { callAI } from '../lib/aiClient'
 import { getSystemPrompt, getInitialUserMessage } from '../lib/prompts'
@@ -83,9 +83,19 @@ export default function AIConversation({ entry, onClose, onSaved }) {
         systemPrompt: systemPromptRef.current,
       })
     }
-  }, [msgs])
+  }, [msgs, entry.id])
 
-  async function startChat() {
+  // Bug B 修复：不用 msg.includes('rate')，"GenerateContentRequest" 含 "rate" 会误判
+  const handleError = useCallback((e) => {
+    const msg = e.message || ''
+    const limited = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
+    setIsRateLimit(limited)
+    setError(limited
+      ? '已达到 Gemini 免费额度上限，请稍等后重试，或前往设置更换 API Key'
+      : msg)
+  }, [])
+
+  const startChat = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -110,17 +120,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Bug B 修复：不用 msg.includes('rate')，"GenerateContentRequest" 含 "rate" 会误判
-  function handleError(e) {
-    const msg = e.message || ''
-    const limited = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
-    setIsRateLimit(limited)
-    setError(limited
-      ? '已达到 Gemini 免费额度上限，请稍等后重试，或前往设置更换 API Key'
-      : msg)
-  }
+  }, [entry, handleError])
 
   // 进入页面：localStorage → DB full_conversation → 新对话
   useEffect(() => {
@@ -129,7 +129,7 @@ export default function AIConversation({ entry, onClose, onSaved }) {
     if (!initialSession.shouldStartChat) return
     const timer = setTimeout(() => { startChat() }, 0)
     return () => clearTimeout(timer)
-  }, [])
+  }, [initialSession.shouldStartChat, startChat])
 
   // ── 键盘高度只在 resize 时更新；消息列表自己滚动 ─────────────────
   useEffect(() => {

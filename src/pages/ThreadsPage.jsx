@@ -1,6 +1,6 @@
 // src/pages/ThreadsPage.jsx
 // 脉络列表页：三 Tab（已确认 / 待确认 / 已归档）
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { fetchThreads, createThread, deleteThread, addEntryToThread, reAnalyzeThread } from '../lib/threadService'
@@ -41,14 +41,18 @@ export default function ThreadsPage({ onBack, onOpenThread, onOpenCandidate, def
   const pressTimer = useRef(null)
   const didLongPress = useRef(false)
 
-  useEffect(() => { if (user) load() }, [user])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     const { data } = await fetchThreads(user.id)
     setThreads(data ?? [])
     setLoading(false)
-  }
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const timer = setTimeout(() => { load() }, 0)
+    return () => clearTimeout(timer)
+  }, [user, load])
 
   // ── 手动创建 ──────────────────────────────────────────────────
   async function openCreating() {

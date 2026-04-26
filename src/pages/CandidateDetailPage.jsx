@@ -1,7 +1,7 @@
 // src/pages/CandidateDetailPage.jsx
 // 候选脉络详情页：AI 发现理由 + 关联记录（只读）+ 接受/忽略
 // ⚠️ 独立文件：内容结构与 ThreadDetailPage 不同（AI理由 ≠ arc_summary）
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateThread } from '../lib/threadService'
@@ -20,7 +20,7 @@ export default function CandidateDetailPage({ thread: initialThread, onBack, onA
   const [acting, setActing] = useState(false)
   const [toast, setToast] = useState('')
 
-  async function loadEntries() {
+  const loadEntries = useCallback(async () => {
     setLoading(true)
     const { data } = await db.from('thread_entries')
       .select('entry_id, added_at, journal_entries(id, entry_summary, created_at, template_type)')
@@ -29,13 +29,13 @@ export default function CandidateDetailPage({ thread: initialThread, onBack, onA
       .order('added_at', { ascending: true })
     setEntries((data ?? []).map(r => r.journal_entries).filter(Boolean))
     setLoading(false)
-  }
+  }, [thread.id])
 
   useEffect(() => {
     if (!thread?.id) return
     const timer = setTimeout(() => { loadEntries() }, 0)
     return () => clearTimeout(timer)
-  }, [thread?.id])
+  }, [loadEntries, thread?.id])
 
   async function handleAccept() {
     if (acting) return
