@@ -71,8 +71,12 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     addAnnotation, clipAnnotations, applyShift, markSaved,
   } = useAnnotations(entry.annotations ?? [])
 
+  const rawEditorRef = useRef(null)
   const editorContainerRef = useRef(null)
   const prevTextRef = useRef(entry.content ?? '')
+  const getLatestRawText = useCallback(() => (
+    rawEditorRef.current?.getValue?.() ?? contentMap['__raw__'] ?? ''
+  ), [contentMap])
 
   // 后台加载 conversations 表（不阻塞编辑器渲染）
   useEffect(() => {
@@ -146,20 +150,27 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
     menuVisible, menuPosition,
     closeMenu,
     handleBold, handleHighlight, handleUnderline,
-    handleCancel, openMenuAt, hasOverlap,
+    handleCancel, handleColorChange, openMenuFromSelectionSnapshot, openMenuFromAnnotationSnapshot, hasOverlap,
   } = useAnnotationInteraction({
     containerRef: editorContainerRef,
     rawText: contentMap['__raw__'] ?? '',
+    getRawText: getLatestRawText,
     addAnnotation,
     clipAnnotations,
     activeColor,
+    setActiveColor,
     annotations,
+    disableSelectionChange: true,
   })
 
-  const handleRangeSelect = useCallback((offsets, selectionRect) => {
-    if (offsets.start >= offsets.end) return
-    openMenuAt(offsets, selectionRect)
-  }, [openMenuAt])
+  const handleSelectionSnapshot = useCallback((snapshot) => {
+    if (snapshot.start >= snapshot.end) return
+    openMenuFromSelectionSnapshot(snapshot)
+  }, [openMenuFromSelectionSnapshot])
+
+  const handleAnnotationSnapshot = useCallback((snapshot) => {
+    openMenuFromAnnotationSnapshot(snapshot)
+  }, [openMenuFromAnnotationSnapshot])
 
   function handleRawChange(newText) {
     hasStartedEditingRef.current = true
@@ -293,10 +304,12 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
           {messages.length === 0 && (
             <div ref={editorContainerRef} style={{ position: 'relative' }}>
               <RichTextEditor
+                ref={rawEditorRef}
                 initialValue={contentMap['__raw__'] ?? ''}
                 annotations={annotations}
                 onChange={handleRawChange}
-                onRangeSelect={handleRangeSelect}
+                onSelectionSnapshot={handleSelectionSnapshot}
+                onAnnotationSnapshot={handleAnnotationSnapshot}
                 style={{ minHeight: '60vh', fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
               />
               <AnnotationMenu
@@ -306,7 +319,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
                 onBold={handleBold}
                 onHighlight={handleHighlight}
                 onUnderline={handleUnderline}
-                onColorChange={setActiveColor}
+                onColorChange={handleColorChange}
                 onClose={closeMenu}
                 showCancel={hasOverlap}
                 onCancel={handleCancel}
@@ -322,10 +335,12 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
               return (
                 <div key={msg.id} ref={editorContainerRef} style={{ position: 'relative', marginBottom: 20 }}>
                   <RichTextEditor
+                    ref={rawEditorRef}
                     initialValue={contentMap[msg.id] ?? ''}
                     annotations={annotations}
                     onChange={handleRawChange}
-                    onRangeSelect={handleRangeSelect}
+                    onSelectionSnapshot={handleSelectionSnapshot}
+                    onAnnotationSnapshot={handleAnnotationSnapshot}
                     style={{ minHeight: 60, fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
                   />
                   <AnnotationMenu
@@ -335,7 +350,7 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
                     onBold={handleBold}
                     onHighlight={handleHighlight}
                     onUnderline={handleUnderline}
-                    onColorChange={setActiveColor}
+                    onColorChange={handleColorChange}
                     onClose={closeMenu}
                     showCancel={hasOverlap}
                     onCancel={handleCancel}

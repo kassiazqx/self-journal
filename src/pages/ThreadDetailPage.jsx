@@ -53,20 +53,42 @@ export default function ThreadDetailPage({ thread: initialThread, mode = 'confir
       annotations,
     })
 
+  const latestAnnotationsRef = React.useRef(annotations)
+  const dirtyRef = React.useRef(dirty)
+  useEffect(() => {
+    latestAnnotationsRef.current = annotations
+    dirtyRef.current = dirty
+  }, [annotations, dirty])
+
+  const saveAnnotationsNow = useCallback(async (nextAnnotations) => {
+    if (!user?.id || !thread?.id) return
+    await updateThread(thread.id, user.id, { current_state_annotations: nextAnnotations })
+  }, [thread, user])
+
   const saveTimerRef = React.useRef(null)
   React.useEffect(() => {
     if (!dirty || !thread?.id) return
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await updateThread(thread.id, user.id, { current_state_annotations: annotations })
+        await saveAnnotationsNow(annotations)
         markSaved()
       } catch (e) {
         console.error('[ThreadDetailPage] current_state_annotations 保存失败:', e)
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations, thread?.id, user?.id, markSaved])
+  }, [dirty, annotations, thread?.id, markSaved, saveAnnotationsNow])
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(saveTimerRef.current)
+      if (!dirtyRef.current) return
+      saveAnnotationsNow(latestAnnotationsRef.current).catch(e => {
+        console.error('[ThreadDetailPage] current_state_annotations 离页保存失败:', e)
+      })
+    }
+  }, [saveAnnotationsNow])
 
   // ··· 菜单
   const [showMenu, setShowMenu] = useState(false)

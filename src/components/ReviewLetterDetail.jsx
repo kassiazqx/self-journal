@@ -1,6 +1,6 @@
 // src/components/ReviewLetterDetail.jsx
 // 回顾信详情页：只读展示信正文、关联记录跳转、相关脉络卡片
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import React from 'react'
 import { db } from '../lib/db'
 import { useAuth } from '../contexts/AuthContext'
@@ -38,20 +38,42 @@ export default function ReviewLetterDetail({ letter: initialLetter, onBack, onOp
       annotations,
     })
 
+  const latestAnnotationsRef = React.useRef(annotations)
+  const dirtyRef = React.useRef(dirty)
+  useEffect(() => {
+    latestAnnotationsRef.current = annotations
+    dirtyRef.current = dirty
+  }, [annotations, dirty])
+
+  const saveAnnotationsNow = useCallback(async (nextAnnotations) => {
+    if (!user?.id) return
+    await updateReviewLetter(letter.id, user.id, { annotations: nextAnnotations })
+  }, [letter.id, user])
+
   const saveTimerRef = React.useRef(null)
   React.useEffect(() => {
     if (!dirty) return
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await updateReviewLetter(letter.id, user.id, { annotations })
+        await saveAnnotationsNow(annotations)
         markSaved()
       } catch (e) {
         console.error('[ReviewLetterDetail] annotations 保存失败:', e)
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations, letter.id, user?.id, markSaved])
+  }, [dirty, annotations, markSaved, saveAnnotationsNow])
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(saveTimerRef.current)
+      if (!dirtyRef.current) return
+      saveAnnotationsNow(latestAnnotationsRef.current).catch(e => {
+        console.error('[ReviewLetterDetail] annotations 离页保存失败:', e)
+      })
+    }
+  }, [saveAnnotationsNow])
 
   // 进入后标记已读，同时补拉 annotations（列表查询不含此字段）
   useEffect(() => {

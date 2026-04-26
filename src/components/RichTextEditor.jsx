@@ -1,6 +1,6 @@
 // src/components/RichTextEditor.jsx
-// Lexical 富文本编辑器封装，暴露 onChange(plaintext) 和 onRangeSelect({start,end}, event)
-// 支持中文 IME（compositionstart/end 守门），提取纯文本，注册 AnnotatedNode 节点类型
+// Lexical 富文本编辑器封装。
+// 标注交互统一在 editor 层处理，页面层只消费 SelectionSnapshot / AnnotationSnapshot。
 import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
@@ -10,8 +10,10 @@ import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { $getRoot, $getSelection, $createParagraphNode, $createTextNode } from 'lexical'
 import { AnnotatedNode } from './RichTextEditor/AnnotatedNode'
+import AnnotationInteractionPlugin from './RichTextEditor/AnnotationInteractionPlugin'
 import { applyAnnotationTransform } from './RichTextEditor/annotationTransform'
 import { selectionToOffsets } from './RichTextEditor/selectionToOffsets'
+import { webClipboardPort, webSelectionUiPort, webViewportPort } from './RichTextEditor/platformPorts'
 
 function onError(error) {
   console.error('[RichTextEditor]', error)
@@ -29,29 +31,44 @@ function AnnotationTransformPlugin({ annotations }) {
   return null
 }
 
-// ── Plugin：mouseup 时读选区，换算为绝对偏移后回调 ──
-function MouseUpPlugin({ onRangeSelect }) {
+// 桌面旧链路已稳定，先保留，不和移动端新逻辑强绑。
+function MouseUpPlugin({ onRangeSelect, enabled = true }) {
   const [editor] = useLexicalComposerContext()
+
   useEffect(() => {
-    function handleMouseUp() {
-      // 直接在 mouseup 里同步读取，不用 setTimeout
-      // setTimeout(0) 在桌面上有时 selection 已被清除
+    if (!enabled || !onRangeSelect) return undefined
+
+    function readSelection(rect) {
+      let handled = false
       editor.read(() => {
         const offsets = selectionToOffsets($getSelection())
         if (!offsets) return
-        try {
-          const sel = window.getSelection()
-          if (sel && sel.rangeCount > 0) {
-            const rect = sel.getRangeAt(0).getBoundingClientRect()
-            onRangeSelect?.(offsets, rect)
-          }
-        } catch { /* ignore */ }
+        handled = true
+        onRangeSelect(offsets, rect)
       })
+      return handled
     }
+
+    function handleMouseUp() {
+      try {
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) return
+        const rect = sel.getRangeAt(0).getBoundingClientRect()
+
+        // 桌面大多数情况同步可读；首次 drag 选区偶发 Lexical selection 还没就绪，
+        // 仅在同步失败时补一次微延迟兜底，避免把稳定链路全部改坏。
+        if (readSelection(rect)) return
+        setTimeout(() => { readSelection(rect) }, 0)
+      } catch {
+        // ignore
+      }
+    }
+
     const root = editor.getRootElement()
     root?.addEventListener('mouseup', handleMouseUp)
     return () => root?.removeEventListener('mouseup', handleMouseUp)
-  }, [editor, onRangeSelect])
+  }, [editor, enabled, onRangeSelect])
+
   return null
 }
 
@@ -69,19 +86,61 @@ function EditorRefPlugin({ editorRef }) {
  *   initialValue   {string}
  *   annotations    {Array}   标注数组，传入后在编辑器内渲染
  *   onChange       {(plaintext: string) => void}
- *   onRangeSelect  {({start, end}, mouseEvent) => void}  选中文字后触发
+ *   onSelectionSnapshot {(snapshot) => void}
+ *   onAnnotationSnapshot {(snapshot) => void}
+ *   onRangeSelect  {({start, end}, rect) => void}  兼容旧调用方
  *   placeholder    {string}
  *   style          {object}
+ *   platformPorts  {{ selectionUi?, clipboard?, viewport? }} 平台接口，便于后续 APK/iOS bridge 接入
  *
  * ref: { focus(), getValue() }
  */
 const RichTextEditor = forwardRef(function RichTextEditor(
-  { initialValue = '', annotations = [], onChange, onRangeSelect, placeholder, style },
+  {
+    initialValue = '',
+    annotations = [],
+    onChange,
+    onSelectionSnapshot,
+    onAnnotationSnapshot,
+    onRangeSelect,
+    placeholder,
+    style,
+    platformPorts,
+  },
   ref
 ) {
   const contentEditableRef = useRef(null)
   const isComposingRef = useRef(false)
   const lexicalEditorRef = useRef(null)
+  const selectionUiPort = platformPorts?.selectionUi ?? webSelectionUiPort
+  const clipboardPort = platformPorts?.clipboard ?? webClipboardPort
+  const viewportPort = platformPorts?.viewport ?? webViewportPort
+  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
+  const handleSelectionSnapshot = onSelectionSnapshot ?? (onRangeSelect
+    ? (snapshot) => onRangeSelect?.({ start: snapshot.start, end: snapshot.end }, snapshot.rect)
+    : undefined)
+
+  const handleDesktopRangeSelect = handleSelectionSnapshot
+    ? (offsets, rect) => {
+        handleSelectionSnapshot({
+          source: 'mouse',
+          start: offsets.start,
+          end: offsets.end,
+          text: '',
+          rect,
+          preserveDomSelection: false,
+          suppressNativeSelection: false,
+          actions: {
+            annotate: true,
+            copy: true,
+            cut: true,
+            paste: true,
+            selectAll: true,
+          },
+        })
+      }
+    : onRangeSelect
 
   useImperativeHandle(ref, () => ({
     focus() { contentEditableRef.current?.focus() },
@@ -98,6 +157,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     theme: {},
     onError,
     nodes: [AnnotatedNode],
+    editable: true,
     editorState: (editor) => {
       if (!initialValue) return
       editor.update(() => {
@@ -136,6 +196,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           contentEditable={
             <ContentEditable
               ref={contentEditableRef}
+              data-clipboard-port={clipboardPort.canWriteText() ? 'web' : 'none'}
+              data-viewport-port={viewportPort.getVisualViewport() ? 'visualViewport' : 'window'}
               style={{
                 outline: 'none', width: '100%', minHeight: '60vh',
                 fontSize: 15, lineHeight: 1.85, color: '#2d2d2d',
@@ -161,7 +223,14 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <AnnotationTransformPlugin annotations={annotations} />
-        <MouseUpPlugin onRangeSelect={onRangeSelect} />
+        <MouseUpPlugin onRangeSelect={handleDesktopRangeSelect} enabled={!isTouchDevice} />
+        <AnnotationInteractionPlugin
+          onSelectionSnapshot={handleSelectionSnapshot}
+          onAnnotationSnapshot={onAnnotationSnapshot}
+          isComposingRef={isComposingRef}
+          selectionUiPort={selectionUiPort}
+          enableTouchSelection={isTouchDevice}
+        />
         <EditorRefPlugin editorRef={lexicalEditorRef} />
       </div>
     </LexicalComposer>

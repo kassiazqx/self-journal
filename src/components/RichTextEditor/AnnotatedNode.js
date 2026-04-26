@@ -32,6 +32,8 @@ export class AnnotatedNode extends TextNode {
 
   _applyStyle(dom) {
     const s = this.__annotationStyle
+    dom.dataset.annotationMarker = 'annotated'
+    dom.dataset.annotationNodeKey = this.getKey()
     dom.style.fontWeight              = s.fontWeight ?? ''
     dom.style.background              = s.background ?? ''
     dom.style.textDecoration          = s.textDecoration ?? ''

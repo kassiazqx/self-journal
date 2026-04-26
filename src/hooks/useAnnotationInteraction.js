@@ -1,33 +1,39 @@
-// src/hooks/useAnnotationInteraction.js
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { webSelectionUiPort } from '../components/RichTextEditor/platformPorts'
 
 /**
- * 封装「长按/选区 → 弹出菜单 → addAnnotation」的交互逻辑。
- *
- * @param {object} params
- * @param {React.RefObject} params.containerRef - 绑在文本容器上的 ref（position: relative）
- * @param {string} params.rawText - 原始纯文本（与 DB 存储、AnnotatedText 接收的完全一致）
- * @param {Function} params.addAnnotation - useAnnotations 返回的 addAnnotation
- * @param {Function} params.clipAnnotations - useAnnotations 返回的 clipAnnotations
- * @param {string} params.activeColor - useAnnotations 返回的 activeColor
- * @param {Array} params.annotations - useAnnotations 返回的 annotations（用于 Rule 1/2/3）
- *
- * @returns {{
- *   menuVisible: boolean,
- *   menuPosition: { top: number, left: number },
- *   handleMouseUp: Function,
- *   handleTouchEnd: Function,
- *   closeMenu: Function,
- *   handleBold: Function,
- *   handleHighlight: Function,
- *   handleUnderline: Function,
- *   handleCancel: Function,
- *   openMenuForRange: Function,
- *   hasOverlap: boolean,
- * }}
+ * @typedef {object} SelectionSnapshot
+ * @property {'mouse'|'touch'|'selectionchange'|'annotation-click'} source
+ * @property {number} start
+ * @property {number} end
+ * @property {string} text
+ * @property {{ top: number, left: number, right: number, bottom: number, width: number, height: number } | null} rect
+ * @property {boolean} preserveDomSelection
+ * @property {boolean} suppressNativeSelection
+ * @property {{ annotate: boolean, copy: boolean, cut: boolean, paste: boolean, selectAll: boolean }} actions
  */
-export function useAnnotationInteraction({ containerRef, rawText, addAnnotation, clipAnnotations, activeColor, setActiveColor, annotations, disableSelectionChange = false }) {
-  // 判断 [selStart, selEnd) 内每个字符是否都被 type 类型标注覆盖
+
+/**
+ * 封装「长按/选区/点击标注 → 弹菜单 → addAnnotation」交互。
+ * 只读页仍支持 DOM selection 路径；编辑器页改走 SelectionSnapshot 路径。
+ */
+export function useAnnotationInteraction({
+  containerRef,
+  rawText,
+  getRawText,
+  addAnnotation,
+  clipAnnotations,
+  activeColor,
+  setActiveColor,
+  annotations,
+  disableSelectionChange = false,
+  selectionUiPort = webSelectionUiPort,
+}) {
+  const resolveRawText = useCallback(() => {
+    const latestRawText = getRawText?.()
+    return typeof latestRawText === 'string' ? latestRawText : (rawText ?? '')
+  }, [getRawText, rawText])
+
   const isFullyCovered = useCallback((selStart, selEnd, type) => {
     const ofType = (annotations ?? []).filter(
       a => a.type === type && a.end > selStart && a.start < selEnd
@@ -36,7 +42,7 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     const sorted = [...ofType].sort((a, b) => a.start - b.start)
     let covered = selStart
     for (const a of sorted) {
-      if (a.start > covered) return false   // 有间隙
+      if (a.start > covered) return false
       covered = Math.max(covered, a.end)
       if (covered >= selEnd) return true
     }
@@ -47,16 +53,14 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, flipDown: false })
   const [hasOverlap, setHasOverlap] = useState(false)
   const pendingRangeRef = useRef(null)
-  const lastOpenMenuAtRef = useRef(0)  // 防止 mouseup + selectionchange 双触发
+  const pendingSelectionRef = useRef(null)
+  const lastOpenMenuAtRef = useRef(0)
 
-  const MENU_HEIGHT = 52  // AnnotationMenu 近似高度（px）
+  const MENU_HEIGHT = 52
+  const MENU_HALF_W = 120
   const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
-  /**
-   * 从 DOM Range 计算相对于 containerRef 纯文本的 start/end 偏移。
-   * ⚠️ 架构约束：基准文本必须与 rawText prop 一致（不能 trim）。
-   */
-  function getRangeOffsets(range) {
+  const getRangeOffsets = useCallback((range) => {
     if (!containerRef.current) return null
     const container = containerRef.current
 
@@ -72,21 +76,85 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     }
 
     try {
+      const currentRawText = resolveRawText()
       const start = getOffset(range.startContainer, range.startOffset)
-      const end   = getOffset(range.endContainer, range.endOffset)
+      const end = getOffset(range.endContainer, range.endOffset)
       if (start >= end) return null
-      if (start < 0 || end > rawText.length) return null
+      if (start < 0 || end > currentRawText.length) return null
       return { start, end }
     } catch {
       return null
     }
-  }
+  }, [containerRef, resolveRawText])
 
-  const MENU_HALF_W = 120
+  const showMenuForOffsets = useCallback(({
+    start,
+    end,
+    rect = null,
+    rawPoint = null,
+    unionOverlaps = false,
+    preserveDomSelection = false,
+    suppressNativeSelection = false,
+    actions = null,
+  }) => {
+    if (!containerRef.current) return
+    const currentRawText = resolveRawText()
+    if (start < 0 || end > currentRawText.length || start >= end) return
 
-  // rawText と containerRef を deps に含めて stale closure を防ぐ
+    const overlapping = (annotations ?? []).filter(
+      a => a.start < end && a.end > start
+    )
+
+    const finalRange = unionOverlaps && overlapping.length > 0
+      ? {
+          start: Math.min(...overlapping.map(a => a.start)),
+          end: Math.max(...overlapping.map(a => a.end)),
+        }
+      : { start, end }
+
+    if (unionOverlaps && overlapping.length === 0) return
+
+    pendingRangeRef.current = finalRange
+    pendingSelectionRef.current = {
+      preserveDomSelection,
+      suppressNativeSelection,
+      actions,
+    }
+
+    setHasOverlap(overlapping.length > 0)
+
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const containerW = containerRef.current.offsetWidth
+
+    let rawLeft = MENU_HALF_W
+    let rawTop = 0
+    let flipDown = isTouchDevice
+
+    if (rect) {
+      rawLeft = rect.left - containerRect.left + rect.width / 2
+      rawTop = rect.top - containerRect.top
+      flipDown = isTouchDevice || rawTop < MENU_HEIGHT
+    } else if (rawPoint) {
+      rawLeft = rawPoint.left
+      rawTop = rawPoint.top
+      flipDown = isTouchDevice || rawTop < MENU_HEIGHT
+    }
+
+    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
+    const top = rect
+      ? (flipDown ? rect.bottom - containerRect.top : rawTop)
+      : (flipDown ? rawTop + 24 : rawTop)
+
+    setMenuPosition({ top, left, flipDown })
+    setMenuVisible(true)
+
+    if (suppressNativeSelection && !preserveDomSelection) {
+      selectionUiPort.clearSelection()
+    }
+  }, [annotations, containerRef, isTouchDevice, resolveRawText, selectionUiPort])
+
   const tryShowMenu = useCallback(() => {
-    const selection = window.getSelection()
+    const selection = selectionUiPort.getSelection()
     if (!selection || selection.toString().length === 0) return
     if (selection.rangeCount === 0) return
 
@@ -102,47 +170,40 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     const offsets = getRangeOffsets(range)
     if (!offsets) return
 
-    pendingRangeRef.current = offsets
-
-    // 计算与已有标注的重叠
-    const overlaps = (annotations ?? []).some(
-      a => a.start < offsets.end && a.end > offsets.start
-    )
-    setHasOverlap(overlaps)
-
-    // 计算菜单位置，并夹紧在容器范围内防止截断
-    const rect = range.getBoundingClientRect()
-    const containerRect = containerRef.current.getBoundingClientRect()
-    const rawLeft = rect.left - containerRect.left + rect.width / 2
-    const containerW = containerRef.current.offsetWidth
-    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
-    // 手机始终放选区下方；桌面如果选区离顶部太近也放下方
-    const rawTop = rect.top - containerRect.top
-    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
-    const top = flipDown ? rect.bottom - containerRect.top : rawTop
-
-    setMenuPosition({ top, left, flipDown })
-    setMenuVisible(true)
-  }, [rawText, containerRef, annotations]) // eslint-disable-line react-hooks/exhaustive-deps
+    showMenuForOffsets({
+      start: offsets.start,
+      end: offsets.end,
+      rect: range.getBoundingClientRect(),
+      preserveDomSelection: false,
+      suppressNativeSelection: false,
+      actions: {
+        annotate: true,
+        copy: true,
+        cut: false,
+        paste: false,
+        selectAll: false,
+      },
+    })
+  }, [containerRef, getRangeOffsets, selectionUiPort, showMenuForOffsets])
 
   const handleMouseUp = useCallback(() => {
     setTimeout(tryShowMenu, 0)
   }, [tryShowMenu])
 
-  const handleTouchEnd = useCallback(() => {}, [])  // 移动端由 selectionchange 驱动，此处留空保留接口
+  const handleTouchEnd = useCallback(() => {}, [])
 
-  // 移动端：selectionchange 防抖 300ms
   useEffect(() => {
-    if (disableSelectionChange) return   // ⬅️ Lexical 场景下跳过全局监听
+    if (disableSelectionChange) return undefined
+
     let timer = null
     function onSelectionChange() {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        // mouseup 已经通过 openMenuAt 处理过了，跳过避免双触发
         if (Date.now() - lastOpenMenuAtRef.current < 500) return
         tryShowMenu()
       }, 300)
     }
+
     document.addEventListener('selectionchange', onSelectionChange)
     return () => {
       document.removeEventListener('selectionchange', onSelectionChange)
@@ -150,30 +211,32 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     }
   }, [tryShowMenu, disableSelectionChange])
 
-  const closeMenu = useCallback(() => {
+  const closeMenu = useCallback((options = {}) => {
+    const { clearSelection = true } = options
     setMenuVisible(false)
     setHasOverlap(false)
     pendingRangeRef.current = null
-    window.getSelection()?.removeAllRanges()
-  }, []) // intentionally empty — no captured vars
+    pendingSelectionRef.current = null
+    if (clearSelection) selectionUiPort.clearSelection()
+  }, [selectionUiPort])
 
   const applyAnnotation = useCallback((type, color) => {
     const r = pendingRangeRef.current
     if (!r) return
+
     if (isFullyCovered(r.start, r.end, type)) {
-      // Rule 2：toggle — 选区被该类型完全覆盖，点击 = 取消
       clipAnnotations(r.start, r.end, type)
     } else {
       addAnnotation(type, color, r.start, r.end)
     }
+
     closeMenu()
   }, [isFullyCovered, clipAnnotations, addAnnotation, closeMenu])
 
-  const handleBold      = useCallback(() => applyAnnotation('bold', undefined),       [applyAnnotation])
+  const handleBold = useCallback(() => applyAnnotation('bold', undefined), [applyAnnotation])
   const handleHighlight = useCallback(() => applyAnnotation('highlight', activeColor), [applyAnnotation, activeColor])
   const handleUnderline = useCallback(() => applyAnnotation('underline', activeColor), [applyAnnotation, activeColor])
 
-  // Rule 1：取消 — 剪切选区内所有类型的所有标注
   const handleCancel = useCallback(() => {
     const r = pendingRangeRef.current
     if (!r) return
@@ -181,9 +244,8 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     closeMenu()
   }, [clipAnnotations, closeMenu])
 
-  // 换色：始终更新 activeColor；若选区被该类型完全覆盖则同时替换颜色
   const handleColorChange = useCallback((colorId) => {
-    setActiveColor(colorId)
+    setActiveColor?.(colorId)
     const r = pendingRangeRef.current
     if (!r) return
     for (const type of ['highlight', 'underline']) {
@@ -192,58 +254,79 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
         addAnnotation(type, colorId, r.start, r.end)
       }
     }
-    // 不关闭菜单，用户可能继续操作
   }, [setActiveColor, clipAnnotations, addAnnotation, isFullyCovered])
 
-  // Rule 3：单击已标注 Segment → 以覆盖该 segment 的所有标注的并集为虚拟选区，弹出菜单
   const openMenuForRange = useCallback((e, segStart, segEnd) => {
     e.stopPropagation()
     if (!containerRef.current) return
-    if (segStart < 0 || segEnd > rawText.length || segStart >= segEnd) return
-    const overlapping = (annotations ?? []).filter(
-      a => a.start < segEnd && a.end > segStart
-    )
-    if (!overlapping.length) return
-    const unionStart = Math.min(...overlapping.map(a => a.start))
-    const unionEnd   = Math.max(...overlapping.map(a => a.end))
-    pendingRangeRef.current = { start: unionStart, end: unionEnd }
-    const containerRect = containerRef.current.getBoundingClientRect()
-    const containerW = containerRef.current.offsetWidth
-    const rawLeft = e.clientX - containerRect.left
-    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
-    const rawTop = e.clientY - containerRect.top
-    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
-    const top = flipDown ? rawTop + 24 : rawTop
-    setHasOverlap(true)
-    setMenuPosition({ top, left, flipDown })
-    setMenuVisible(true)
-  }, [annotations, containerRef, isTouchDevice, rawText.length])
 
-  /**
-   * Lexical 场景专用：接收已计算好的 {start, end} 偏移和选区 DOMRect，直接弹菜单。
-   * 用于替代 selectionchange 路径。
-   *
-   * @param {{ start: number, end: number }} offsets
-   * @param {DOMRect} selectionRect  - window.getSelection().getRangeAt(0).getBoundingClientRect()
-   */
-  const openMenuAt = useCallback((offsets, selectionRect) => {
-    if (!containerRef.current) return
-    lastOpenMenuAtRef.current = Date.now()  // 标记时间，抑制后续 selectionchange 重复触发
-    pendingRangeRef.current = { start: offsets.start, end: offsets.end }
-    const overlaps = (annotations ?? []).some(
-      a => a.start < offsets.end && a.end > offsets.start
-    )
-    setHasOverlap(overlaps)
     const containerRect = containerRef.current.getBoundingClientRect()
-    const containerW = containerRef.current.offsetWidth
-    const rawLeft = selectionRect.left + selectionRect.width / 2 - containerRect.left
-    const left = Math.max(MENU_HALF_W, Math.min(rawLeft, containerW - MENU_HALF_W))
-    const rawTop = selectionRect.top - containerRect.top
-    const flipDown = isTouchDevice || rawTop < MENU_HEIGHT
-    const top = flipDown ? selectionRect.bottom - containerRect.top : rawTop
-    setMenuPosition({ top, left, flipDown })
-    setMenuVisible(true)
-  }, [annotations, containerRef, isTouchDevice])
+    showMenuForOffsets({
+      start: segStart,
+      end: segEnd,
+      rawPoint: {
+        left: e.clientX - containerRect.left,
+        top: e.clientY - containerRect.top,
+      },
+      unionOverlaps: true,
+      suppressNativeSelection: true,
+      preserveDomSelection: false,
+      actions: {
+        annotate: true,
+        copy: true,
+        cut: false,
+        paste: false,
+        selectAll: false,
+      },
+    })
+  }, [containerRef, showMenuForOffsets])
+
+  const openMenuFromSelectionSnapshot = useCallback((snapshot) => {
+    if (!snapshot) return
+    lastOpenMenuAtRef.current = Date.now()
+    showMenuForOffsets({
+      start: snapshot.start,
+      end: snapshot.end,
+      rect: snapshot.rect,
+      preserveDomSelection: snapshot.preserveDomSelection,
+      suppressNativeSelection: snapshot.suppressNativeSelection,
+      actions: snapshot.actions,
+    })
+  }, [showMenuForOffsets])
+
+  const openMenuFromAnnotationSnapshot = useCallback((snapshot) => {
+    if (!snapshot) return
+    lastOpenMenuAtRef.current = Date.now()
+    showMenuForOffsets({
+      start: snapshot.start,
+      end: snapshot.end,
+      rect: snapshot.rect,
+      unionOverlaps: true,
+      preserveDomSelection: snapshot.preserveDomSelection,
+      suppressNativeSelection: snapshot.suppressNativeSelection,
+      actions: snapshot.actions,
+    })
+  }, [showMenuForOffsets])
+
+  const openMenuAt = useCallback((offsets, selectionRect) => {
+    const currentRawText = resolveRawText()
+    openMenuFromSelectionSnapshot({
+      source: 'mouse',
+      start: offsets.start,
+      end: offsets.end,
+      text: currentRawText.slice(offsets.start, offsets.end),
+      rect: selectionRect,
+      preserveDomSelection: false,
+      suppressNativeSelection: false,
+      actions: {
+        annotate: true,
+        copy: true,
+        cut: true,
+        paste: true,
+        selectAll: true,
+      },
+    })
+  }, [openMenuFromSelectionSnapshot, resolveRawText])
 
   return {
     menuVisible,
@@ -258,6 +341,8 @@ export function useAnnotationInteraction({ containerRef, rawText, addAnnotation,
     handleColorChange,
     openMenuForRange,
     openMenuAt,
+    openMenuFromSelectionSnapshot,
+    openMenuFromAnnotationSnapshot,
     hasOverlap,
   }
 }

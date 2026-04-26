@@ -296,19 +296,24 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   const textareaRef = useRef(null)
   const draftTimerRef = useRef(null)
+  const getLatestEditorText = useCallback(() => (
+    textareaRef.current?.getValue?.() ?? content
+  ), [content])
 
   // ── 标注交互 ───────────────────────────────────────────────────────
   const {
     menuVisible, menuPosition,
     closeMenu,
     handleBold, handleHighlight, handleUnderline,
-    handleCancel, openMenuAt, hasOverlap,
+    handleCancel, handleColorChange, openMenuFromSelectionSnapshot, openMenuFromAnnotationSnapshot, hasOverlap,
   } = useAnnotationInteraction({
     containerRef: editorContainerRef,
     rawText: content,
+    getRawText: getLatestEditorText,
     addAnnotation,
     clipAnnotations,
     activeColor,
+    setActiveColor,
     annotations,
     disableSelectionChange: true,  // Lexical 场景：禁用全局 selectionchange，完全依赖 onRangeSelect 回调
   })
@@ -443,10 +448,14 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     setMentionQuery(null)
   }
 
-  const handleRangeSelect = useCallback((offsets, selectionRect) => {
-    if (offsets.start >= offsets.end) return
-    openMenuAt(offsets, selectionRect)
-  }, [openMenuAt])
+  const handleSelectionSnapshot = useCallback((snapshot) => {
+    if (snapshot.start >= snapshot.end) return
+    openMenuFromSelectionSnapshot(snapshot)
+  }, [openMenuFromSelectionSnapshot])
+
+  const handleAnnotationSnapshot = useCallback((snapshot) => {
+    openMenuFromAnnotationSnapshot(snapshot)
+  }, [openMenuFromAnnotationSnapshot])
 
   // ── @ 选人 ────────────────────────────────────────────────────
   const handleMentionSelect = async (contact) => {
@@ -852,7 +861,8 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             initialValue={content}
             annotations={annotations}
             onChange={handleEditorChange}
-            onRangeSelect={handleRangeSelect}
+            onSelectionSnapshot={handleSelectionSnapshot}
+            onAnnotationSnapshot={handleAnnotationSnapshot}
             placeholder="把脑子里的写下来…"
             style={{ minHeight: '60vh' }}
           />
@@ -863,7 +873,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             onBold={handleBold}
             onHighlight={handleHighlight}
             onUnderline={handleUnderline}
-            onColorChange={setActiveColor}
+            onColorChange={handleColorChange}
             onClose={closeMenu}
             showCancel={hasOverlap}
             onCancel={handleCancel}

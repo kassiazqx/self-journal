@@ -1,7 +1,7 @@
 // src/components/RecordDetail.jsx
 // 记录详情页：三段式布局（核心字段卡 → 关联标签 → 统一记录流）
 // 情绪标签可点击内联编辑，使用本地 mapDisplayToBase，不调 AI
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
 import { updateEntry } from '../lib/journalService'
@@ -154,21 +154,44 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       annotations,
     })
 
-  // debounce 1.5 秒自动保存
+  const effectiveUserId = user?.id ?? entry.user_id
+
+  const latestAnnotationsRef = React.useRef(annotations)
+  const dirtyRef = React.useRef(dirty)
+  useEffect(() => {
+    latestAnnotationsRef.current = annotations
+    dirtyRef.current = dirty
+  }, [annotations, dirty])
+
+  const saveAnnotationsNow = useCallback(async (nextAnnotations) => {
+    if (!effectiveUserId) return
+    await updateEntry({ id: entry.id, userId: effectiveUserId, fields: { annotations: nextAnnotations } })
+  }, [entry.id, effectiveUserId])
+
   const saveTimerRef = React.useRef(null)
   React.useEffect(() => {
     if (!dirty) return
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await updateEntry({ id: entry.id, userId: entry.user_id, fields: { annotations } })
+        await saveAnnotationsNow(annotations)
         markSaved()
       } catch (e) {
         console.error('[RecordDetail] annotations 保存失败:', e)
       }
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [dirty, annotations, entry.id, entry.user_id, markSaved])
+  }, [dirty, annotations, markSaved, saveAnnotationsNow])
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(saveTimerRef.current)
+      if (!dirtyRef.current) return
+      saveAnnotationsNow(latestAnnotationsRef.current).catch(e => {
+        console.error('[RecordDetail] annotations 离页保存失败:', e)
+      })
+    }
+  }, [saveAnnotationsNow])
 
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
@@ -190,6 +213,23 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     }
     loadFull()
   }, [initialEntry, refreshToken, resetAnnotations])
+
+  // 像 ReviewLetter 一样，进详情页时总是补拉一次最新 annotations。
+  // RecordsPage 传进来的 entry 可能是列表里的旧快照；若只信初始 props，返回再进会看到旧标注。
+  useEffect(() => {
+    let cancelled = false
+    async function loadLatestAnnotations() {
+      const { data } = await db.from('journal_entries')
+        .select('annotations')
+        .eq('id', initialEntry.id)
+        .single()
+      if (cancelled || !data) return
+      resetAnnotations(data.annotations)
+      setEntry(prev => ({ ...prev, annotations: data.annotations }))
+    }
+    loadLatestAnnotations()
+    return () => { cancelled = true }
+  }, [initialEntry.id, resetAnnotations])
 
   // 读取对话记录（conversations 表；refreshToken 变化时重新拉取）
   useEffect(() => {
@@ -266,7 +306,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   async function handleFieldSave(field, value) {
     const { error } = await updateEntry({
       id: entry.id,
-      userId: entry.user_id,
+      userId: effectiveUserId,
       fields: { [field]: value },
     })
     if (error) {
@@ -286,7 +326,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     const { baseWords, minConfidence } = mapDisplayToBase(words)
     const { error } = await updateEntry({
       id: entry.id,
-      userId: entry.user_id,
+      userId: effectiveUserId,
       fields: {
         emotion_display: words,
         emotions: baseWords,
@@ -460,7 +500,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       // 只写入已知存在的列，避免 AI 返回未知字段导致 400
       await updateEntry({
         id: entry.id,
-        userId: entry.user_id,
+        userId: effectiveUserId,
         fields: {
           entry_summary:             extraction.entry_summary             ?? null,
           theme_hints:               extraction.theme_hints               ?? [],
