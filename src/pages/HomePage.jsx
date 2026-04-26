@@ -143,7 +143,7 @@ function SortableImageItem({ id, previewSrc, editingImages, onDelete, onFullscre
 }
 
 // ─── 主组件 ──────────────────────────────────────────────────────
-export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, onNotify }) {
+export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, onNotify, gratitudeRefreshTrigger = 0 }) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
 
@@ -153,10 +153,18 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   // 今日感恩进度
   const [gratitudeCount, setGratitudeCount] = useState(0)
+  const loadGratitudeCount = useCallback(async () => {
+    if (!user?.id) {
+      setGratitudeCount(0)
+      return
+    }
+    const { count } = await fetchTodayGratitudeCount(user.id)
+    setGratitudeCount(count ?? 0)
+  }, [user?.id])
+
   useEffect(() => {
-    if (!user) return
-    fetchTodayGratitudeCount(user.id).then(({ count }) => setGratitudeCount(count ?? 0))
-  }, [user])
+    loadGratitudeCount()
+  }, [gratitudeRefreshTrigger, loadGratitudeCount])
 
   useEffect(() => {
     if (!user) return
@@ -544,7 +552,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           console.error('[insert]', error)
           notifyFn?.('记录保存失败，请检查网络后重试')
         } else if (template.id === 'gratitude') {
-          fetchTodayGratitudeCount(userId).then(({ count }) => setGratitudeCount(count ?? 0))
+          loadGratitudeCount()
         }
       })
 
@@ -569,7 +577,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       })()
     }
   }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts,
-      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations])
+      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations, loadGratitudeCount])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {

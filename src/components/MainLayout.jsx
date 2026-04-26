@@ -162,6 +162,10 @@ export default function MainLayout() {
     pop()
   }
 
+  function handleEntriesMutated() {
+    setRefreshKey(k => k + 1)
+  }
+
   // ── RecordDetail 打开 AwarenessFlow ────────────────────────
   function handleOpenAwarenessFromDetail(entry) {
     push({ type: 'awareness', entry })
@@ -311,11 +315,18 @@ export default function MainLayout() {
 
       {/* 所有 Tab 同时挂载，切换时只改 display，避免重复拉取数据 */}
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'write' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <HomePage key={writeResetKey} onDone={handleHomeSaved} onOpenLetter={letter => push({ type: 'letter', letter })} onNotify={notify} />
+          <HomePage
+            key={writeResetKey}
+            gratitudeRefreshTrigger={refreshKey}
+            onDone={handleHomeSaved}
+            onOpenLetter={letter => push({ type: 'letter', letter })}
+            onNotify={notify}
+          />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
           <RecordsPage
             refreshTrigger={refreshKey}
+            onEntriesMutated={handleEntriesMutated}
             onOpenDetail={handleOpenDetail}
             onOpenLetter={handleOpenLetter}
             onOpenLetterList={handleOpenLetterList}

@@ -153,7 +153,7 @@ function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onTogg
 
 const ENTRY_PAGE = 50   // 每次加载的条数
 
-export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter, onOpenLetterList, onEdit }) {
+export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter, onOpenLetterList, onEdit, onEntriesMutated }) {
   const { user } = useAuth()
   // ── 多选模式 ────────────────────────────────────────────────
   const [isSelecting, setIsSelecting] = useState(false)
@@ -420,7 +420,8 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     }
     setActionEntry(null)
     setConfirmDelete(false)
-    load()
+    if (onEntriesMutated) onEntriesMutated()
+    else load()
   }
 
   async function handleBatchDelete() {
@@ -442,7 +443,8 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
       setShowBatchDeleteConfirm(false)
       setIsSelecting(false)
       setSelectedIds(new Set())
-      load()
+      if (onEntriesMutated) onEntriesMutated()
+      else load()
     } catch (err) {
       console.error('批量删除失败', err)
       // 保持确认框和多选状态，用户可重试（Storage 删除幂等，重试安全）
