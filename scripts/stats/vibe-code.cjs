@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// scripts/stats/vibe-code.js — Multi-language token-saving extraction tool
-// Usage: node scripts/stats/vibe-code.js <command> <target>
+// scripts/stats/vibe-code.cjs — Multi-language token-saving extraction tool
+// Usage: node scripts/stats/vibe-code.cjs <command> <target>
 //
 // Commands:
 //   types <file>      Extract TS interfaces, types, enums
@@ -472,7 +472,7 @@ function cmdHelp() {
   console.log(`
 cc-starter vibe-code — Multi-language token-saving extraction tool
 
-Usage: node scripts/stats/vibe-code.js <command> [target]
+Usage: node scripts/stats/vibe-code.cjs <command> [target]
 
 Commands:
   types <file>        Extract TypeScript interfaces, types, enums, type aliases
@@ -490,11 +490,11 @@ Supported languages:
   C# (.cs)
 
 Examples:
-  node scripts/stats/vibe-code.js types src/types/user.ts
-  node scripts/stats/vibe-code.js tree src
-  node scripts/stats/vibe-code.js imports lib/utils.py
-  node scripts/stats/vibe-code.js functions main.go
-  node scripts/stats/vibe-code.js tree
+  node scripts/stats/vibe-code.cjs types src/types/user.ts
+  node scripts/stats/vibe-code.cjs tree src
+  node scripts/stats/vibe-code.cjs imports lib/utils.py
+  node scripts/stats/vibe-code.cjs functions main.go
+  node scripts/stats/vibe-code.cjs tree
 
 Token savings are logged to .vibe-stats.json in the current directory.
 `.trim());

@@ -250,6 +250,8 @@ options 来源：
 ```
 所有开发在 dev 分支，main 只接受发布合并。
 代码 session 工作前必须确认在 dev 分支。
+禁止直接在 main 上提交任何代码或文档改动。
+当前阶段先在 dev 累积 commit，确认无问题后再 merge main。
 ```
 
 ### 文件结构（当前）
@@ -330,6 +332,7 @@ src/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
 │   │                           writeResetKey：觉察流完成时重挂 HomePage
 │   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
+│   │                           refreshKey：统一 entry 变更信号；驱动 RecordsPage refreshTrigger + HomePage gratitudeRefreshTrigger
 │   │                           keyboardVisible：键盘打开时隐藏底部4-tab导航（visualViewport.resize）
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
 │   │                           键盘避让：内容区内层滚动 + fixed 底部按钮，仅响应 visualViewport.resize
@@ -375,6 +378,7 @@ src/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
     │                           日期 pill：inferDatetime debounce 800ms + manualOverride + localStorage 持久化
+    │                           gratitudeRefreshTrigger：监听外部 entry 变更，重拉今日感恩计数
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
@@ -384,6 +388,7 @@ src/
     │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
     │                           🔍 FilterBar 五维筛选（有筛选时隐藏回顾信卡片）
     │                           🟠 pending_core_needs banner + 处理弹卡片三路径
+    │                           onEntriesMutated：单删/批删成功后上报 MainLayout，驱动写作页感恩计数同步刷新
     ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
     ├── ThreadsPage.jsx         脉络三Tab页（已确认/待确认/已归档）
     │                           含 ＋浮窗（手动创建/AI分析）+ AI分析sheet + defaultTab prop
@@ -1086,6 +1091,25 @@ async function loadFull() {
 
 ---
 
+### 4.57 常驻挂载页面的派生计数必须监听外部变更信号（2026-04-26 确立）
+
+**根因：** MainLayout 的四个 Tab 是“常驻挂载，仅切 display”。HomePage 不会因切回“写”页而自动重新 mount。若派生 UI（如今日感恩计数）只在 mount 时取数，则来自其他页面的删除/编辑不会自动反映到当前页面。
+
+**症状：** 删除当天感恩记录后，RecordsPage 列表已刷新，但 HomePage 顶部进度点仍显示旧值；只有整页重载或强制重挂 HomePage 后才恢复正确。
+
+**澄清：** `ThreadDetailPage` 的 `onDeleted` 删除的是脉络 `threads`，不是日记 `journal_entries`，与感恩计数无直接关系。真实缺口在 `RecordsPage` 删除链路没有通知 `HomePage` 重新拉数。
+
+**修复（2026-04-26）：** 复用 MainLayout 现有 `refreshKey` 作为统一 entry 变更信号：一方面传给 `RecordsPage.refreshTrigger`，另一方面传给 `HomePage.gratitudeRefreshTrigger`。RecordsPage 单删/批删成功后通过 `onEntriesMutated` 上报，HomePage 统一走 `loadGratitudeCount()` 重新查询今日感恩计数。
+
+**规律：** 对于常驻挂载页面上的派生计数/徽标/角标，只要它依赖的底层数据可能在别的页面被修改，就必须监听外部变更信号，不能假设“切回页面时会重新 mount”。
+
+**不要改成什么：**
+- 不要让派生计数只在 `useEffect([])` 或仅“保存成功”路径里刷新
+- 不要把 unrelated callback（如删除 thread）误当作 journal_entries 刷新源
+- 不要为同一类 entry 变更再造第二套并行刷新状态，优先复用现有统一 trigger
+
+---
+
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
 - Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
@@ -1166,6 +1190,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
+- 2026-04-26 · 协调session · 分支纪律补强：明确禁止直接在 main 上提交任何代码或文档改动；当前阶段所有变更先落 dev，确认无问题后再 merge main；同步更新 CLAUDE.md / session-protocol.md / arch-context.md
+- 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md
 - 2026-04-22 · 代码session · 觉察卡片扩展：AWARENESS_QUESTIONS 从 6 组扩展为 9 组，问题数从 3 个增至 4-7 个；context 重命名为 focus；新增 acceptance（tier 3, negative）/ behavior（tier 4）/ cognitive（tier 5）三组；测试文件两处 'context' 断言同步改为 'focus'，8/8 pass；commits 0b13d45 + 0da9a36；同步卡：docs/sync-cards/2026-04-22-awareness-questions-expansion.md

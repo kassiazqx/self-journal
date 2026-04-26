@@ -100,6 +100,8 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 
 ## 🌿 分支管理规范
 - **所有开发在 `dev` 分支进行**，`main` 只接受发布合并，不直接在 main 上改代码
+- **禁止直接在 `main` 上提交任何代码或文档改动**；所有变更先落 `dev`
+- **当前阶段默认流程：先在 `dev` 连续 commit，确认“没问题”后，再从 `dev` merge 到 `main`**
 - **大改动开始前必须打 checkpoint**：`git tag checkpoint-<功能名>-<日期>`，AI 大幅重构前先执行
 - 上线流程：dev 开发完成 → 用户确认 → `git checkout main && git merge dev && git push && git checkout dev`（触发 Vercel 自动部署）
 - **用户说「帮我上线」= 执行上面这四条命令**，不需要解释，直接执行
@@ -175,6 +177,7 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 
 **约束：**
 - 所有开发在 dev 分支
+- 禁止直接在 main 上改动；main 只接受来自 dev 的确认后合并
 - 每个 commit 要清晰（一个 Task 一个 commit）
 - 改代码前读 docs/coding-lessons.md 的 8 条规则
 - 有 spec 的功能必须先读对应 spec 章节
@@ -220,7 +223,8 @@ git commit      ← 才可以提交
 ## 注意事项
 - .env 文件不能提交 GitHub（已在 .gitignore）
 - Vercel 环境变量已配置完毕
-- 每次改完：git add → git commit（在 dev 分支）→ 用户确认上线后 merge main → git push → Vercel 自动部署
+- 每次改完：git add → git commit（在 dev 分支）→ 用户确认“没问题”后继续在 dev 累积或整理提交 → 用户确认上线后 merge main → git push → Vercel 自动部署
+- 不允许跳过 dev 直接在 main 上提交修复
 - Gemini 免费版：1500次/天，模型 gemini-flash-latest
 - Supabase maxOutputTokens：对话用450，提取用1200，记忆更新用600
 
@@ -250,18 +254,18 @@ git commit      ← 才可以提交
 
 ### Token-Saving Scripts
 ```bash
-node scripts/stats/vibe-code.js help       # Code analysis (save ~90% tokens)
-node scripts/stats/vibe-code.js types <f>   # Extract types/interfaces
-node scripts/stats/vibe-code.js tree [dir]  # Clean directory tree
-node scripts/stats/vibe-code.js imports <f> # Show imports
-node scripts/stats/vibe-code.js funcs <f>   # Function signatures
+node scripts/stats/vibe-code.cjs help       # Code analysis (save ~90% tokens)
+node scripts/stats/vibe-code.cjs types <f>   # Extract types/interfaces
+node scripts/stats/vibe-code.cjs tree [dir]  # Clean directory tree
+node scripts/stats/vibe-code.cjs imports <f> # Show imports
+node scripts/stats/vibe-code.cjs functions <f> # Function signatures
 ```
 
 ### Project Statistics
 ```bash
-node scripts/stats/cocomo.js                # Project cost estimation
-node scripts/stats/project-report.js        # HTML statistics report
-node scripts/stats/vibe-stats.js report     # Token savings report
+node scripts/stats/cocomo.cjs                # Project cost estimation
+node scripts/stats/project-report.cjs        # HTML statistics report
+node scripts/stats/vibe-stats.cjs report     # Token savings report
 ```
 
 ### Rules

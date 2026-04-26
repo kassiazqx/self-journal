@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // COCOMO-II Semi-Detached cost estimation
-// Usage: node scripts/stats/cocomo.js
+// Usage: node scripts/stats/cocomo.cjs
 
 const fs = require("fs");
 const path = require("path");
