@@ -34,19 +34,84 @@ function AnnotationTransformPlugin({ annotations }) {
 // 桌面旧链路已稳定，先保留，不和移动端新逻辑强绑。
 function MouseUpPlugin({ onRangeSelect, enabled = true }) {
   const [editor] = useLexicalComposerContext()
+  const retryHandleRef = useRef({ token: 0, timeoutId: null, rafId: null })
 
   useEffect(() => {
     if (!enabled || !onRangeSelect) return undefined
 
-    function readSelection(rect) {
+    function debugSelectionTiming(stage, details) {
+      if (!import.meta.env.DEV) return
+      console.log('[RichTextEditor][desktop-selection]', stage, details)
+    }
+
+    function clearPendingRetry() {
+      retryHandleRef.current.token += 1
+
+      if (retryHandleRef.current.timeoutId !== null) {
+        window.clearTimeout(retryHandleRef.current.timeoutId)
+        retryHandleRef.current.timeoutId = null
+      }
+
+      if (retryHandleRef.current.rafId !== null) {
+        window.cancelAnimationFrame(retryHandleRef.current.rafId)
+        retryHandleRef.current.rafId = null
+      }
+    }
+
+    function getCurrentSelectionRect(fallbackRect = null) {
+      try {
+        const selection = window.getSelection()
+        if (!selection || selection.rangeCount === 0) return fallbackRect
+        return selection.getRangeAt(0).getBoundingClientRect()
+      } catch {
+        return fallbackRect
+      }
+    }
+
+    function readSelection(stage, fallbackRect = null) {
       let handled = false
       editor.read(() => {
-        const offsets = selectionToOffsets($getSelection())
-        if (!offsets) return
+        const selection = $getSelection()
+        const offsets = selectionToOffsets(selection)
+        if (!offsets) {
+          debugSelectionTiming('read-miss', {
+            stage,
+            hasSelection: Boolean(selection),
+            anchorKey: selection?.anchor?.key ?? null,
+            focusKey: selection?.focus?.key ?? null,
+          })
+          return
+        }
+
         handled = true
-        onRangeSelect(offsets, rect)
+        debugSelectionTiming('read-hit', {
+          stage,
+          start: offsets.start,
+          end: offsets.end,
+        })
+        onRangeSelect(offsets, getCurrentSelectionRect(fallbackRect))
       })
       return handled
+    }
+
+    function scheduleRetry(rect) {
+      clearPendingRetry()
+      const token = retryHandleRef.current.token
+
+      // 首帧偶发 Lexical selection 仍未落稳：先过 0ms 宏任务，再给一帧动画机会。
+      retryHandleRef.current.timeoutId = window.setTimeout(() => {
+        retryHandleRef.current.timeoutId = null
+        if (retryHandleRef.current.token !== token) return
+        if (readSelection('timeout-0', rect)) return
+
+        retryHandleRef.current.rafId = window.requestAnimationFrame(() => {
+          retryHandleRef.current.rafId = null
+          if (retryHandleRef.current.token !== token) return
+          if (readSelection('raf', rect)) return
+
+          debugSelectionTiming('read-giveup', { stage: 'raf' })
+        })
+      }, 0)
     }
 
     function handleMouseUp() {
@@ -56,9 +121,11 @@ function MouseUpPlugin({ onRangeSelect, enabled = true }) {
         const rect = sel.getRangeAt(0).getBoundingClientRect()
 
         // 桌面大多数情况同步可读；首次 drag 选区偶发 Lexical selection 还没就绪，
-        // 仅在同步失败时补一次微延迟兜底，避免把稳定链路全部改坏。
-        if (readSelection(rect)) return
-        setTimeout(() => { readSelection(rect) }, 0)
+        // 仅在同步失败时补有限次重试：先 0ms 宏任务，再给一帧 rAF。
+        // 这是 Lexical 选区提交时序兜底，不是恢复旧的“无条件延迟后再读”路径。
+        clearPendingRetry()
+        if (readSelection('sync', rect)) return
+        scheduleRetry(rect)
       } catch {
         // ignore
       }
@@ -66,7 +133,10 @@ function MouseUpPlugin({ onRangeSelect, enabled = true }) {
 
     const root = editor.getRootElement()
     root?.addEventListener('mouseup', handleMouseUp)
-    return () => root?.removeEventListener('mouseup', handleMouseUp)
+    return () => {
+      clearPendingRetry()
+      root?.removeEventListener('mouseup', handleMouseUp)
+    }
   }, [editor, enabled, onRangeSelect])
 
   return null

@@ -19,6 +19,11 @@ function sliceSnapshotText(start, end) {
   return $getRoot().getTextContent().slice(start, end)
 }
 
+function debugSnapshotMiss(reason, details) {
+  if (!import.meta.env.DEV) return
+  console.log('[selectionSnapshot]', reason, details)
+}
+
 export function createSelectionSnapshot({
   selection,
   source,
@@ -28,10 +33,25 @@ export function createSelectionSnapshot({
   isEditable = true,
 }) {
   const offsets = selectionToOffsets(selection)
-  if (!offsets) return null
+  if (!offsets) {
+    debugSnapshotMiss('offsets-missing', {
+      source,
+      hasSelection: Boolean(selection),
+      anchorKey: selection?.anchor?.key ?? null,
+      focusKey: selection?.focus?.key ?? null,
+    })
+    return null
+  }
 
   const text = sliceSnapshotText(offsets.start, offsets.end)
-  if (!text) return null
+  if (!text) {
+    debugSnapshotMiss('text-empty', {
+      source,
+      start: offsets.start,
+      end: offsets.end,
+    })
+    return null
+  }
 
   return {
     source,
@@ -54,10 +74,19 @@ export function createAnnotatedNodeSnapshot({
   isEditable = true,
 }) {
   const text = node?.getTextContent?.() ?? ''
-  if (!text) return null
+  if (!text) {
+    debugSnapshotMiss('annotation-text-empty', { source })
+    return null
+  }
 
   const offsets = nodeKeyToOffsets(node.getKey(), text.length)
-  if (!offsets) return null
+  if (!offsets) {
+    debugSnapshotMiss('annotation-offsets-missing', {
+      source,
+      nodeKey: node?.getKey?.() ?? null,
+    })
+    return null
+  }
 
   return {
     source,

@@ -271,11 +271,11 @@ src/
 │   │                           ✨ 新增：shiftAnnotations(annotations, changeStart, delta) 纯函数（named export）
 │   │                           ✨ 新增：applyShift(changeStart, delta) hook 方法，文字变更时移动标注偏移（不 set dirty）
 │   └── useAnnotationInteraction.js 选区→菜单交互（containerRef + rawText → menuVisible/menuPosition/handlers）
-│                               mobile：selectionchange 300ms 防抖（handle drag 不冒泡，selectionchange 是唯一可靠事件）
-│                               desktop：mouseup + 0ms setTimeout 读取 selection
-│                               ✨ 新增：openMenuAt(offsets, selectionRect: DOMRect) — Lexical 专用路径，由 MouseUpPlugin 调用
+│                               只读页：document.selectionchange 300ms 防抖 + openMenuForRange（已标注点击 union range）
+│                               编辑页：页面层只调 openMenuFromSelectionSnapshot / openMenuFromAnnotationSnapshot，不再自己算 DOM Range/offset
+│                               旧接口 handleMouseUp / handleTouchEnd / openMenuForRange 继续保留给 RecordDetail / ReviewLetterDetail / ThreadDetailPage
 │                               ✨ 新增：flipDown 逻辑 — 手机端 / 选区离顶部 < MENU_HEIGHT 时，菜单显示在选区下方
-│                               ✨ 新增：lastOpenMenuAtRef 防双触发（openMenuAt 打时间戳，selectionchange 500ms 内跳过）
+│                               ✨ 新增：lastOpenMenuAtRef 防双触发（snapshot / selectionchange 共用 500ms 窗口）
 │                               menuPosition 形状：{ top, left, flipDown }（AnnotationMenu 读取 flipDown 决定方向）
 ├── store/
 │   ├── index.js                RTK store 根配置
@@ -361,14 +361,16 @@ src/
 │   │                           props: visible / position / activeColor / onBold / onHighlight / onUnderline / onColorChange / onClose
 │   │                           ✨ 新增：flipDown prop（position.flipDown=true 时显示在选区下方，箭头朝上；否则朝下）
 │   ├── RichTextEditor.jsx      ✨ 新建：Lexical 富文本编辑器封装（写作时即可标注）
-│   │                           props: initialValue / annotations / onChange(plaintext) / onRangeSelect({start,end},DOMRect) / placeholder / style / ref
-│   │                           内嵌 Plugin：AnnotationTransformPlugin（渲染标注）/ MouseUpPlugin（选区→回调）/ OnChangePlugin（纯文本同步）
+│   │                           props: initialValue / annotations / onChange(plaintext) / onSelectionSnapshot / onAnnotationSnapshot / onRangeSelect(兼容旧调用方) / placeholder / style / ref
+│   │                           内嵌 Plugin：AnnotationTransformPlugin（渲染标注）/ MouseUpPlugin（桌面 sync 读 selection，失败时仅 0ms+rAF 有界重试）
+│   │                           / AnnotationInteractionPlugin（touch 选区 + 已标注点击 snapshot）/ OnChangePlugin（纯文本同步）
 │   │                           IME 安全：isComposingRef 守门，compositionstart/end 期间不触发 onChange
 │   │                           存储模型不变：onChange 仍返回纯文本（$getRoot().getTextContent()），标注 JSONB 独立存储
 │   ├── RichTextEditor/
 │   │   ├── AnnotatedNode.js    ✨ 新建：TextNode 子类，携带 __annotationStyle CSS 对象，createDOM/_applyStyle 渲染内联样式
 │   │   ├── annotationTransform.js ✨ 新建：editor.update() 将 TextNode 按标注边界分割并替换为 AnnotatedNode
 │   │   │                           guard：JSON.stringify 比较旧新 style，相同则跳过（防止无限 update 循环）
+│   │   ├── selectionSnapshot.js ✨ 新建：SelectionSnapshot / AnnotationSnapshot 构造；DEV 下记录 offsets/text 丢失点
 │   │   └── selectionToOffsets.js  ✨ 新建：Lexical RangeSelection → {start, end} 绝对字符偏移，处理段落隐式换行
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
@@ -1052,23 +1054,29 @@ async function loadFull() {
 
 ---
 
-### 4.54 Lexical 编辑器场景下禁用全局 selectionchange 监听（2026-04-23 尝试，未完全解决）
+### 4.54 Lexical 编辑器场景下禁用全局 selectionchange 监听（2026-04-23 确立；2026-04-27 P1 rebase）
 
 **根因：** `useAnnotationInteraction` 同时监听全局 `document.selectionchange` 事件和 Lexical 的 `onRangeSelect` 回调。第一次选中文字时，DOM Range 和 Lexical selection 可能不同步：`selectionchange` 触发后用 DOM Range 重新计算 offsets，覆盖了正确的 Lexical offsets，导致高亮位置错误。
 
 **症状：** 用户在 Lexical 编辑器内选中文字点高亮，第一次无反应，需要点两次才上色。
 
-**尝试修复（2026-04-23）：** HomePage 传入 `disableSelectionChange: true` 给 `useAnnotationInteraction`，禁用全局 selectionchange 监听，完全依赖 Lexical 的 `onRangeSelect` 回调。同时 RichTextEditor 的 MouseUpPlugin 删除 `setTimeout(0)`，改为同步读取 selection（防止 selection 被清除）。
+**修复迭代：**
+- **2026-04-23：** HomePage 传入 `disableSelectionChange: true` 给 `useAnnotationInteraction`，禁用全局 selectionchange 监听，完全依赖 Lexical 的 editor 内部链路。
+- **2026-04-27：** P1 rebase 后，HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor` 的 `MouseUpPlugin` 改为**先同步读取** selection，失败时仅做一次 `0ms setTimeout` + 一帧 `requestAnimationFrame` 的**有界重试**；`selectionSnapshot.js` 在 DEV 下记录 offsets/text 丢失点，定位问题不再回到页面层补 DOM Range。
 
-**当前状态：** 问题仍未完全解决，根因可能更复杂（涉及 Lexical 内部 selection 状态与 DOM Range 的时序问题）。暂搁置，标记为待深入调查。
+**当前状态：** 代码层已收口到 `MouseUpPlugin / AnnotationInteractionPlugin / selectionSnapshot.js`，`build` / `lint` 已通过；桌面首次选字、首次高亮、移动端 handle 拖拽、只读页回归仍需按 P1 手工矩阵逐项确认。
 
-**规律（待验证）：** 凡使用 Lexical 富文本编辑器的场景，应传 `disableSelectionChange: true` 给 `useAnnotationInteraction`；其他场景（纯 DOM 文本）保持默认 false。
+**规律：**
+- 凡使用 Lexical 富文本编辑器的页面，默认传 `disableSelectionChange: true` 给 `useAnnotationInteraction`；其他纯 DOM 文本页面保持默认 `false`
+- 桌面兜底只能放在 editor/plugin 层，且必须是**有界重试**；不要把 DOM Range fallback 重新散回页面层
+- 若仍丢选区，先看 DEV console 的 `[RichTextEditor][desktop-selection]` 与 `[selectionSnapshot]` 日志，再定位是 Lexical selection、offset 还是 snapshot text 丢失
 
 **不要改成什么：**
 - 不要在 Lexical 场景下仍监听全局 selectionchange（可能导致 offset 计算错误）
-- 不要在 MouseUpPlugin 里加 setTimeout（会导致 selection 被浏览器清除）
+- 不要把 MouseUpPlugin 改回“无条件 `setTimeout(0)` 后再读 selection”或无限重试轮询
+- 不要在 HomePage / EditEntryPage 再写 `getSelection()` / `getBoundingClientRect()` / offsets 推导补丁
 
-**优先级：** 中（功能可用，但需要点两次才能高亮，用户体验不佳；需要后续深入调查）
+**优先级：** 中（代码层兜底已收口，但仍待实机矩阵确认）
 
 ---
 
@@ -1205,6 +1213,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-26 · 协调session · 分支纪律补强：明确禁止直接在 main 上提交任何代码或文档改动；当前阶段所有变更先落 dev，确认无问题后再 merge main；同步更新 CLAUDE.md / session-protocol.md / arch-context.md
+- 2026-04-27 · 代码session · P1 交互可靠性 rebase：确认 HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor.MouseUpPlugin` 改为 `sync -> 0ms timeout -> 1帧 rAF` 有界重试；`selectionSnapshot.js` 新增 DEV 诊断日志；保留 `useAnnotationInteraction` 旧 DOM 接口给 RecordDetail / ReviewLetterDetail / ThreadDetailPage；`npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p1-interaction-reliability-rebase.md`
 - 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`；commit `2ea97e3`；同步卡：`docs/sync-cards/2026-04-27-p0-data-layer-consolidation.md`
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
