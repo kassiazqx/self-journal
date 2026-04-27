@@ -1,4 +1,18 @@
 /**
+ * getDayRange(date)
+ * 返回本地时区下某一天的 [start, end) 范围。
+ */
+export function getDayRange(date = new Date()) {
+  const start = new Date(date)
+  start.setHours(0, 0, 0, 0)
+
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+
+  return { start, end }
+}
+
+/**
  * inferDatetime(text, now)
  * 从文本关键词推算绝对时间。
  * 多关键词：过滤未来时间点，取最近（最大时间戳）的结果。

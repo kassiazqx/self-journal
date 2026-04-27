@@ -35,8 +35,14 @@ export async function getEntryById(id, { force = false } = {}) {
       .from('journal_entries')
       .select(JOURNAL_ENTRY_FULL_SELECT)
       .eq('id', id)
-      .single()
-  )).finally(() => {
+      .maybeSingle()
+  )).then((result) => {
+    if (!result.error && !result.data) {
+      store.dispatch(entryActions.removeOne(id))
+    }
+
+    return result
+  }).finally(() => {
     entryRequestCache.delete(id)
   })
 

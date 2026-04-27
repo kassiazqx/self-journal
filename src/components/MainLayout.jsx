@@ -19,6 +19,7 @@ import CandidateDetailPage from '../pages/CandidateDetailPage'
 import EditEntryPage from '../pages/EditEntryPage'
 import { useEntry } from '../hooks/useEntry'
 import { entryActions } from '../store/entrySlice'
+import EntryStatusFallback from './EntryStatusFallback'
 
 const NAV_ITEMS = [
   { id: 'write',    label: '写',   icon: null },
@@ -81,7 +82,11 @@ function MainLayoutContent() {
   }, [])
 
   const currentScreen = screens[screens.length - 1] ?? null
-  const screenEntry = useEntry(currentScreen?.entryId ?? null)
+  const {
+    entry: screenEntry,
+    status: screenEntryStatus,
+    retry: retryScreenEntry,
+  } = useEntry(currentScreen?.entryId ?? null)
 
   function push(screen) { setScreens(prev => [...prev, screen]) }
   function pop()        { setScreens(prev => prev.slice(0, -1)) }
@@ -198,19 +203,30 @@ function MainLayoutContent() {
   function renderScreen(screen) {
     if (!screen) return null
 
-    if ((screen.type === 'awareness' || screen.type === 'editHome') && !screenEntry) {
-      return (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#999',
-          fontSize: 14,
-        }}>
-          加载中…
-        </div>
-      )
+    if (screen.type === 'awareness' || screen.type === 'editHome') {
+      if (screenEntryStatus === 'missing') {
+        return (
+          <EntryStatusFallback
+            status="missing"
+            onBack={pop}
+            missingText="记录已删除或不存在"
+          />
+        )
+      }
+
+      if (screenEntryStatus === 'error') {
+        return (
+          <EntryStatusFallback
+            status="error"
+            onBack={pop}
+            onRetry={retryScreenEntry}
+          />
+        )
+      }
+
+      if (!screenEntry) {
+        return <EntryStatusFallback status="loading" />
+      }
     }
 
     if (screen.type === 'awareness') {

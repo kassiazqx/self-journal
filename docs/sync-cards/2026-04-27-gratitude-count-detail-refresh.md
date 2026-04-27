@@ -81,4 +81,5 @@ P0 后，`RecordDetail` 保存字段会经 `entryRepository.updateEntry()` 拿�
 - 详情页把非感恩记录改成感恩，回到“写”页计数立刻 `+1`
 - 详情页把感恩记录改成非感恩，回到“写”页计数立刻 `-1`
 - 详情页修改 `created_at` 跨过“今天”边界时，计数也立刻同步
+  - 注：这条在 `576c5e7` 当时只完成了“刷新信号”半边；查询语义 `[todayStart, tomorrowStart)` 于后续同步卡 `2026-04-27-entry-status-day-range-followup.md` 补齐
 - 普通字段如摘要、需求、标注保存，不会额外触发感恩计数刷新

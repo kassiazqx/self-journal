@@ -16,6 +16,7 @@ import DatetimePicker from './DatetimePicker'
 import React from 'react'
 import AnnotatedText from './AnnotatedText'
 import AnnotationMenu from './AnnotationMenu'
+import EntryStatusFallback from './EntryStatusFallback'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 import { useEntry } from '../hooks/useEntry'
@@ -103,21 +104,16 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
 }
 
 export default function RecordDetail({ entryId, onBack, onOpenAwareness, onEdit, onEntriesMutated }) {
-  const entrySnapshot = useEntry(entryId)
+  const { entry: entrySnapshot, status, retry } = useEntry(entryId)
 
-  if (!entrySnapshot) {
+  if (status !== 'ready' || !entrySnapshot) {
     return (
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#999',
-        fontSize: 14,
-        background: '#faf8f4',
-      }}>
-        加载中…
-      </div>
+      <EntryStatusFallback
+        status={status}
+        onBack={onBack}
+        onRetry={retry}
+        missingText="记录已删除或不存在"
+      />
     )
   }
 

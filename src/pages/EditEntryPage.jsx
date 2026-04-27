@@ -14,6 +14,7 @@ import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 import AnnotationMenu from '../components/AnnotationMenu'
 import { useEntry } from '../hooks/useEntry'
+import EntryStatusFallback from '../components/EntryStatusFallback'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -45,21 +46,16 @@ function AutoTextarea({ value, onChange, autoFocus, style }) {
 
 export default function EditEntryPage({ entryId, onBack, onDone }) {
   const [suspendRefetch, setSuspendRefetch] = useState(false)
-  const entry = useEntry(entryId, { suspendRefetch })
+  const { entry, status, retry } = useEntry(entryId, { suspendRefetch })
 
-  if (!entry) {
+  if (status !== 'ready' || !entry) {
     return (
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#999',
-        fontSize: 14,
-        background: '#faf8f4',
-      }}>
-        加载中…
-      </div>
+      <EntryStatusFallback
+        status={status}
+        onBack={onBack}
+        onRetry={retry}
+        missingText="记录已删除或不存在"
+      />
     )
   }
 

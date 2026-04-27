@@ -265,7 +265,9 @@ src/
 │   └── useSpeechRecognition.js 语音输入
 ├── hooks/
 │   ├── useSpeechRecognition.js 语音输入
-│   ├── useEntry.js             journal_entries 读 hook（store miss 自动 fetch；stale 自动 refetch；支持 suspendRefetch）
+│   ├── useEntry.js             journal_entries 读 hook（返回 `{ entry, status, error, retry }`）
+│   │                           status 至少区分：loading / ready / missing / error
+│   │                           store miss：getEntryById() 自动拉取；stale 且未 suspend：后台 force refetch
 │   ├── useAnnotations.js       标注状态机（annotations/activeColor/addAnnotation/markSaved/resetAnnotations/dirty）
 │   │                           dedup guard：同 type+start+end 已存在则跳过；resetAnnotations(arr) 供外部覆盖初始状态
 │   │                           ✨ 新增：shiftAnnotations(annotations, changeStart, delta) 纯函数（named export）
@@ -288,8 +290,10 @@ src/
 │   │                           ⚠️ setRollingSummary/setUserProfile/clearMemory 已删除（零调用方）
 │   ├── entrySnapshots.js       JOURNAL_ENTRY_FULL_SELECT（交互实体统一 shape，含 updated_at / covered_by_letter_id）
 │   ├── entryRepository.js      journal_entries 唯一交互读写入口（create/update/getById/list/delete + invalidate + primeEntries）
+│   │                           getById 用 maybeSingle()：0 行=missing；真实 query error 原样上抛；0 行时同步 removeOne(id)
 │   │                           所有写入返回完整权威行并立刻 upsert 进 store；后台批量写路径只 mark stale
 │   ├── entryReadQueries.js     journal_entries 只读查询入口（导出 / 今日感恩计数 / AI 上下文 / 洞察）
+│   │                           今日感恩计数语义：created_at ∈ [todayStart, tomorrowStart)
 │   ├── entryMutationSignals.js entry 聚合刷新信号辅助：当前仅 `template_type` / `created_at` 变更需触发派生计数重拉
 │   ├── conversationService.js  对话保存 + AI 字段提取
 │   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
@@ -304,7 +308,7 @@ src/
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
-│   ├── dateUtils.js            inferDatetime(text, now) + formatPill() 日期工具（新增）
+│   ├── dateUtils.js            inferDatetime(text, now) + formatPill() + getDayRange(date) 日期工具（新增）
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
 │   │                           mapToBase() 已改为内部私有（去掉 export）
 │   ├── annotationConfig.js     标注颜色配置（COLOR_MAP: id→hex；getAnnotationColor(id)）
@@ -372,10 +376,12 @@ src/
 │   │   │                           guard：JSON.stringify 比较旧新 style，相同则跳过（防止无限 update 循环）
 │   │   ├── selectionSnapshot.js ✨ 新建：SelectionSnapshot / AnnotationSnapshot 构造；DEV 下记录 offsets/text 丢失点
 │   │   └── selectionToOffsets.js  ✨ 新建：Lexical RangeSelection → {start, end} 绝对字符偏移，处理段落隐式换行
+│   ├── EntryStatusFallback.jsx entryId 资源缺失/加载失败兜底 UI（loading/missing/error）
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
-│   │                           改为 props.entryId + useEntry() 读实体；字段保存 / AI 分析 / 标注保存统一走 entryRepository.updateEntry
+│   │                           改为 props.entryId + useEntry() 读实体；status=missing 时提示“记录已删除/不存在”，error 时可返回/重试
+│   │                           字段保存 / AI 分析 / 标注保存统一走 entryRepository.updateEntry
 │   │                           聚合字段变更：`template_type` / `created_at` 保存成功后上报 onEntriesMutated，刷新写作页今日感恩计数
 │   │                           store 新快照进来时：dirty annotations 保留本地，非 dirty 时 resetAnnotations(data.annotations)
 │   │                           ⚠️ messages 分支 raw_entry 节点必须渲染 entry.content（非 msg.content），rawText 与渲染文本必须同源
@@ -1132,6 +1138,50 @@ async function loadFull() {
 
 ---
 
+### 4.58 entryId 导航必须区分 missing 与 error（2026-04-27 确立）
+
+**根因：** P0 把详情/编辑/觉察导航统一成“只传 `entryId`”。这会把“资源不存在”和“查询失败”两个场景都推迟到读取时才暴露。若 hook 把所有失败都吞掉并只返回 `null`，调用方只能永远停在“加载中…”。
+
+**症状：** 回顾信 `entry_ids` 指向已删除记录时，从信里点进去会卡死在详情页 loading；同理，若网络失败/RLS/瞬时查询异常，也会被误显示成“不存在”或一直 loading。
+
+**修复（2026-04-27）：**
+- `entryRepository.getEntryById()` 改用 `.maybeSingle()`：0 行返回 `{ data: null, error: null }`，真实异常保留在 `error`
+- `useEntry()` 返回 `{ entry, status, error, retry }`
+- 调用方至少区分：
+  - `loading`：加载中
+  - `ready`：正常渲染
+  - `missing`：记录已删除/不存在
+  - `error`：加载失败，可返回/重试
+
+**规律：** 任何“导航只传 id、页面自己取实体”的路径，都不能只用 `null` 表达所有失败；至少要把“0 行 missing”和“真实 query error”分开。
+
+**不要改成什么：**
+- 不要把 `getEntryById().catch(() => {})` 当作正常控制流
+- 不要让 `RecordDetail` / `EditEntryPage` / `AwarenessFlow` 用同一段“没数据=加载中”的兜底
+- 不要为 `ReviewLetterDetail` 单独写特判修补；契约应收口在 `useEntry`
+
+---
+
+### 4.59 “今天”类查询必须使用 [start, end) 日范围（2026-04-27 确立）
+
+**根因：** 只写 `created_at >= todayStart` 没有上界，会把明天/未来的记录也算进“今天”。这种 bug 平时不易暴露，但一旦支持手动改日期，就会直接出现在派生计数里。
+
+**症状：** 把感恩记录的 `created_at` 改到明天后，今日感恩计数仍然包含它；刷新信号虽然正确触发，但查询语义仍错。
+
+**修复（2026-04-27）：**
+- `dateUtils.getDayRange(date)` 统一返回本地时区 `[start, end)` 日范围
+- `queryTodayGratitudeCount()` 改为：
+  - `created_at >= todayStart`
+  - `created_at < tomorrowStart`
+
+**规律：** 任何“今天/某天/某周”类时间筛选，都应优先抽成通用 range helper，再在查询层使用 `[start, end)`，不要只写半截下界。
+
+**不要改成什么：**
+- 不要重复在各个 service/query 里手写 `setHours(0,0,0,0)` 但漏掉上界
+- 不要把“刷新触发正确”误当成“派生语义正确”
+
+---
+
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
 - Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
@@ -1213,6 +1263,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-26 · 协调session · 分支纪律补强：明确禁止直接在 main 上提交任何代码或文档改动；当前阶段所有变更先落 dev，确认无问题后再 merge main；同步更新 CLAUDE.md / session-protocol.md / arch-context.md
+- 2026-04-27 · 代码session · P0/P2 跟进收口：`getEntryById()` 改用 `.maybeSingle()`，`useEntry()` 返回 `loading/ready/missing/error` 契约并接到 RecordDetail/EditEntryPage/MainLayout；新增 `dateUtils.getDayRange()`，今日感恩计数改为 `[todayStart, tomorrowStart)`；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-entry-status-day-range-followup.md`
 - 2026-04-27 · 代码session · P1 交互可靠性 rebase：确认 HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor.MouseUpPlugin` 改为 `sync -> 0ms timeout -> 1帧 rAF` 有界重试；`selectionSnapshot.js` 新增 DEV 诊断日志；保留 `useAnnotationInteraction` 旧 DOM 接口给 RecordDetail / ReviewLetterDetail / ThreadDetailPage；`npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p1-interaction-reliability-rebase.md`
 - 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`；commit `2ea97e3`；同步卡：`docs/sync-cards/2026-04-27-p0-data-layer-consolidation.md`
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`

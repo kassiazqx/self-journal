@@ -1,4 +1,5 @@
 import { db } from './db'
+import { getDayRange } from './dateUtils'
 
 export async function queryAllEntries({ userId }) {
   return db
@@ -29,15 +30,15 @@ export async function queryEntriesForAI({ userId, ids } = {}) {
 }
 
 export async function queryTodayGratitudeCount(userId) {
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
+  const { start, end } = getDayRange(new Date())
 
   const { count, error } = await db
     .from('journal_entries')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('template_type', 'gratitude')
-    .gte('created_at', todayStart.toISOString())
+    .gte('created_at', start.toISOString())
+    .lt('created_at', end.toISOString())
 
   return { count: Math.min(count ?? 0, 3), error }
 }
