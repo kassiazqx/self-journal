@@ -2,6 +2,7 @@
 // 4 Tab 导航：写 / 记录 / 洞察 / 我的
 // 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail 等）
 import { useState, useEffect, useRef } from 'react'
+import { useDispatch } from 'react-redux'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
 import { useAuth } from '../contexts/AuthContext'
 import HomePage from '../pages/HomePage'
@@ -16,7 +17,8 @@ import ThreadsPage from '../pages/ThreadsPage'
 import ThreadDetailPage from '../pages/ThreadDetailPage'
 import CandidateDetailPage from '../pages/CandidateDetailPage'
 import EditEntryPage from '../pages/EditEntryPage'
-import { EntryCacheProvider, useEntryCache } from '../contexts/EntryCacheContext'
+import { useEntry } from '../hooks/useEntry'
+import { entryActions } from '../store/entrySlice'
 
 const NAV_ITEMS = [
   { id: 'write',    label: '写',   icon: null },
@@ -27,24 +29,23 @@ const NAV_ITEMS = [
 
 export default function MainLayout() {
   const { session, user } = useAuth()
+  const dispatch = useDispatch()
   const cacheScopeKey = session?.refresh_token ?? user?.id ?? 'guest'
 
-  return (
-    <EntryCacheProvider key={cacheScopeKey}>
-      <MainLayoutContent />
-    </EntryCacheProvider>
-  )
+  useEffect(() => {
+    dispatch(entryActions.clearAll())
+  }, [cacheScopeKey, dispatch])
+
+  return <MainLayoutContent />
 }
 
 function MainLayoutContent() {
-  const { resolveEntry, storeEntry } = useEntryCache()
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
   })
   const [screens, setScreens] = useState([])
   const [refreshKey, setRefreshKey] = useState(0)
-  const [detailRefreshToken, setDetailRefreshToken] = useState(0)
   const [writeResetKey, setWriteResetKey] = useState(0)
   const [settingsResetKey, setSettingsResetKey] = useState(0)
   const [toast, setToast] = useState(null)
@@ -80,10 +81,15 @@ function MainLayoutContent() {
   }, [])
 
   const currentScreen = screens[screens.length - 1] ?? null
+  const screenEntry = useEntry(currentScreen?.entryId ?? null)
 
   function push(screen) { setScreens(prev => [...prev, screen]) }
   function pop()        { setScreens(prev => prev.slice(0, -1)) }
   function reset()      { setScreens([]) }
+  function toEntryId(entryOrId) {
+    if (!entryOrId) return null
+    return typeof entryOrId === 'string' ? entryOrId : entryOrId.id
+  }
 
   function goTab(id) {
     reset()
@@ -96,7 +102,7 @@ function MainLayoutContent() {
   function handleHomeSaved(entry, gotoAwareness) {
     setRefreshKey(k => k + 1)
     if (gotoAwareness) {
-      push({ type: 'awareness', entry: resolveEntry(entry) })
+      push({ type: 'awareness', entryId: entry.id })
     } else {
       goTab('records')
     }
@@ -111,11 +117,11 @@ function MainLayoutContent() {
 
   // ── AwarenessFlow 退出（点「上一张」退回写作页）───────────────
   function handleAwarenessExit(awarenessState) {
-    const entry = screens[screens.length - 1]?.entry
-    if (entry) {
+    const entryId = screens[screens.length - 1]?.entryId
+    if (entryId) {
       // 把 entry 和觉察进度带回，以编辑模式打开写作页
       // 用户再次点 ✓ 时走 updateEntry 而非 insertEntry，不会重复创建
-      setScreens([{ type: 'editHome', entry, awarenessState }])
+      setScreens([{ type: 'editHome', entryId, awarenessState }])
     } else {
       pop()
     }
@@ -123,19 +129,20 @@ function MainLayoutContent() {
 
   // ── editHome 模式：写作页用已有 entry 打开，再次点 ✓ 继续觉察流 ──
   function handleEditHomeDone(updatedEntry) {
-    storeEntry(updatedEntry, { source: 'local' })
     const awarenessState = screens[screens.length - 1]?.awarenessState ?? null
     setRefreshKey(k => k + 1)
     setScreens([{
       type: 'awareness',
-      entry: resolveEntry(updatedEntry),
+      entryId: updatedEntry.id,
       initialFlowState: awarenessState,
     }])
   }
 
   // ── RecordsPage 打开详情 ────────────────────────────────────
-  function handleOpenDetail(entry) {
-    push({ type: 'detail', entry: resolveEntry(entry) })
+  function handleOpenDetail(entryOrId) {
+    const entryId = toEntryId(entryOrId)
+    if (!entryId) return
+    push({ type: 'detail', entryId })
   }
 
   // ── RecordsPage 打开回顾信 ──────────────────────────────────
@@ -164,13 +171,14 @@ function MainLayoutContent() {
   }
 
   // ── 编辑记录入口（RecordsPage 长按 / RecordDetail 编辑按钮）──
-  function handleEditEntry(entry) {
-    push({ type: 'editEntry', entry: resolveEntry(entry) })
+  function handleEditEntry(entryOrId) {
+    const entryId = toEntryId(entryOrId)
+    if (!entryId) return
+    push({ type: 'editEntry', entryId })
   }
 
   // ── EditEntryPage 保存完成 ───────────────────────────────────
   function handleEditSaved() {
-    setDetailRefreshToken(t => t + 1) // 让 RecordDetail 重新拉取数据
     setRefreshKey(k => k + 1)         // 让 RecordsPage 刷新列表
     pop()
   }
@@ -180,18 +188,35 @@ function MainLayoutContent() {
   }
 
   // ── RecordDetail 打开 AwarenessFlow ────────────────────────
-  function handleOpenAwarenessFromDetail(entry) {
-    push({ type: 'awareness', entry: resolveEntry(entry) })
+  function handleOpenAwarenessFromDetail(entryOrId) {
+    const entryId = toEntryId(entryOrId)
+    if (!entryId) return
+    push({ type: 'awareness', entryId })
   }
 
   // ── 渲染当前全屏覆盖页（screens 栈顶） ───────────────────────
   function renderScreen(screen) {
     if (!screen) return null
 
+    if ((screen.type === 'awareness' || screen.type === 'editHome') && !screenEntry) {
+      return (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#999',
+          fontSize: 14,
+        }}>
+          加载中…
+        </div>
+      )
+    }
+
     if (screen.type === 'awareness') {
       return (
         <AwarenessFlow
-          entry={resolveEntry(screen.entry)}
+          entry={screenEntry}
           onComplete={handleAwarenessComplete}
           onExit={handleAwarenessExit}
           initialFlowState={screen.initialFlowState ?? null}
@@ -202,11 +227,10 @@ function MainLayoutContent() {
     if (screen.type === 'detail') {
       return (
         <RecordDetail
-          entry={resolveEntry(screen.entry)}
+          entryId={screen.entryId}
           onBack={pop}
           onOpenAwareness={handleOpenAwarenessFromDetail}
           onEdit={handleEditEntry}
-          refreshToken={detailRefreshToken}
         />
       )
     }
@@ -216,7 +240,7 @@ function MainLayoutContent() {
         <ReviewLetterDetail
           letter={screen.letter}
           onBack={pop}
-          onOpenEntry={entryId => push({ type: 'detail', entry: { id: entryId } })}
+          onOpenEntry={entryId => push({ type: 'detail', entryId })}
           onOpenCandidateDetail={handleOpenCandidate}
           onOpenThreadDetail={thread => handleOpenThread(thread, 'view')}
         />
@@ -250,7 +274,10 @@ function MainLayoutContent() {
           thread={screen.thread}
           mode={screen.mode ?? 'confirmed'}
           onBack={pop}
-          onOpenEntry={entry => push({ type: 'detail', entry })}
+          onOpenEntry={entry => {
+            const entryId = toEntryId(entry)
+            if (entryId) push({ type: 'detail', entryId })
+          }}
           onArchived={() => pop()}
           onRestored={() => pop()}
           onDeleted={() => pop()}
@@ -265,7 +292,10 @@ function MainLayoutContent() {
           onBack={pop}
           onAccepted={() => pop()}
           onIgnored={() => pop()}
-          onOpenEntry={entry => push({ type: 'detail', entry })}
+          onOpenEntry={entry => {
+            const entryId = toEntryId(entry)
+            if (entryId) push({ type: 'detail', entryId })
+          }}
         />
       )
     }
@@ -273,7 +303,7 @@ function MainLayoutContent() {
     if (screen.type === 'editHome') {
       return (
         <HomePage
-          editEntry={resolveEntry(screen.entry)}
+          editEntry={screenEntry}
           onDone={handleEditHomeDone}
           onCancel={() => { reset(); goTab('records') }}
           onOpenLetter={letter => push({ type: 'letter', letter })}
@@ -285,7 +315,7 @@ function MainLayoutContent() {
     if (screen.type === 'editEntry') {
       return (
         <EditEntryPage
-          entry={resolveEntry(screen.entry)}
+          entryId={screen.entryId}
           onBack={pop}
           onDone={handleEditSaved}
         />

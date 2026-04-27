@@ -2,10 +2,10 @@
 // 与 UI 完全解耦，组件只调 saveConversation()
 import { callAI } from './aiClient'
 import { getExtractionPrompt, getMemoryUpdatePrompt } from './prompts'
-import { updateEntry } from './journalService'
 import { updateMemory, incrementConversationCount, resetConversationCount } from './memory'
 import { db } from './db'
 import { createPendingCoreNeed } from './coreNeedsService'
+import { updateEntry } from './entryRepository'
 
 // 每完成多少次对话才更新一次 AI 记忆
 const MEMORY_UPDATE_INTERVAL = 20

@@ -19,13 +19,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
-import { insertEntry, updateEntry, fetchTodayGratitudeCount } from '../lib/journalService'
+import { createEntry, updateEntry } from '../lib/entryRepository'
 import { Mic, MicOff } from 'lucide-react'
 import { db } from '../lib/db'
 import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
 import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
 import DatetimePicker from '../components/DatetimePicker'
 import { inferDatetime, formatPill } from '../lib/dateUtils'
+import { queryTodayGratitudeCount } from '../lib/entryReadQueries'
 import {
   DndContext,
   closestCenter,
@@ -51,19 +52,6 @@ import AnnotationMenu from '../components/AnnotationMenu'
 const DRAFT_KEY = 'journal_draft'
 const FLOATING_BAR_HEIGHT = 84
 const FLOATING_BAR_GAP = 12
-
-// ─── UUID 生成（兼容非安全上下文 http://192.168.x.x）──────────────
-// crypto.randomUUID() 需要 secure context，localhost 豁免但 LAN IP 不行。
-// getRandomValues() 在所有上下文均可用，用它生成合法 UUID v4。
-function generateUUID() {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  bytes[6] = (bytes[6] & 0x0f) | 0x40  // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80  // variant
-  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
-}
 
 function saveDraft(content, templateId, selectedDatetime, manualOverride, dismissedPeople) {
   try {
@@ -163,7 +151,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
 
   async function refreshGratitudeCount(userId) {
     if (!userId) return
-    const { count } = await fetchTodayGratitudeCount(userId)
+    const { count } = await queryTodayGratitudeCount(userId)
     setGratitudeCount(count ?? 0)
   }
 
@@ -171,7 +159,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     if (!user?.id) return
     let cancelled = false
     ;(async () => {
-      const { count } = await fetchTodayGratitudeCount(user.id)
+      const { count } = await queryTodayGratitudeCount(user.id)
       if (!cancelled) {
         setGratitudeCount(count ?? 0)
       }
@@ -505,45 +493,49 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         created_at: selectedDatetime.toISOString(),
         annotations,
       }
-      const updatedEntry = { ...editEntry, ...fields }
-      onDone?.(updatedEntry, false)
-
       const entryId = editEntry.id
       const userId = user.id
       const filesToUpload = [...selectedFiles]
       const existingPaths = [...imagePaths]
       const notifyFn = onNotify
 
-      updateEntry({ id: entryId, userId, fields })
-        .then(async ({ error }) => {
-          if (error) { console.error('[edit]', error); return }
-          // DB 写成功后，才删 Storage（防止取消时产生孤儿文件）
-          const toDelete = [...pathsToDeleteRef.current]
-          pathsToDeleteRef.current = []
-          if (toDelete.length > 0) {
-            await Promise.all(toDelete.map(p => deleteImage(p)))
-          }
-          if (!filesToUpload.length) return
-          const newPaths = await Promise.all(
-            filesToUpload.map(f => uploadImage(f, userId, entryId))
-          )
-          const successPaths = newPaths.filter(Boolean)
-          const failedCount = newPaths.length - successPaths.length
-          if (successPaths.length > 0) {
-            await updateEntry({
-              id: entryId, userId,
-              fields: { image_urls: [...existingPaths, ...successPaths] },
-            })
-          }
-          if (failedCount > 0) notifyFn?.('图片上传失败，进入记录可重新添加')
-        })
-        .catch(console.error)
+      const { data: updatedEntry, error } = await updateEntry({ id: entryId, userId, fields })
+      if (error || !updatedEntry) {
+        console.error('[edit]', error)
+        setSaving(false)
+        notifyFn?.('记录保存失败，请检查网络后重试')
+        return
+      }
+
+      setSaving(false)
+      onDone?.(updatedEntry, false)
+
+      ;(async () => {
+        // DB 写成功后，才删 Storage（防止取消时产生孤儿文件）
+        const toDelete = [...pathsToDeleteRef.current]
+        pathsToDeleteRef.current = []
+        if (toDelete.length > 0) {
+          await Promise.all(toDelete.map(p => deleteImage(p)))
+        }
+        if (!filesToUpload.length) return
+        const newPaths = await Promise.all(
+          filesToUpload.map(f => uploadImage(f, userId, entryId))
+        )
+        const successPaths = newPaths.filter(Boolean)
+        const failedCount = newPaths.length - successPaths.length
+        if (successPaths.length > 0) {
+          await updateEntry({
+            id: entryId, userId,
+            fields: { image_urls: [...existingPaths, ...successPaths] },
+          })
+        }
+        if (failedCount > 0) notifyFn?.('图片上传失败，进入记录可重新添加')
+      })().catch(console.error)
       return
     }
 
-    // 新建模式：乐观插入——先生成 ID 立即跳转，后台异步上传图片
-    const optimisticEntry = {
-      id: generateUUID(),
+    // 新建模式：先拿真实权威行，再导航；图片仍后台异步上传
+    const draftEntry = {
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
@@ -552,26 +544,27 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       annotations,
     }
 
+    const { data: createdEntry, error } = await createEntry(draftEntry)
+    if (error || !createdEntry) {
+      console.error('[insert]', error)
+      setSaving(false)
+      onNotify?.('记录保存失败，请检查网络后重试')
+      return
+    }
+
     clearDraft()
     clearTimeout(draftTimerRef.current)  // 防止 awareness 期间 timer 重写草稿
     const gotoAwareness = template.awarenessStart !== null
     setSaving(false)
-    onDone?.(optimisticEntry, gotoAwareness)
+    onDone?.(createdEntry, gotoAwareness)
 
-    const entryId = optimisticEntry.id
+    const entryId = createdEntry.id
     const userId = user.id
     const filesToUpload = [...selectedFiles]
     const notifyFn = onNotify
-
-    insertEntry(optimisticEntry)
-      .then(({ error }) => {
-        if (error) {
-          console.error('[insert]', error)
-          notifyFn?.('记录保存失败，请检查网络后重试')
-        } else if (template.id === 'gratitude') {
-          refreshGratitudeCount(userId).catch(console.error)
-        }
-      })
+    if (template.id === 'gratitude') {
+      refreshGratitudeCount(userId).catch(console.error)
+    }
 
     if (filesToUpload.length > 0) {
       ;(async () => {
@@ -604,7 +597,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     if (!latestContent.trim() || saving) return
     setSaving(true)
 
-    const { data: entry, error } = await insertEntry({
+    const { data: entry, error } = await createEntry({
       user_id: user.id,
       content: latestContent.trim(),
       template_type: template.id,

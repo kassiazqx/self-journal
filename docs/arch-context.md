@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-22（编辑器框架升级：写作时即可标注，Lexical 富文本编辑器）
+**最后更新：** 2026-04-27（P0 数据层收口：EntryRepository + EntityStore）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -265,6 +265,7 @@ src/
 │   └── useSpeechRecognition.js 语音输入
 ├── hooks/
 │   ├── useSpeechRecognition.js 语音输入
+│   ├── useEntry.js             journal_entries 读 hook（store miss 自动 fetch；stale 自动 refetch；支持 suspendRefetch）
 │   ├── useAnnotations.js       标注状态机（annotations/activeColor/addAnnotation/markSaved/resetAnnotations/dirty）
 │   │                           dedup guard：同 type+start+end 已存在则跳过；resetAnnotations(arr) 供外部覆盖初始状态
 │   │                           ✨ 新增：shiftAnnotations(annotations, changeStart, delta) 纯函数（named export）
@@ -276,13 +277,19 @@ src/
 │                               ✨ 新增：flipDown 逻辑 — 手机端 / 选区离顶部 < MENU_HEIGHT 时，菜单显示在选区下方
 │                               ✨ 新增：lastOpenMenuAtRef 防双触发（openMenuAt 打时间戳，selectionchange 500ms 内跳过）
 │                               menuPosition 形状：{ top, left, flipDown }（AnnotationMenu 读取 flipDown 决定方向）
+├── store/
+│   ├── index.js                RTK store 根配置
+│   └── entrySlice.js           journal_entries 实体单一真源（upsertIfNewer / upsertManyIfNewer / markStale / removeMany）
 ├── lib/
 │   ├── supabase.js             DB客户端（仅供 db.js 使用）
 │   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
 │   ├── aiClient.js             AI调用层（Gemini/Deepseek）
 │   ├── memory.js               AI记忆读写（Supabase user_memory）
 │   │                           ⚠️ setRollingSummary/setUserProfile/clearMemory 已删除（零调用方）
-│   ├── journalService.js       日记 CRUD（⚠️ 仍直接用 supabase，待迁移）
+│   ├── entrySnapshots.js       JOURNAL_ENTRY_FULL_SELECT（交互实体统一 shape，含 updated_at / covered_by_letter_id）
+│   ├── entryRepository.js      journal_entries 唯一交互读写入口（create/update/getById/list/delete + invalidate + primeEntries）
+│   │                           所有写入返回完整权威行并立刻 upsert 进 store；后台批量写路径只 mark stale
+│   ├── entryReadQueries.js     journal_entries 只读查询入口（导出 / 今日感恩计数 / AI 上下文 / 洞察）
 │   ├── conversationService.js  对话保存 + AI 字段提取
 │   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
 │   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
@@ -330,6 +337,7 @@ src/
 │   └── threadService.test.js
 ├── components/
 │   ├── MainLayout.jsx          4-Tab导航 + 全屏覆盖层管理
+│   │                           screens 栈只存 entryId，不再存 entry 快照；session/user 切换时 dispatch(clearAll) 清空实体 store
 │   │                           writeResetKey：觉察流完成时重挂 HomePage
 │   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
 │   │                           refreshKey：统一 entry 变更信号；驱动 RecordsPage refreshTrigger + HomePage gratitudeRefreshTrigger
@@ -363,8 +371,8 @@ src/
 │   ├── RecordDetail.jsx        记录详情（顶部四字段可编辑：template_type/emotions/state_score/category_tags）
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
-│   │                           loadFull() 内调 resetAnnotations(data.annotations) 确保持久化标注正确加载
-│   │                           handleAIAnalyze 重拉 entry 后同样调 resetAnnotations，防止 AI 分析后标注状态与 DB 脱节
+│   │                           改为 props.entryId + useEntry() 读实体；字段保存 / AI 分析 / 标注保存统一走 entryRepository.updateEntry
+│   │                           store 新快照进来时：dirty annotations 保留本地，非 dirty 时 resetAnnotations(data.annotations)
 │   │                           ⚠️ messages 分支 raw_entry 节点必须渲染 entry.content（非 msg.content），rawText 与渲染文本必须同源
 │   │                           保存防抖 500ms；onContextMenu preventDefault + WebkitTouchCallout none
 │   │                           ⚠️ 依赖 useAuth() 获取 user.id（不从 initialEntry.user_id 读）
@@ -380,6 +388,7 @@ src/
     │                           日期 pill：inferDatetime debounce 800ms + manualOverride + localStorage 持久化
     │                           gratitudeRefreshTrigger：监听外部 entry 变更，重拉今日感恩计数
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
+    │                           新建 / 编辑完成：先经 entryRepository 拿到权威 row（含 updated_at）再导航；图片仍后台异步上传
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
     │                           键盘避让重构：顶部信息固定，只有“编辑器+图片区”内层滚动
@@ -387,6 +396,7 @@ src/
     ├── RecordsPage.jsx         记录列表（混合时间流：entry + letter，按时间降序分组）
     │                           ⭐ 分页加载：初始50条，上滑触底自动加载下一批50条
     │                           🔍 FilterBar 五维筛选（有筛选时隐藏回顾信卡片）
+    │                           列表本地 state 只保留顺序/筛选结果；完整 entry 优先从 EntityStore 读取，筛选结果用 primeEntries() 补进 store
     │                           🟠 pending_core_needs banner + 处理弹卡片三路径
     │                           onEntriesMutated：单删/批删成功后上报 MainLayout，驱动写作页感恩计数同步刷新
     ├── InsightsPage.jsx        洞察页（脉络区块含候选角标 + 提示条）
@@ -404,6 +414,7 @@ src/
     │                           ⚠️ 去掉了 mount 时的额外 useEffect resetAnnotations，load() 里的已足够，双重调用会在异步间隙产生闪烁
     ├── ReviewLetterListPage.jsx 回顾信列表页
     ├── EditEntryPage.jsx       统一编辑器（原文+觉察流）
+    │                           props 改为 entryId；组件内部 useEntry(entryId, { suspendRefetch }) 读实体，编辑中暂停 stale refetch
     │                           ✨ 编辑器升级：raw_entry / 无觉察流单框均换为 RichTextEditor（写作时即可标注）
     │                           handleRawChange：计算 delta + 调 applyShift 同步标注偏移；contentMap['__raw__'] 同步写入
     │                           handleSave flow 分支：从 contentMap['__raw__'] 读 raw_entry 内容（而非 contentMap[msg.id]）
@@ -1191,6 +1202,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-26 · 协调session · 分支纪律补强：明确禁止直接在 main 上提交任何代码或文档改动；当前阶段所有变更先落 dev，确认无问题后再 merge main；同步更新 CLAUDE.md / session-protocol.md / arch-context.md
+- 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

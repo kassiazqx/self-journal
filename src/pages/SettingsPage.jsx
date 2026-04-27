@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
-import { fetchAllEntries } from '../lib/journalService'
 import { forceUpdateMemory } from '../lib/conversationService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
 import { db } from '../lib/db'
+import { queryAllEntries } from '../lib/entryReadQueries'
 import {
   loadContacts, addContact, updateContact, deleteContact,
 } from '../lib/contactsService'
@@ -230,7 +230,7 @@ export default function SettingsPage() {
     setMemoryUpdateMsg('')
     try {
       // 取最近一条有对话的记录，用它来更新记忆；没有就只重置计数
-      const { data } = await fetchAllEntries({ userId: user.id })
+      const { data } = await queryAllEntries({ userId: user.id })
       const lastWithConvo = (data ?? []).reverse().find(e => Array.isArray(e.full_conversation) && e.full_conversation.length > 0)
       const visibleMsgs = lastWithConvo?.full_conversation?.filter(m => !m.hidden) ?? []
       const { error } = await forceUpdateMemory({ visibleMsgs })

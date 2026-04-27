@@ -4,21 +4,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
-import { fetchEntryById, updateEntry } from '../lib/journalService'
+import { updateEntry } from '../lib/entryRepository'
 import { resolveTemplate } from '../lib/templates'
 import { mapDisplayToBase } from '../lib/emotionMap'
 import { extractFields } from '../lib/conversationService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import { getImageUrl } from '../lib/imageStorage'
-import { useEntryCache } from '../contexts/EntryCacheContext'
-import { hasCompleteEntry } from '../lib/entrySnapshots'
 import DatetimePicker from './DatetimePicker'
 import React from 'react'
 import AnnotatedText from './AnnotatedText'
 import AnnotationMenu from './AnnotationMenu'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
+import { useEntry } from '../hooks/useEntry'
 
 function formatDateTime(isoStr) {
   const d = new Date(isoStr)
@@ -102,17 +101,45 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
   )
 }
 
-export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness, onEdit, refreshToken }) {
+export default function RecordDetail({ entryId, onBack, onOpenAwareness, onEdit }) {
+  const entrySnapshot = useEntry(entryId)
+
+  if (!entrySnapshot) {
+    return (
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#999',
+        fontSize: 14,
+        background: '#faf8f4',
+      }}>
+        加载中…
+      </div>
+    )
+  }
+
+  return (
+    <RecordDetailContent
+      key={entryId}
+      entryId={entryId}
+      entrySnapshot={entrySnapshot}
+      onBack={onBack}
+      onOpenAwareness={onOpenAwareness}
+      onEdit={onEdit}
+    />
+  )
+}
+
+function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, onEdit }) {
   const { user } = useAuth()
-  const { getCachedEntry, isLocalEntryProtected, storeEntry } = useEntryCache()
-  const cachedEntry = getCachedEntry(initialEntry.id)
-  const resolvedInitialEntry = cachedEntry ?? initialEntry
-  const [entry, setEntry] = useState(resolvedInitialEntry)
+  const [entry, setEntry] = useState(entrySnapshot)
   const [messages, setMessages] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
   const [toast, setToast] = useState('')
   const [showConfidenceTip, setShowConfidenceTip] = useState(false)
-  const entryRef = React.useRef(resolvedInitialEntry)
+  const entryRef = React.useRef(entrySnapshot)
 
   // 情绪内联编辑状态
   const [editingEmotions, setEditingEmotions] = useState(false)
@@ -148,16 +175,15 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(entry.annotations)
 
-  const applyEntrySnapshot = useCallback((nextEntry, source = 'local') => {
+  const applyEntrySnapshot = useCallback((nextEntry) => {
     entryRef.current = nextEntry
     setEntry(nextEntry)
-    storeEntry(nextEntry, { source })
     return nextEntry
-  }, [storeEntry])
+  }, [])
 
-  const applyEntryPatch = useCallback((patch, source = 'local') => {
+  const applyEntryPatch = useCallback((patch) => {
     const nextEntry = { ...entryRef.current, ...patch }
-    return applyEntrySnapshot(nextEntry, source)
+    return applyEntrySnapshot(nextEntry)
   }, [applyEntrySnapshot])
 
   const contentContainerRef = React.useRef(null)
@@ -184,9 +210,12 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   const saveAnnotationsNow = useCallback(async (nextAnnotations) => {
     if (!effectiveUserId) return
-    await updateEntry({ id: entry.id, userId: effectiveUserId, fields: { annotations: nextAnnotations } })
-    applyEntryPatch({ annotations: nextAnnotations })
-  }, [applyEntryPatch, effectiveUserId, entry.id])
+    const { data } = await updateEntry({ id: entry.id, userId: effectiveUserId, fields: { annotations: nextAnnotations } })
+    if (data) {
+      applyEntrySnapshot(data)
+      resetAnnotations(data.annotations ?? [])
+    }
+  }, [applyEntrySnapshot, effectiveUserId, entry.id, resetAnnotations])
 
   const saveTimerRef = React.useRef(null)
   React.useEffect(() => {
@@ -213,61 +242,46 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     }
   }, [saveAnnotationsNow])
 
+  useEffect(() => {
+    const hasPendingLocalAnnotations = dirtyRef.current
+    const nextEntry = hasPendingLocalAnnotations
+      ? { ...entrySnapshot, annotations: latestAnnotationsRef.current }
+      : entrySnapshot
+
+    applyEntrySnapshot(nextEntry)
+    if (!hasPendingLocalAnnotations) {
+      resetAnnotations(nextEntry.annotations ?? [])
+    }
+  }, [applyEntrySnapshot, entrySnapshot, resetAnnotations])
+
   // 关联脉络
   const [entryThreads, setEntryThreads] = useState([])
 
   const tpl = resolveTemplate(entry.template_type)
 
-  useEffect(() => {
-    if (refreshToken === 0 && hasCompleteEntry(entryRef.current)) return
-    if (isLocalEntryProtected(initialEntry.id)) return
-
-    let cancelled = false
-
-    async function loadFull() {
-      const { data } = await fetchEntryById({ id: initialEntry.id })
-      if (cancelled || !data) return
-
-      const hasPendingLocalAnnotations = dirtyRef.current
-      const nextEntry = hasPendingLocalAnnotations
-        ? { ...data, annotations: latestAnnotationsRef.current }
-        : data
-      const appliedEntry = storeEntry(nextEntry, { source: hasPendingLocalAnnotations ? 'local' : 'remote' })
-      entryRef.current = appliedEntry
-      setEntry(appliedEntry)
-      if (!hasPendingLocalAnnotations) {
-        resetAnnotations(appliedEntry.annotations ?? [])
-      }
-    }
-
-    loadFull()
-
-    return () => { cancelled = true }
-  }, [initialEntry.id, isLocalEntryProtected, refreshToken, resetAnnotations, storeEntry])
-
-  // 读取对话记录（conversations 表；refreshToken 变化时重新拉取）
+  // 读取对话记录（conversations 表）
   useEffect(() => {
     async function loadMessages() {
       const { data } = await db.from('conversations')
         .select('messages')
-        .eq('entry_id', initialEntry.id)
+        .eq('entry_id', entryId)
         .eq('context_type', 'entry')
         .maybeSingle()
       setMessages(data?.messages ?? [])
     }
     loadMessages()
-  }, [initialEntry.id, refreshToken])
+  }, [entryId])
 
   // 读取关联脉络
   useEffect(() => {
     async function loadThreads() {
       const { data } = await db.from('thread_entries')
         .select('thread_id, threads(id, name)')
-        .eq('entry_id', initialEntry.id)
+        .eq('entry_id', entryId)
       setEntryThreads((data ?? []).map(r => r.threads).filter(Boolean))
     }
     loadThreads()
-  }, [initialEntry.id])
+  }, [entryId])
 
   // 读取用户自定义内容大类标签（含 A1 自动种入 + B1 孤儿标签）
   useEffect(() => {
@@ -318,20 +332,18 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   // ── 单字段 inline 保存 ────────────────────────────────────────
   async function handleFieldSave(field, value) {
-    const { error } = await updateEntry({
+    const { data, error } = await updateEntry({
       id: entry.id,
       userId: effectiveUserId,
       fields: { [field]: value },
     })
     if (error) {
       showToast('保存失败，请检查网络')
-      const { data } = await fetchEntryById({ id: entry.id })
-      if (data) {
-        const appliedEntry = storeEntry(data, { source: 'remote' })
-        entryRef.current = appliedEntry
-        setEntry(appliedEntry)
-        resetAnnotations(appliedEntry.annotations ?? [])
-      }
+      return
+    }
+    if (data) {
+      applyEntrySnapshot(data)
+      resetAnnotations(data.annotations ?? [])
     }
   }
 
@@ -515,7 +527,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       const { baseWords, minConfidence } = mapDisplayToBase(emotionDisplay)
 
       // 只写入已知存在的列，避免 AI 返回未知字段导致 400
-      await updateEntry({
+      const { data, error } = await updateEntry({
         id: entry.id,
         userId: effectiveUserId,
         fields: {
@@ -537,12 +549,13 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           people_involved:           extraction.people_involved           ?? [],
         },
       })
-
-      const { data } = await db.from('journal_entries')
-        .select('*').eq('id', entry.id).single()
+      if (error) {
+        showToast('分析失败，请稍后重试')
+        return
+      }
       if (data) {
         applyEntrySnapshot(data)
-        resetAnnotations(data.annotations)
+        resetAnnotations(data.annotations ?? [])
       }
     } catch (e) {
       console.error('[RecordDetail] AI分析失败:', e)
@@ -1120,7 +1133,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
             ── 原始记录流 ──
             {onEdit && (
               <span
-                onClick={() => onEdit(entry)}
+                onClick={() => onEdit(entry.id)}
                 style={{ cursor: 'pointer', fontSize: 14, color: '#c9a96e', lineHeight: 1, padding: '6px 8px', margin: '-6px -8px' }}
               >
                 ✎
@@ -1299,7 +1312,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
       {/* ── 浮动「✦ 深度觉察」按钮 ── */}
       <button
-        onClick={() => onOpenAwareness(entry)}
+        onClick={() => onOpenAwareness(entry.id)}
         style={{
           position: 'fixed', bottom: 32, left: '50%',
           transform: 'translateX(-50%)',

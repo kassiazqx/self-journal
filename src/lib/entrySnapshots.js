@@ -4,6 +4,7 @@ const FULL_ENTRY_FIELDS = [
   'content',
   'template_type',
   'created_at',
+  'updated_at',
   'emotion_display',
   'emotions',
   'emotion_confidence',
@@ -22,19 +23,7 @@ const FULL_ENTRY_FIELDS = [
   'entry_summary',
   'overall_state_score',
   'theme_hints',
+  'covered_by_letter_id',
 ]
 
 export const JOURNAL_ENTRY_FULL_SELECT = FULL_ENTRY_FIELDS.join(', ')
-
-export function hasCompleteEntry(entry) {
-  if (!entry?.id) return false
-  return FULL_ENTRY_FIELDS.every(field => Object.prototype.hasOwnProperty.call(entry, field))
-}
-
-export function sortEntriesByCreatedAtDesc(entries) {
-  return [...entries].sort((a, b) => {
-    const aTime = new Date(a?.created_at ?? 0).getTime()
-    const bTime = new Date(b?.created_at ?? 0).getTime()
-    return bTime - aTime
-  })
-}

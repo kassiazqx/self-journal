@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
-import { updateEntry } from '../lib/journalService'
+import { updateEntry } from '../lib/entryRepository'
 import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
 import DatetimePicker from '../components/DatetimePicker'
 import { formatPill } from '../lib/dateUtils'
@@ -13,7 +13,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 import AnnotationMenu from '../components/AnnotationMenu'
-import { useEntryCache } from '../contexts/EntryCacheContext'
+import { useEntry } from '../hooks/useEntry'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -43,10 +43,39 @@ function AutoTextarea({ value, onChange, autoFocus, style }) {
   )
 }
 
-export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
+export default function EditEntryPage({ entryId, onBack, onDone }) {
+  const [suspendRefetch, setSuspendRefetch] = useState(false)
+  const entry = useEntry(entryId, { suspendRefetch })
+
+  if (!entry) {
+    return (
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#999',
+        fontSize: 14,
+        background: '#faf8f4',
+      }}>
+        加载中…
+      </div>
+    )
+  }
+
+  return (
+    <EditEntryPageContent
+      key={entry.id}
+      entry={entry}
+      onBack={onBack}
+      onDone={onDone}
+      setSuspendRefetch={setSuspendRefetch}
+    />
+  )
+}
+
+function EditEntryPageContent({ entry, onBack, onDone, setSuspendRefetch }) {
   const { user } = useAuth()
-  const { resolveEntry, storeEntry } = useEntryCache()
-  const entry = resolveEntry(initialEntry)
   const [messages, setMessages] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
@@ -123,12 +152,14 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
 
   // 删除已有图片（记录路径，保存时才真正删 Storage）
   function handleDeleteExisting(path) {
+    setSuspendRefetch(true)
     pathsToDeleteRef.current = [...pathsToDeleteRef.current, path]
     setImagePaths(prev => prev.filter(p => p !== path))
   }
 
   // 删除新选图片（释放 ObjectURL）
   function handleDeleteNew(idx) {
+    setSuspendRefetch(true)
     URL.revokeObjectURL(newPreviews[idx])
     setNewFiles(prev => prev.filter((_, i) => i !== idx))
     setNewPreviews(prev => prev.filter((_, i) => i !== idx))
@@ -138,6 +169,7 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
   function handleImageSelect(e) {
     const files = Array.from(e.target.files ?? [])
     if (!files.length) return
+    setSuspendRefetch(true)
     const existingKeys = new Set(newFiles.map(f => `${f.name}_${f.size}_${f.lastModified}`))
     const deduped = files.filter(f => !existingKeys.has(`${f.name}_${f.size}_${f.lastModified}`))
     const remaining = MAX_IMAGES - totalImages
@@ -177,6 +209,7 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
 
   function handleRawChange(newText) {
     hasStartedEditingRef.current = true
+    setSuspendRefetch(true)
     const oldText = prevTextRef.current
     prevTextRef.current = newText
     let changeStart = 0
@@ -228,15 +261,7 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
         await Promise.all(pathsToDeleteRef.current.map(p => deleteImage(p)))
         pathsToDeleteRef.current = []
       }
-
-      storeEntry({
-        ...entry,
-        annotations,
-        content: newContent,
-        created_at: nextCreatedAt,
-        image_urls: finalPaths,
-      }, { source: 'local' })
-
+      setSuspendRefetch(false)
       markSaved()
       onDone?.()
     } catch (err) {
@@ -255,7 +280,11 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
       {showPicker && (
         <DatetimePicker
           initialDatetime={editDatetime}
-          onConfirm={d => { setEditDatetime(d); setShowPicker(false) }}
+          onConfirm={d => {
+            setSuspendRefetch(true)
+            setEditDatetime(d)
+            setShowPicker(false)
+          }}
           onClose={() => setShowPicker(false)}
         />
       )}
@@ -387,7 +416,10 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
                 <AutoTextarea
                   key={msg.id}
                   value={contentMap[msg.id] ?? ''}
-                  onChange={e => setContentMap(m => ({ ...m, [msg.id]: e.target.value }))}
+                  onChange={(e) => {
+                    setSuspendRefetch(true)
+                    setContentMap(m => ({ ...m, [msg.id]: e.target.value }))
+                  }}
                   style={{
                     fontSize: 14, lineHeight: 1.85, color: '#2d2d2d',
                     borderTop: '1px solid #f0ece4', paddingTop: 8, marginBottom: 20,
@@ -415,7 +447,10 @@ export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
                 <AutoTextarea
                   key={msg.id}
                   value={contentMap[msg.id] ?? ''}
-                  onChange={e => setContentMap(m => ({ ...m, [msg.id]: e.target.value }))}
+                  onChange={(e) => {
+                    setSuspendRefetch(true)
+                    setContentMap(m => ({ ...m, [msg.id]: e.target.value }))
+                  }}
                   style={{
                     fontSize: 14, lineHeight: 1.85, color: '#2d2d2d',
                     borderTop: '1px solid #f0ece4', paddingTop: 8, marginBottom: 20,

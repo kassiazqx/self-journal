@@ -4,6 +4,7 @@
 import { db } from './db'
 import { callAI } from './aiClient'
 import { createPendingCoreNeed } from './coreNeedsService'
+import { invalidateEntry } from './entryRepository'
 
 // 情绪词库（硬编码，保持与提取一致）
 const EMOTION_VOCAB = [
@@ -150,7 +151,10 @@ async function extractBatch(userId, entryIds, vocabOptions = {}) {
       .eq('user_id', userId)
     if (error) {
       console.error(`[extractSummary] 写回 ${r.id} 失败:`, error.message)
+      return
     }
+
+    invalidateEntry(r.id)
 
     // 写入未匹配核心需求到 pending
     const unmatched = r.unmatched_core_needs
@@ -161,4 +165,3 @@ async function extractBatch(userId, entryIds, vocabOptions = {}) {
     }
   }))
 }
-

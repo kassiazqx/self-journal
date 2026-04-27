@@ -5,6 +5,7 @@ import { callAI } from './aiClient'
 import { getReviewLetterPrompt } from './prompts'
 import { getMemory } from './memory'
 import { extractEntrySummaries } from './extractSummaryService'
+import { invalidateEntry } from './entryRepository'
 
 // ── 时间问候词 ──────────────────────────────────────────────────
 function getTimeGreeting() {
@@ -233,6 +234,8 @@ async function generateReviewLetter(userId, periodStart, prefs) {
   if (updateError) {
     // 不抛出：信已生成，回写失败只影响下次计数
     console.error('[reviewLetter] covered_by_letter_id 回写失败:', updateError.message)
+  } else {
+    entries.forEach(entry => invalidateEntry(entry.id))
   }
 
   // Step 7: 把 suggested_threads 写入 threads 表（创建 candidate 脉络）
