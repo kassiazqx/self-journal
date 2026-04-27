@@ -34,6 +34,19 @@ export function updateEntry({ id, userId, fields }) {
     .eq('user_id', userId)
 }
 
+export function fetchEntryById({ id, userId }) {
+  let query = supabase
+    .from('journal_entries')
+    .select('*')
+    .eq('id', id)
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  return query.single()
+}
+
 // ─── 全量导出（用于数据导出功能）─────────────────────────────
 // 不分页，一次拉取全部，按时间正序（方便阅读）
 export async function fetchAllEntries({ userId }) {

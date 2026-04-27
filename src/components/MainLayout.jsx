@@ -3,6 +3,7 @@
 // 导航栈（screens 数组）管理全屏覆盖页面（AwarenessFlow、RecordDetail、ReviewLetterDetail 等）
 import { useState, useEffect, useRef } from 'react'
 import { getActiveTab, saveActiveTab } from '../lib/storage'
+import { useAuth } from '../contexts/AuthContext'
 import HomePage from '../pages/HomePage'
 import RecordsPage from '../pages/RecordsPage'
 import SettingsPage from '../pages/SettingsPage'
@@ -15,6 +16,7 @@ import ThreadsPage from '../pages/ThreadsPage'
 import ThreadDetailPage from '../pages/ThreadDetailPage'
 import CandidateDetailPage from '../pages/CandidateDetailPage'
 import EditEntryPage from '../pages/EditEntryPage'
+import { EntryCacheProvider, useEntryCache } from '../contexts/EntryCacheContext'
 
 const NAV_ITEMS = [
   { id: 'write',    label: '写',   icon: null },
@@ -24,6 +26,18 @@ const NAV_ITEMS = [
 ]
 
 export default function MainLayout() {
+  const { session, user } = useAuth()
+  const cacheScopeKey = session?.refresh_token ?? user?.id ?? 'guest'
+
+  return (
+    <EntryCacheProvider key={cacheScopeKey}>
+      <MainLayoutContent />
+    </EntryCacheProvider>
+  )
+}
+
+function MainLayoutContent() {
+  const { resolveEntry, storeEntry } = useEntryCache()
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
@@ -82,7 +96,7 @@ export default function MainLayout() {
   function handleHomeSaved(entry, gotoAwareness) {
     setRefreshKey(k => k + 1)
     if (gotoAwareness) {
-      push({ type: 'awareness', entry })
+      push({ type: 'awareness', entry: resolveEntry(entry) })
     } else {
       goTab('records')
     }
@@ -109,18 +123,19 @@ export default function MainLayout() {
 
   // ── editHome 模式：写作页用已有 entry 打开，再次点 ✓ 继续觉察流 ──
   function handleEditHomeDone(updatedEntry) {
+    storeEntry(updatedEntry, { source: 'local' })
     const awarenessState = screens[screens.length - 1]?.awarenessState ?? null
     setRefreshKey(k => k + 1)
     setScreens([{
       type: 'awareness',
-      entry: updatedEntry,
+      entry: resolveEntry(updatedEntry),
       initialFlowState: awarenessState,
     }])
   }
 
   // ── RecordsPage 打开详情 ────────────────────────────────────
   function handleOpenDetail(entry) {
-    push({ type: 'detail', entry })
+    push({ type: 'detail', entry: resolveEntry(entry) })
   }
 
   // ── RecordsPage 打开回顾信 ──────────────────────────────────
@@ -150,7 +165,7 @@ export default function MainLayout() {
 
   // ── 编辑记录入口（RecordsPage 长按 / RecordDetail 编辑按钮）──
   function handleEditEntry(entry) {
-    push({ type: 'editEntry', entry })
+    push({ type: 'editEntry', entry: resolveEntry(entry) })
   }
 
   // ── EditEntryPage 保存完成 ───────────────────────────────────
@@ -166,7 +181,7 @@ export default function MainLayout() {
 
   // ── RecordDetail 打开 AwarenessFlow ────────────────────────
   function handleOpenAwarenessFromDetail(entry) {
-    push({ type: 'awareness', entry })
+    push({ type: 'awareness', entry: resolveEntry(entry) })
   }
 
   // ── 渲染当前全屏覆盖页（screens 栈顶） ───────────────────────
@@ -176,7 +191,7 @@ export default function MainLayout() {
     if (screen.type === 'awareness') {
       return (
         <AwarenessFlow
-          entry={screen.entry}
+          entry={resolveEntry(screen.entry)}
           onComplete={handleAwarenessComplete}
           onExit={handleAwarenessExit}
           initialFlowState={screen.initialFlowState ?? null}
@@ -187,7 +202,7 @@ export default function MainLayout() {
     if (screen.type === 'detail') {
       return (
         <RecordDetail
-          entry={screen.entry}
+          entry={resolveEntry(screen.entry)}
           onBack={pop}
           onOpenAwareness={handleOpenAwarenessFromDetail}
           onEdit={handleEditEntry}
@@ -258,7 +273,7 @@ export default function MainLayout() {
     if (screen.type === 'editHome') {
       return (
         <HomePage
-          editEntry={screen.entry}
+          editEntry={resolveEntry(screen.entry)}
           onDone={handleEditHomeDone}
           onCancel={() => { reset(); goTab('records') }}
           onOpenLetter={letter => push({ type: 'letter', letter })}
@@ -270,7 +285,7 @@ export default function MainLayout() {
     if (screen.type === 'editEntry') {
       return (
         <EditEntryPage
-          entry={screen.entry}
+          entry={resolveEntry(screen.entry)}
           onBack={pop}
           onDone={handleEditSaved}
         />

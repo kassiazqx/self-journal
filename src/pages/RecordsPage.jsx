@@ -17,6 +17,8 @@ import {
 } from '../lib/coreNeedsService'
 import { loadContacts } from '../lib/contactsService'
 import { updateEntry } from '../lib/journalService'
+import { useEntryCache } from '../contexts/EntryCacheContext'
+import { JOURNAL_ENTRY_FULL_SELECT, sortEntriesByCreatedAtDesc } from '../lib/entrySnapshots'
 
 // 把 ISO 字符串格式化成「4月9日 周三」
 function formatGroupDate(isoStr) {
@@ -155,6 +157,7 @@ const ENTRY_PAGE = 50   // 每次加载的条数
 
 export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetterList, onEdit, onEntriesMutated }) {
   const { user } = useAuth()
+  const { removeEntry: removeCachedEntry, resolveEntry, storeEntries } = useEntryCache()
   // ── 多选模式 ────────────────────────────────────────────────
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -202,9 +205,11 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
   const [coreNeedsVocab, setCoreNeedsVocab]       = useState([])
 
   // filteredEntries !== null → 筛选模式：只显示筛选出的 journal_entries，不含回顾信
-  const items = filteredEntries !== null
-    ? filteredEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
-    : allEntries.map(e => ({ ...e, _type: 'entry', _sortKey: e.created_at }))
+  const visibleEntries = sortEntriesByCreatedAtDesc(
+    (filteredEntries !== null ? filteredEntries : allEntries).map(entry => resolveEntry(entry))
+  )
+
+  const items = visibleEntries.map(entry => ({ ...entry, _type: 'entry', _sortKey: entry.created_at }))
 
   const load = useCallback(async () => {
     if (!user) return
@@ -216,7 +221,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
 
     const [entriesRes, lettersRes] = await Promise.all([
       db.from('journal_entries')
-        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls, annotations, people_involved, category_tags, core_needs, current_thought, body_sensations, cognitive_analysis, reflection_insight, entry_summary, overall_state_score')
+        .select(JOURNAL_ENTRY_FULL_SELECT)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(0, ENTRY_PAGE - 1),
@@ -230,6 +235,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     const entries = entriesRes.data ?? []
     const letters = lettersRes.data ?? []
 
+    storeEntries(entries, { source: 'remote' })
     setAllEntries(entries)
     setAllLetters(letters)
     setEntryOffset(ENTRY_PAGE)
@@ -240,7 +246,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     setPendingCount(count ?? 0)
 
     setLoading(false)
-  }, [user])
+  }, [storeEntries, user])
 
   // 增量刷新：保留旧数据，后台拉新数据后 merge，不出现整页 loading
   const refresh = useCallback(async () => {
@@ -251,7 +257,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
 
     const [entriesRes, lettersRes] = await Promise.all([
       db.from('journal_entries')
-        .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls, annotations, people_involved, category_tags, core_needs, current_thought, body_sensations, cognitive_analysis, reflection_insight, entry_summary, overall_state_score')
+        .select(JOURNAL_ENTRY_FULL_SELECT)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(0, ENTRY_PAGE - 1),
@@ -265,6 +271,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     const entries = entriesRes.data ?? []
     const letters = lettersRes.data ?? []
 
+    storeEntries(entries, { source: 'remote' })
     setAllEntries(entries)
     setAllLetters(letters)
     setEntryOffset(ENTRY_PAGE)
@@ -274,18 +281,19 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     setPendingCount(count ?? 0)
 
     setRefreshing(false)
-  }, [user])
+  }, [storeEntries, user])
 
   async function loadMoreEntries() {
     if (loadingMoreRef.current || !hasMoreEntries) return
     loadingMoreRef.current = true
     setLoadingMore(true)
     const { data } = await db.from('journal_entries')
-      .select('id, content, template_type, created_at, emotion_display, emotions, emotion_confidence, image_urls')
+      .select(JOURNAL_ENTRY_FULL_SELECT)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(entryOffset, entryOffset + ENTRY_PAGE - 1)
     const newEntries = data ?? []
+    storeEntries(newEntries, { source: 'remote' })
     setAllEntries(prev => [...prev, ...newEntries])
     setEntryOffset(prev => prev + ENTRY_PAGE)
     setHasMoreEntries(newEntries.length === ENTRY_PAGE)
@@ -357,6 +365,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
         fields: { core_needs: [...current, item.proposed] },
       })
     }
+    removeCachedEntry(item.entry_id)
     await deletePendingCoreNeed(item.id)
     advancePending(pendingItems.filter(p => p.id !== item.id))
   }
@@ -375,6 +384,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
         fields: { core_needs: [...current, newWord] },
       })
     }
+    removeCachedEntry(item.entry_id)
     await deletePendingCoreNeed(item.id)
     advancePending(pendingItems.filter(p => p.id !== item.id))
   }
@@ -389,6 +399,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
         fields: { core_needs: [...current, existingWord] },
       })
     }
+    removeCachedEntry(item.entry_id)
     await deletePendingCoreNeed(item.id)
     advancePending(pendingItems.filter(p => p.id !== item.id))
   }
@@ -424,6 +435,9 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     if (paths.length > 0) {
       await Promise.all(paths.map(p => deleteImage(p)))
     }
+    removeCachedEntry(entry.id)
+    setAllEntries(prev => prev.filter(item => item.id !== entry.id))
+    setFilteredEntries(prev => prev === null ? prev : prev.filter(item => item.id !== entry.id))
     setActionEntry(null)
     setConfirmDelete(false)
     if (onEntriesMutated) onEntriesMutated()
@@ -444,6 +458,11 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
       // 3. 单次批量 DB 删除
       const { error } = await deleteEntries({ ids: [...selectedIds], userId: user.id })
       if (error) throw error
+
+      const deletedIds = [...selectedIds]
+      deletedIds.forEach(id => removeCachedEntry(id))
+      setAllEntries(prev => prev.filter(entry => !deletedIds.includes(entry.id)))
+      setFilteredEntries(prev => prev === null ? prev : prev.filter(entry => !deletedIds.includes(entry.id)))
 
       // 4. 退出多选，刷新列表
       setShowBatchDeleteConfirm(false)
@@ -467,7 +486,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     }
 
     let query = db.from('journal_entries')
-      .select('id, content, entry_summary, created_at, emotions, emotion_display, category_tags, people_involved, core_needs, template_type, image_urls')
+      .select(JOURNAL_ENTRY_FULL_SELECT)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -504,8 +523,10 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
     }
 
     const { data } = await query
-    setFilteredEntries(data ?? [])
-  }, [user])
+    const entries = data ?? []
+    storeEntries(entries, { source: 'remote' })
+    setFilteredEntries(entries)
+  }, [storeEntries, user])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f5f3ef' }}>

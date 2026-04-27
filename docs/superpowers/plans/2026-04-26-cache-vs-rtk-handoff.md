@@ -192,33 +192,29 @@
 
 **数据结构：**
 ```javascript
-// Map<entryId, Partial<Entry>>
+// Map<entryId, CompleteEntry>
 entryCache = new Map([
-  ['123', { annotations: [...], emotions: [...] }],
-  ['456', { content: '...', category_tags: [...] }]
+  ['123', { id: '123', content: '...', annotations: [...], people_involved: [], ... }],
+  ['456', { id: '456', content: '...', annotations: [...], people_involved: [], ... }]
 ])
 ```
 
-**merge 规则：**
+**读取规则：**
 ```javascript
-// 浅合并（对象字段会整体覆盖）
-const displayEntry = { ...entry, ...entryCache.get(entry.id) }
-
-// 问题：如果 entry.annotations = [A, B]，cache.annotations = [C]
-// 结果是 [C]，不是 [A, B, C]
-// 这对当前场景是对的（保存后整体替换），但要注意边界
+// 优先使用 cache 中的完整快照，不做字段级 overlay
+const displayEntry = entryCache.get(entry.id) ?? entry
 ```
 
 **清理时机：**
-- 用户删除 entry → `deleteFromCache(id)`
-- 用户刷新列表 → `clearCache()`
+- 用户删除 entry → `removeEntry(id)`
 - 用户退出登录 → `clearCache()`
-- 补拉完整数据后 → 不清理（让 cache 继续生效）
+- 用户刷新列表 → 不清空
+- 完整补拉返回后 → 允许用补拉值接管旧 cache
 
 **失效策略：**
-- 不做 TTL（Time To Live）
-- 不做版本号
-- 依赖"补拉覆盖"来修正过期数据
+- 不做全局 TTL
+- 对“刚本地保存”的 entry 加一个短暂保护窗口，避免补拉旧值立刻盖回
+- 保护窗口结束后，完整补拉可以接管 cache
 
 ---
 
@@ -251,26 +247,26 @@ const displayEntry = { ...entry, ...entryCache.get(entry.id) }
 
 ### 4.3 两个方案的详细对比
 
-### 方案 A：轻量 cache / overlay
+### 方案 A：轻量 cache / shared entry store
 
 思路：
 
 - 不引入 Redux/RTK
-- 在 `MainLayout` 或 Context 里维护一个 `Map<entryId, partialFields>`
-- `RecordDetail` / `EditEntryPage` 保存成功后立即写入 cache
-- `RecordsPage` 渲染、`onOpenDetail`、`onEdit` 时都先 merge cache
+- 在 `MainLayout` 或 Context 里维护一个 `Map<entryId, completeEntry>`
+- `RecordDetail` / `EditEntryPage` 保存成功后立即写入完整快照
+- `RecordsPage` 渲染、排序、`onOpenDetail`、`onEdit` 时都先 resolve cache
 
 更像：
 
-- `baseEntries from DB`
-- `overlayChanges from cache`
-- 页面看到的是 `mergedEntry`
+- `remoteEntries from DB`
+- `sharedEntrySnapshots in cache`
+- 页面优先读取当前 session 里最新完整 entry
 
 适合前提：
 
 - 只先解决 `journal_entries`
 - 只覆盖少数几个页面
-- 只需要少数字段立即一致
+- 可以接受“局部共享 entry store”，但不想现在就引入 Redux
 
 ### 方案 B：RTK
 
@@ -302,7 +298,7 @@ const displayEntry = { ...entry, ...entryCache.get(entry.id) }
 
 1. 现在最痛的只有 `journal_entries` 这条链。
 2. 主要是 `RecordsPage / RecordDetail / EditEntryPage / MainLayout` 之间旧快照传递。
-3. 如果只收这一个实体族，`Context + Map overlay` 成本明显小于 RTK。
+3. 如果只收这一个实体族，`Context + Map` 的 entry store 成本明显小于 RTK。
 4. 产品范围目前没有强到必须把 `review_letters`、`threads` 也纳入统一共享状态。
 
 ### 但必须卡死边界
@@ -313,11 +309,7 @@ const displayEntry = { ...entry, ...entryCache.get(entry.id) }
 
 - **只管实体：** `journal_entries`
 - **只管页面：** `MainLayout / RecordsPage / RecordDetail / EditEntryPage`
-- **只管字段：**
-  - `content`
-  - `annotations`
-  - `emotions` / `emotion_display`
-  - `category_tags`
+- **只管快照：** 完整 entry，不做字段碎片 cache
 - **先不管：**
   - `ReviewLetterDetail`
   - `ThreadDetailPage`
@@ -365,21 +357,22 @@ const displayEntry = { ...entry, ...entryCache.get(entry.id) }
 3. merge 规则变复杂，例如：
    - 本地 cache 值 vs 补拉值谁优先
    - 删除后如何失效
-   - refresh 后如何保留局部未补拉字段
+   - refresh 后如何保留本地保护窗口
+   - 补拉后何时允许远端值接管
 
 4. 页面里开始到处写：
    - `getFromCache`
-   - `mergeEntry`
-   - `clearCache`
-   - `deleteFromCache`
-   - `overlayEntry`
+   - `resolveEntry`
+   - `removeEntry`
+   - `storeEntry`
+   - `ignoreRemoteWhileProtected`
 
 5. 某些入口很容易漏 merge，导致：
    - 列表新、详情旧
    - 详情新、编辑旧
    - 长按菜单吃旧 entry
 
-6. 新同事已经很难一眼看懂“DB 真值、页面 state、cache overlay”谁才是当前真源。
+6. 新同事已经很难一眼看懂“DB 真值、页面 state、entry store”谁才是当前真源。
 
 ---
 
@@ -389,13 +382,13 @@ const displayEntry = { ...entry, ...entryCache.get(entry.id) }
 
 建议：
 
-- 新建 `src/contexts/EntryOverlayContext.jsx`
+- 新建 `src/contexts/EntryCacheContext.jsx`
 - 或直接在 `MainLayout` 挂 Context Provider
 
 核心结构：
 
 ```js
-Map<entryId, Partial<Entry>>
+Map<entryId, CompleteEntry>
 ```
 
 ### 8.2 哪些地方必须接
@@ -404,36 +397,41 @@ Map<entryId, Partial<Entry>>
 
 1. `RecordDetail` 保存成功后写 cache
 2. `EditEntryPage` 保存成功后写 cache
-3. `RecordsPage` 渲染列表时 merge
-4. `RecordsPage` 打开详情时传 merge 后 entry
-5. `RecordsPage` 打开编辑时传 merge 后 entry
-6. `MainLayout` 如果持有当前 detail screen entry，也要优先吃 merge 后值
+3. `RecordsPage` 的 `load / refresh / loadMore / filter` 都查完整字段
+4. `RecordsPage` 渲染列表时 resolve cache，并按 resolve 后的 `created_at` 重新排序/分组
+5. `RecordsPage` 打开详情时传 resolve 后 entry
+6. `RecordsPage` 打开编辑时传 resolve 后 entry
+7. `MainLayout` 如果持有当前 detail screen entry，也要优先吃 resolve 后值
 
 ### 8.3 哪些操作别忘
 
 - 删除 entry 时同步删 cache
-- 刷新列表时决定是保留 overlay 还是清空 overlay
-- 如果 DB 补拉回来的值已经包含 cache 内容，允许清理对应 overlay
+- 刷新列表时不要清空 cache
+- 补拉回完整 entry 后，允许远端值接管旧 cache
+- 分页列表 / 筛选列表不能再给详情页传“伪完整 entry”
 
 ---
 
 ## 9. 轻量 cache 方案的主要风险
 
-1. **入口漏 merge**
+1. **入口漏 resolve**
    列表看着是新值，但点进详情又把旧 entry 传进去了。
 
-2. **overlay 生命周期不清**
+2. **store 生命周期不清**
    什么时候删、什么时候保、什么时候被服务端新值覆盖，规则不清楚就会乱。
 
-3. **字段边界不断扩大**
-   一开始只想管 `annotations`，后来又要管 `content / emotions / category_tags`，再后来又想顺手管 `review_letters`。
+3. **“完整 entry”判断不统一**
+   一处按完整快照处理，另一处却用瘦身字段误判成“可直接进详情/编辑”。
 
-4. **调试成本上升**
+4. **列表排序基于旧 `created_at`**
+   用户改了时间，但列表还停在旧日期分组和旧顺序。
+
+5. **调试成本上升**
    出问题时很难快速判断：
    - 是 DB 没存
    - 是 page state 旧
-   - 是 overlay 没写
-   - 还是 overlay 写了但入口没 merge
+   - 是 cache 没写
+   - 还是 cache 写了但入口没 resolve
 
 ---
 
@@ -503,10 +501,11 @@ Map<entryId, Partial<Entry>>
 ```
 
 **警戒线：**
-- cache 管理超过 3 个字段 → 考虑 RTK
-- cache 跨越超过 3 个页面 → 考虑 RTK
+- cache 已经不再只是完整 entry store，而开始做字段级 merge → 考虑 RTK
+- cache 需要保护/失效/优先级规则的条件越来越多 → 考虑 RTK
 - cache 需要处理超过 2 个 entity → 必须 RTK
 - 出现"A 页面刚存，B 页面补拉旧值又盖回去"的 bug → 必须 RTK
+- 出现“列表刷新后补拉旧值又把 cache 盖回去”的 bug → 必须 RTK
 
 ---
 

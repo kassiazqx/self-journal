@@ -4,13 +4,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../lib/db'
-import { updateEntry } from '../lib/journalService'
+import { fetchEntryById, updateEntry } from '../lib/journalService'
 import { resolveTemplate } from '../lib/templates'
 import { mapDisplayToBase } from '../lib/emotionMap'
 import { extractFields } from '../lib/conversationService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import { getImageUrl } from '../lib/imageStorage'
+import { useEntryCache } from '../contexts/EntryCacheContext'
+import { hasCompleteEntry } from '../lib/entrySnapshots'
 import DatetimePicker from './DatetimePicker'
 import React from 'react'
 import AnnotatedText from './AnnotatedText'
@@ -102,11 +104,15 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
 
 export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwareness, onEdit, refreshToken }) {
   const { user } = useAuth()
-  const [entry, setEntry] = useState(initialEntry)
+  const { getCachedEntry, isLocalEntryProtected, storeEntry } = useEntryCache()
+  const cachedEntry = getCachedEntry(initialEntry.id)
+  const resolvedInitialEntry = cachedEntry ?? initialEntry
+  const [entry, setEntry] = useState(resolvedInitialEntry)
   const [messages, setMessages] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
   const [toast, setToast] = useState('')
   const [showConfidenceTip, setShowConfidenceTip] = useState(false)
+  const entryRef = React.useRef(resolvedInitialEntry)
 
   // 情绪内联编辑状态
   const [editingEmotions, setEditingEmotions] = useState(false)
@@ -142,6 +148,18 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const { annotations, activeColor, setActiveColor, addAnnotation, clipAnnotations, markSaved, resetAnnotations, dirty } =
     useAnnotations(entry.annotations)
 
+  const applyEntrySnapshot = useCallback((nextEntry, source = 'local') => {
+    entryRef.current = nextEntry
+    setEntry(nextEntry)
+    storeEntry(nextEntry, { source })
+    return nextEntry
+  }, [storeEntry])
+
+  const applyEntryPatch = useCallback((patch, source = 'local') => {
+    const nextEntry = { ...entryRef.current, ...patch }
+    return applyEntrySnapshot(nextEntry, source)
+  }, [applyEntrySnapshot])
+
   const contentContainerRef = React.useRef(null)
   const { menuVisible, menuPosition, handleMouseUp, handleTouchEnd, closeMenu, handleBold, handleHighlight, handleUnderline, handleCancel, handleColorChange, openMenuForRange, hasOverlap } =
     useAnnotationInteraction({
@@ -159,14 +177,16 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   const latestAnnotationsRef = React.useRef(annotations)
   const dirtyRef = React.useRef(dirty)
   useEffect(() => {
+    entryRef.current = entry
     latestAnnotationsRef.current = annotations
     dirtyRef.current = dirty
-  }, [annotations, dirty])
+  }, [annotations, dirty, entry])
 
   const saveAnnotationsNow = useCallback(async (nextAnnotations) => {
     if (!effectiveUserId) return
     await updateEntry({ id: entry.id, userId: effectiveUserId, fields: { annotations: nextAnnotations } })
-  }, [entry.id, effectiveUserId])
+    applyEntryPatch({ annotations: nextAnnotations })
+  }, [applyEntryPatch, effectiveUserId, entry.id])
 
   const saveTimerRef = React.useRef(null)
   React.useEffect(() => {
@@ -198,38 +218,32 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   const tpl = resolveTemplate(entry.template_type)
 
-  // 读取完整 entry 数据
-  // refreshToken > 0 说明数据刚被编辑更新，必须重新查
-  // refreshToken === 0 且 initialEntry 已含完整字段（列表查询已扩展 select），直接用
   useEffect(() => {
-    if (refreshToken === 0 && 'people_involved' in initialEntry) return
+    if (refreshToken === 0 && hasCompleteEntry(entryRef.current)) return
+    if (isLocalEntryProtected(initialEntry.id)) return
+
+    let cancelled = false
+
     async function loadFull() {
-      const { data } = await db.from('journal_entries')
-        .select('*').eq('id', initialEntry.id).single()
-      if (data) {
-        setEntry(data)
-        resetAnnotations(data.annotations)
+      const { data } = await fetchEntryById({ id: initialEntry.id })
+      if (cancelled || !data) return
+
+      const hasPendingLocalAnnotations = dirtyRef.current
+      const nextEntry = hasPendingLocalAnnotations
+        ? { ...data, annotations: latestAnnotationsRef.current }
+        : data
+      const appliedEntry = storeEntry(nextEntry, { source: hasPendingLocalAnnotations ? 'local' : 'remote' })
+      entryRef.current = appliedEntry
+      setEntry(appliedEntry)
+      if (!hasPendingLocalAnnotations) {
+        resetAnnotations(appliedEntry.annotations ?? [])
       }
     }
-    loadFull()
-  }, [initialEntry, refreshToken, resetAnnotations])
 
-  // 像 ReviewLetter 一样，进详情页时总是补拉一次最新 annotations。
-  // RecordsPage 传进来的 entry 可能是列表里的旧快照；若只信初始 props，返回再进会看到旧标注。
-  useEffect(() => {
-    let cancelled = false
-    async function loadLatestAnnotations() {
-      const { data } = await db.from('journal_entries')
-        .select('annotations')
-        .eq('id', initialEntry.id)
-        .single()
-      if (cancelled || !data) return
-      resetAnnotations(data.annotations)
-      setEntry(prev => ({ ...prev, annotations: data.annotations }))
-    }
-    loadLatestAnnotations()
+    loadFull()
+
     return () => { cancelled = true }
-  }, [initialEntry.id, resetAnnotations])
+  }, [initialEntry.id, isLocalEntryProtected, refreshToken, resetAnnotations, storeEntry])
 
   // 读取对话记录（conversations 表；refreshToken 变化时重新拉取）
   useEffect(() => {
@@ -311,9 +325,13 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
     })
     if (error) {
       showToast('保存失败，请检查网络')
-      const { data } = await db.from('journal_entries')
-        .select('*').eq('id', entry.id).single()
-      if (data) setEntry(data)
+      const { data } = await fetchEntryById({ id: entry.id })
+      if (data) {
+        const appliedEntry = storeEntry(data, { source: 'remote' })
+        entryRef.current = appliedEntry
+        setEntry(appliedEntry)
+        resetAnnotations(appliedEntry.annotations ?? [])
+      }
     }
   }
 
@@ -334,12 +352,11 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       },
     })
     if (!error) {
-      setEntry(e => ({
-        ...e,
+      applyEntryPatch({
         emotion_display: words,
         emotions: baseWords,
         emotion_confidence: minConfidence,
-      }))
+      })
     } else {
       showToast('保存失败，请检查网络')
     }
@@ -349,38 +366,38 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   // ── 摘要索引保存 ──────────────────────────────────────────────
   async function handleSummarySave(value) {
     const trimmed = value?.trim() || null
-    setEntry(e => ({ ...e, entry_summary: trimmed }))
+    applyEntryPatch({ entry_summary: trimmed })
     await handleFieldSave('entry_summary', trimmed)
   }
 
   async function handleTemplateSave(newType) {
     setShowTemplatePicker(false)
-    setEntry(e => ({ ...e, template_type: newType }))
+    applyEntryPatch({ template_type: newType })
     await handleFieldSave('template_type', newType)
   }
 
   async function handleScoreSave(score) {
     setShowScorePicker(false)
-    setEntry(e => ({ ...e, overall_state_score: score }))
+    applyEntryPatch({ overall_state_score: score })
     await handleFieldSave('overall_state_score', score)
   }
 
   async function handleCategoryTagsSave() {
     setShowCategorySheet(false)
-    setEntry(e => ({ ...e, category_tags: categoryDraft }))
+    applyEntryPatch({ category_tags: categoryDraft })
     await handleFieldSave('category_tags', categoryDraft)
   }
 
   async function handleThemeHintsSave(value) {
     const arr = value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean)
-    setEntry(e => ({ ...e, theme_hints: arr }))
+    applyEntryPatch({ theme_hints: arr })
     await handleFieldSave('theme_hints', arr)
   }
 
   // ── people_involved 增删 ──────────────────────────────────────
   async function handlePersonRemove(name) {
     const updated = (entry.people_involved ?? []).filter(p => p !== name)
-    setEntry(e => ({ ...e, people_involved: updated }))
+    applyEntryPatch({ people_involved: updated })
     await handleFieldSave('people_involved', updated)
   }
 
@@ -390,7 +407,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       return
     }
     const updated = [...(entry.people_involved ?? []), canonical]
-    setEntry(e => ({ ...e, people_involved: updated }))
+    applyEntryPatch({ people_involved: updated })
     await handleFieldSave('people_involved', updated)
     setShowPeopleSheet(false)
   }
@@ -416,7 +433,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
   // ── core_needs 增删 ───────────────────────────────────────────
   async function handleNeedRemove(word) {
     const updated = (entry.core_needs ?? []).filter(n => n !== word)
-    setEntry(e => ({ ...e, core_needs: updated }))
+    applyEntryPatch({ core_needs: updated })
     await handleFieldSave('core_needs', updated)
   }
 
@@ -426,7 +443,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       return
     }
     const updated = [...(entry.core_needs ?? []), word]
-    setEntry(e => ({ ...e, core_needs: updated }))
+    applyEntryPatch({ core_needs: updated })
     await handleFieldSave('core_needs', updated)
     setShowNeedsSheet(false)
     setNeedsSearch('')
@@ -449,19 +466,19 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
 
   async function handleBodySensationsSave(value) {
     const trimmed = value?.trim() || null
-    setEntry(e => ({ ...e, body_sensations: trimmed }))
+    applyEntryPatch({ body_sensations: trimmed })
     await handleFieldSave('body_sensations', trimmed)
   }
 
   async function handleReflectionInsightSave(value) {
     const trimmed = value?.trim() || null
-    setEntry(e => ({ ...e, reflection_insight: trimmed }))
+    applyEntryPatch({ reflection_insight: trimmed })
     await handleFieldSave('reflection_insight', trimmed)
   }
 
   async function handleCognitiveAnalysisSave(value) {
     const trimmed = value?.trim() || null
-    setEntry(e => ({ ...e, cognitive_analysis: trimmed }))
+    applyEntryPatch({ cognitive_analysis: trimmed })
     await handleFieldSave('cognitive_analysis', trimmed)
   }
 
@@ -524,7 +541,7 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
       const { data } = await db.from('journal_entries')
         .select('*').eq('id', entry.id).single()
       if (data) {
-        setEntry(data)
+        applyEntrySnapshot(data)
         resetAnnotations(data.annotations)
       }
     } catch (e) {
@@ -607,8 +624,8 @@ export default function RecordDetail({ entry: initialEntry, onBack, onOpenAwaren
           onConfirm={async (d) => {
             const iso = d.toISOString()
             setShowDatetimePicker(false)
-            setEntry(e => ({ ...e, created_at: iso }))
-            await updateEntry({ id: entry.id, userId: user.id, fields: { created_at: iso } })
+            applyEntryPatch({ created_at: iso })
+            await handleFieldSave('created_at', iso)
           }}
           onClose={() => setShowDatetimePicker(false)}
         />

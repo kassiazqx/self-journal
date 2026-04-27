@@ -7,7 +7,9 @@
 2. `RecordDetail` 保存后返回再进仍闪旧数据
 
 **Architecture Decision:**  
-- 不引入 RTK，用轻量 cache + 统一清理函数
+- 不引入 RTK，用轻量 entry store / cache，但只存 `journal_entries` 的完整快照
+- cache 不做 `Partial<Entry>` overlay，不在刷新时清空
+- 本地刚保存的 entry 进入短暂保护窗口，避免补拉旧值立刻盖回
 - 选区处理：桌面保持 mouseup 路径，手机用 selectionchange + 300ms 防抖，只撤 HomePage 实验桥接
 - 保留桌面代码（开发和回归测试入口）
 
@@ -47,9 +49,9 @@
 - 详情页只能补拉最新数据
 
 **解决方案：**
-- MainLayout 维护轻量 cache（Map）
-- RecordDetail 保存后立即更新 cache
-- RecordsPage 渲染时 merge cache
+- MainLayout 上方维护轻量 entry store（Map）
+- `RecordDetail / EditEntryPage` 保存成功后立即写入完整快照
+- `RecordsPage` 渲染、排序、打开详情/编辑时都优先吃 store
 
 ---
 
@@ -79,65 +81,51 @@ editor.registerCommand(SELECTION_CHANGE, () => {
 - 避免 keyboard/programmatic/composition 干扰
 - 手机支持长按拖拽
 
-### 2. 数据层：轻量 cache + 统一清理函数
+### 2. 数据层：轻量 entry store + 完整快照
 
 ```javascript
-// MainLayout.jsx
+// EntryCacheContext.jsx
 const [entryCache, setEntryCache] = useState(new Map())
 
-// 统一的更新函数
-const updateEntryCache = useCallback((id, fields) => {
-  setEntryCache(prev => new Map(prev).set(id, { ...prev.get(id), ...fields }))
+// 只接收完整 entry
+const storeEntry = useCallback((entry, { source = 'remote' } = {}) => {
+  if (!hasCompleteEntry(entry)) return
+  setEntryCache(prev => new Map(prev).set(entry.id, {
+    entry,
+    protectedUntil: source === 'local' ? Date.now() + 4000 : 0,
+  }))
 }, [])
 
-// 统一的删除函数
-const deleteFromCache = useCallback((id) => {
-  setEntryCache(prev => {
-    const next = new Map(prev)
-    next.delete(id)
-    return next
-  })
-}, [])
-
-// 统一的清空函数
-const clearCache = useCallback(() => {
-  setEntryCache(new Map())
-}, [])
-
-// 通过 Context 传递
-<CacheContext.Provider value={{ entryCache, updateEntryCache, deleteFromCache, clearCache }}>
-  {children}
-</CacheContext.Provider>
+const resolveEntry = (entry) => entryCache.get(entry.id)?.entry ?? entry
 ```
 
 **使用时：**
 ```javascript
 // RecordDetail.jsx
-const { updateEntryCache } = useContext(CacheContext)
+const { storeEntry } = useEntryCache()
 
 async function handleSave() {
   await updateEntry({ id, fields: { annotations: newAnnotations } })
-  updateEntryCache(id, { annotations: newAnnotations })  // 1 行代码
+  storeEntry({ ...entry, annotations: newAnnotations }, { source: 'local' })
 }
 
 // RecordsPage.jsx
-const { entryCache, deleteFromCache } = useContext(CacheContext)
+const { resolveEntry, removeEntry } = useEntryCache()
 
-// 渲染时 merge
-const displayEntry = { ...entry, ...entryCache.get(entry.id) }
+const displayEntry = resolveEntry(entry)
 
 // 删除时清理
 async function handleDelete(id) {
   await deleteEntry(id)
-  deleteFromCache(id)  // 1 行代码
+  removeEntry(id)
 }
 ```
 
 **优点：**
 - 零依赖
-- 使用时只需要 1 行代码
-- 不需要理解 Redux 概念
-- 如果忘了调用，影响范围小
+- 只收口 `journal_entries`
+- 既能立即同步，又能避免远端旧值瞬时回盖
+- 比 `Partial<Entry>` overlay 更不容易误判“完整 entry”
 
 ---
 
@@ -145,44 +133,50 @@ async function handleDelete(id) {
 
 | 文件 | 动作 | 说明 |
 |---|---|---|
-| `src/contexts/CacheContext.jsx` | 新建 | entryCache + 三个统一函数 |
-| `src/components/MainLayout.jsx` | 修改 | 包 CacheContext.Provider |
+| `src/contexts/EntryCacheContext.jsx` | 新建 | 完整 entry store + 本地写入保护窗口 |
+| `src/lib/entrySnapshots.js` | 新建 | 完整 entry 字段定义 + 完整性判断 |
+| `src/components/MainLayout.jsx` | 修改 | 包 `EntryCacheProvider`，统一 resolve entry |
 | `src/components/RichTextEditor/AnnotationInteractionPlugin.js` | 修改 | 统一用 selectionchange + 自适应防抖 |
 | `src/pages/HomePage.jsx` | 修改 | 统一选区处理，删除实验性桥接层 |
-| `src/components/RecordDetail.jsx` | 修改 | 保存后调 updateEntryCache |
-| `src/pages/RecordsPage.jsx` | 修改 | 渲染时 merge cache，删除时调 deleteFromCache |
-| `src/pages/ReviewLetterDetail.jsx` | 修改 | 保存后调 updateEntryCache（如果有标注） |
-| `src/pages/ThreadDetailPage.jsx` | 修改 | 保存后调 updateEntryCache（如果有标注） |
+| `src/components/RecordDetail.jsx` | 修改 | 本地保存后写完整快照，补拉时遵守保护窗口 |
+| `src/pages/RecordsPage.jsx` | 修改 | 所有查询统一完整字段，排序/分组按 resolve 后结果走 |
+| `src/pages/EditEntryPage.jsx` | 修改 | 保存完成后写完整快照 |
 
 ---
 
 ## 实施顺序
 
-### Task 1：建立轻量 cache 基础设施
+### Task 1：建立 entry store 基础设施
 
-- [ ] 新建 `src/contexts/CacheContext.jsx`
-- [ ] MainLayout 包 `CacheContext.Provider`
-- [ ] 导出 `useCacheContext` hook
+- [ ] 新建 `src/contexts/EntryCacheContext.jsx`
+- [ ] 新建 `src/lib/entrySnapshots.js`
+- [ ] MainLayout 包 `EntryCacheProvider`
+- [ ] 导出 `useEntryCache` hook
 
 **验收：**
-- 其他组件可以 `import { useCacheContext } from '../contexts/CacheContext'`
+- 其他组件可以统一判断“是不是完整 entry”
+- 所有入口都能用同一套 `resolveEntry / storeEntry / removeEntry`
 
 ### Task 2：RecordDetail 接入 cache
 
-- [ ] RecordDetail 保存成功后调 `updateEntryCache`
-- [ ] 包括：annotations / emotions / content / category_tags 等所有可编辑字段
+- [ ] RecordDetail 所有本地保存都写回完整快照
+- [ ] 刚保存后的短时间内，不让补拉旧值盖回本地
+- [ ] 保存失败时回拉远端完整 entry 纠偏
 
 **验收：**
-- 保存后返回列表，cache 里有最新数据
+- 保存后返回列表，再进详情不闪旧
+- 详情页自己不会把旧补拉值盖回新状态
 
 ### Task 3：RecordsPage 接入 cache
 
-- [ ] 渲染 EntryCard 时 merge cache
-- [ ] 删除时调 `deleteFromCache`
-- [ ] 刷新时调 `clearCache`
+- [ ] `load / refresh / loadMore / filter` 统一查完整字段
+- [ ] 渲染、排序、分组都基于 `resolveEntry(entry)` 之后的数据
+- [ ] 删除时调 `removeEntry`
+- [ ] 刷新时不清空 cache，由完整补拉接管旧值
 
 **验收：**
 - 保存后返回列表，再点进详情，不再"先旧后新"
+- 修改 `created_at` 后，列表日期分组和顺序也立即正确
 
 ### Task 4：修复 HomePage 桌面选区不稳定
 
@@ -206,26 +200,17 @@ async function handleDelete(id) {
 - EditEntryPage 桌面不回归
 - 移动端长按拖拽仍正常
 
-### Task 5：其他详情页接入 cache（可选）
-
-- [ ] ReviewLetterDetail 保存后调 updateEntryCache
-- [ ] ThreadDetailPage 保存后调 updateEntryCache
-
-**验收：**
-- 所有详情页保存后返回列表，不再"先旧后新"
-
----
-
 ## 需要架构确认的问题
 
 1. **cache 的清理策略？**
-   - 方案 A：用户刷新列表时清空整个 cache
-   - 方案 B：用户删除 entry 时只删除对应的 cache
-   - 方案 C：cache 永不清空（依赖补拉覆盖）
+   - 用户删除 entry 时只删对应 id
+   - 用户退出登录时清空整个 cache
+   - 用户刷新列表时不清空，交给完整补拉接管旧值
 
 2. **cache 的范围？**
-   - 只缓存 annotations？
-   - 还是缓存所有可编辑字段（emotions / content / category_tags 等）？
+   - 只管 `journal_entries`
+   - 只存完整快照，不存字段碎片
+   - `ReviewLetterDetail / ThreadDetailPage` 本轮明确不进
 
 3. **桌面代码的保留策略？**
    - 现在保留（开发提效）
@@ -240,8 +225,8 @@ async function handleDelete(id) {
 - [ ] 手机长按拖拽仍正常
 - [ ] `RecordDetail` 标记后返回列表再进，不再闪旧状态
 - [ ] `RecordDetail` 修改情绪后返回列表再进，不再闪旧状态
-- [ ] `ReviewLetterDetail` 不回归
-- [ ] `ThreadDetailPage` 不回归
+- [ ] `EditEntryPage` 保存后返回列表，再进详情不闪旧状态
+- [ ] 修改记录时间后，列表分组和顺序立即正确
 - [ ] `lint` 过
 - [ ] `build` 过
 
@@ -249,7 +234,8 @@ async function handleDelete(id) {
 
 ## 与原 plan 的主要变更
 
-1. **不引入 RTK** → 用轻量 cache + 统一清理函数
+1. **不引入 RTK** → 用轻量 entry store，但只存完整快照
 2. **不做双轨** → 统一用 selectionchange + 自适应防抖
-3. **明确桌面代码保留策略** → 现在保留，打包 APK 后可选删除
-4. **简化实施步骤** → 从 4 个 Task 减少到 5 个 Task，但更清晰
+3. **修正 cache 生命周期** → 刷新不清空，本地写入进入短暂保护窗口
+4. **明确排除范围** → `ReviewLetterDetail / ThreadDetailPage` 本轮不接入
+5. **补上两个实现级风险** → 完整 entry 判断统一化；列表排序/分组按 merge 后 `created_at` 走

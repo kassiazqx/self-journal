@@ -13,6 +13,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 import AnnotationMenu from '../components/AnnotationMenu'
+import { useEntryCache } from '../contexts/EntryCacheContext'
 
 // ⚠️ 必须定义在模块顶层，不能放在 EditEntryPage 函数体内。
 // 原因：放在函数体内会导致每次 re-render 都产生新的组件类型，
@@ -42,8 +43,10 @@ function AutoTextarea({ value, onChange, autoFocus, style }) {
   )
 }
 
-export default function EditEntryPage({ entry, onBack, onDone }) {
+export default function EditEntryPage({ entry: initialEntry, onBack, onDone }) {
   const { user } = useAuth()
+  const { resolveEntry, storeEntry } = useEntryCache()
+  const entry = resolveEntry(initialEntry)
   const [messages, setMessages] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(false)
@@ -191,10 +194,11 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
 
     try {
       const hasFlow = messages && messages.length > 0
+      const nextCreatedAt = editDatetime.toISOString()
+      const newContent = (contentMap['__raw__'] ?? entry.content ?? '').trim()
 
       if (!hasFlow) {
-        const newContent = (contentMap['__raw__'] ?? '').trim()
-        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations } })
+        await updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: nextCreatedAt, annotations } })
       } else {
         const updatedMessages = messages.map(msg => {
           // raw_entry 的编辑结果写在 contentMap['__raw__']
@@ -202,9 +206,8 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
           if (msg.id in contentMap) return { ...msg, content: contentMap[msg.id] }
           return msg
         })
-        const newContent = (contentMap['__raw__'] ?? entry.content ?? '').trim()
         await Promise.all([
-          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: editDatetime.toISOString(), annotations } }),
+          updateEntry({ id: entry.id, userId: user.id, fields: { content: newContent, created_at: nextCreatedAt, annotations } }),
           db.from('conversations').upsert(
             { user_id: user.id, entry_id: entry.id, context_type: 'entry',
               messages: updatedMessages, updated_at: new Date().toISOString() },
@@ -225,6 +228,14 @@ export default function EditEntryPage({ entry, onBack, onDone }) {
         await Promise.all(pathsToDeleteRef.current.map(p => deleteImage(p)))
         pathsToDeleteRef.current = []
       }
+
+      storeEntry({
+        ...entry,
+        annotations,
+        content: newContent,
+        created_at: nextCreatedAt,
+        image_urls: finalPaths,
+      }, { source: 'local' })
 
       markSaved()
       onDone?.()
