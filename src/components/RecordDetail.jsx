@@ -11,6 +11,7 @@ import { extractFields } from '../lib/conversationService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import { getImageUrl } from '../lib/imageStorage'
+import { shouldRefreshEntryAggregates } from '../lib/entryMutationSignals'
 import DatetimePicker from './DatetimePicker'
 import React from 'react'
 import AnnotatedText from './AnnotatedText'
@@ -101,7 +102,7 @@ function EditableFieldRow({ label, value, displayValue, onSave }) {
   )
 }
 
-export default function RecordDetail({ entryId, onBack, onOpenAwareness, onEdit }) {
+export default function RecordDetail({ entryId, onBack, onOpenAwareness, onEdit, onEntriesMutated }) {
   const entrySnapshot = useEntry(entryId)
 
   if (!entrySnapshot) {
@@ -128,11 +129,12 @@ export default function RecordDetail({ entryId, onBack, onOpenAwareness, onEdit 
       onBack={onBack}
       onOpenAwareness={onOpenAwareness}
       onEdit={onEdit}
+      onEntriesMutated={onEntriesMutated}
     />
   )
 }
 
-function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, onEdit }) {
+function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, onEdit, onEntriesMutated }) {
   const { user } = useAuth()
   const [entry, setEntry] = useState(entrySnapshot)
   const [messages, setMessages] = useState([])
@@ -344,6 +346,9 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
     if (data) {
       applyEntrySnapshot(data)
       resetAnnotations(data.annotations ?? [])
+      if (shouldRefreshEntryAggregates(field)) {
+        onEntriesMutated?.()
+      }
     }
   }
 

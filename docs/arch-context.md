@@ -243,7 +243,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-27（P0 数据层收口：EntryRepository + EntityStore）
+**最后更新：** 2026-04-27（P0 数据层收口：EntryRepository + EntityStore；补齐详情页感恩计数刷新入口）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -290,6 +290,7 @@ src/
 │   ├── entryRepository.js      journal_entries 唯一交互读写入口（create/update/getById/list/delete + invalidate + primeEntries）
 │   │                           所有写入返回完整权威行并立刻 upsert 进 store；后台批量写路径只 mark stale
 │   ├── entryReadQueries.js     journal_entries 只读查询入口（导出 / 今日感恩计数 / AI 上下文 / 洞察）
+│   ├── entryMutationSignals.js entry 聚合刷新信号辅助：当前仅 `template_type` / `created_at` 变更需触发派生计数重拉
 │   ├── conversationService.js  对话保存 + AI 字段提取
 │   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
 │   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
@@ -341,6 +342,7 @@ src/
 │   │                           writeResetKey：觉察流完成时重挂 HomePage
 │   │                           settingsResetKey：goTab('mine') 时重挂 SettingsPage（新增）
 │   │                           refreshKey：统一 entry 变更信号；驱动 RecordsPage refreshTrigger + HomePage gratitudeRefreshTrigger
+│   │                           RecordDetail 改 `template_type` / `created_at` 时也走 onEntriesMutated -> refreshKey（复用旧链，不另建状态）
 │   │                           keyboardVisible：键盘打开时隐藏底部4-tab导航（visualViewport.resize）
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
 │   │                           键盘避让：内容区内层滚动 + fixed 底部按钮，仅响应 visualViewport.resize
@@ -372,6 +374,7 @@ src/
 │   │                           含「涉及的人」行（蓝灰chip）+ 「内心需求」行（紫色chip）
 │   │                           ✨ 正文/摘要区支持标注（useAnnotations + useAnnotationInteraction）
 │   │                           改为 props.entryId + useEntry() 读实体；字段保存 / AI 分析 / 标注保存统一走 entryRepository.updateEntry
+│   │                           聚合字段变更：`template_type` / `created_at` 保存成功后上报 onEntriesMutated，刷新写作页今日感恩计数
 │   │                           store 新快照进来时：dirty annotations 保留本地，非 dirty 时 resetAnnotations(data.annotations)
 │   │                           ⚠️ messages 分支 raw_entry 节点必须渲染 entry.content（非 msg.content），rawText 与渲染文本必须同源
 │   │                           保存防抖 500ms；onContextMenu preventDefault + WebkitTouchCallout none
@@ -1202,7 +1205,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 > 每次重大变更后，三方任一 session 追加一行。格式：日期 · session类型 · 一句话摘要
 
 - 2026-04-26 · 协调session · 分支纪律补强：明确禁止直接在 main 上提交任何代码或文档改动；当前阶段所有变更先落 dev，确认无问题后再 merge main；同步更新 CLAUDE.md / session-protocol.md / arch-context.md
-- 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`
+- 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`；commit `2ea97e3`；同步卡：`docs/sync-cards/2026-04-27-p0-data-layer-consolidation.md`
+- 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

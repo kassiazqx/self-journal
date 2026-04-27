@@ -231,6 +231,7 @@ function MainLayoutContent() {
           onBack={pop}
           onOpenAwareness={handleOpenAwarenessFromDetail}
           onEdit={handleEditEntry}
+          onEntriesMutated={handleEntriesMutated}
         />
       )
     }
