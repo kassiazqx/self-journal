@@ -163,7 +163,7 @@ function EditorRefPlugin({ editorRef }) {
  *   style          {object}
  *   platformPorts  {{ selectionUi?, clipboard?, viewport? }} 平台接口，便于后续 APK/iOS bridge 接入
  *
- * ref: { focus(), getValue() }
+ * ref: { focus(), getValue(), setValue(text) }
  */
 const RichTextEditor = forwardRef(function RichTextEditor(
   {
@@ -219,6 +219,15 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       let text = ''
       lexicalEditorRef.current.read(() => { text = $getRoot().getTextContent() })
       return text
+    },
+    setValue(text) {
+      lexicalEditorRef.current?.update(() => {
+        const root = $getRoot()
+        root.clear()
+        const para = $createParagraphNode()
+        para.append($createTextNode(text ?? ''))
+        root.append(para)
+      }, { tag: 'imperative-set-value' })
     },
   }))
 

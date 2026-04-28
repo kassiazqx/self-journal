@@ -1,31 +1,37 @@
-# 同步卡：Persistence Trust Batch A / Task1
+# 同步卡：Persistence Trust Batch A / Task1-2
 
-**状态：** 仅 Task1 Follow-up Replacement 已完成；Batch A 其余 Task 尚未开始  
+**状态：** `Task1 Follow-up Replacement` + `Task2` 已完成；`Task3+` 尚未开始  
 **日期：** 2026-04-28  
 **commit：** 待本次提交生成  
 **分支：** `dev`
 
 ---
 
-## 目标
+## 本次范围
 
 按：
 
 - `docs/superpowers/plans/2026-04-28-persistence-trust-batch-a.md`
 
-只完成 `Task1: 收口 AI 设置与回顾信偏好持久化`，不提前进入草稿恢复、图片缓存、`RichTextEditor` 外部 value 同步，也不改既有架构方向。
+本次只完成：
+
+- `Task1 Follow-up Replacement`
+- `Task2: 草稿正文恢复与外部内容同步收口`
+
+本次明确不做：
+
+- 未保存图片跨“刷新 / 关闭后重开”恢复
+- `Task3` 的 `startInAi` 语义收口
+- 语音能力重设计（讯飞 / 上传录音 / 上传视频）
 
 ---
 
 ## 最终决策
 
-### 1. AI 设置改为 provider-aware 主结构
+### 1. AI 设置继续走 provider-aware 本地结构
 
-- `storage.js` 新增：
-  - `normalizeProviderSettings(raw)`
-  - `mergeProviderSettings(prev, provider, apiKey)`
-- 新主 key 为 `ai_settings_v2`
-- 结构统一为：
+- `storage.js` 保留 `ai_settings_v2`
+- 结构继续是：
 
 ```js
 {
@@ -37,51 +43,58 @@
 }
 ```
 
-- 读取时兼容旧结构 `{ provider, apiKey }`
-- 写入后删除旧 `ai_settings`，避免新旧双写漂移
+- 旧 `ai_settings` 只做读取兼容，不再回写旧结构
 
-### 2. `SettingsPage` 切 provider 不再互相清空 key
+### 2. 回顾信偏好维持本地单一真源
 
-- 点 provider tab 时：
-  - 更新当前 `provider`
-  - 同时把输入框值切到 `providers[p.id].apiKey`
-- 编辑 API Key 时：
-  - 同步更新 `settings.apiKey`
-  - 也同步更新 `settings.providers[settings.provider].apiKey`
+- `letter_prefs` 继续只走 `letterPrefsStorage.js`
+- 不再写入 `user_profile`
+- 不再依赖 `updateMemory`
 
-结果：
+### 3. 草稿改为独立存储层 `draftStorage.js`
 
-- Gemini / Deepseek 各自保留自己的 key
-- 来回切 provider、刷新页面后，不再出现“刚填好的 key 被切没了”
+- 新 key：`journal_draft_v2`
+- 草稿内容包括：
+  - 正文
+  - 模板
+  - 保存时间
+  - 手动时间覆盖状态
+  - `dismissedPeople`
+- `selectedDatetime` 读回时转回 `Date`
+- `dismissedPeople` 读回时转回 `Set`
 
-### 3. 回顾信偏好 follow-up：改为本地单一真源
+### 4. 旧草稿不迁移
 
-- `letter_prefs` 从 `user_profile` / `updateMemory` / `reviewLetterService` 主链拆出
-- 新建 `src/lib/letterPrefsStorage.js`
-- 规则：
-  - `type === 'manual'` 保留
-  - 其余一律归一到 `count`
-  - 旧 `days` 自动降级为 `count`
-  - `count_threshold` 默认 `10`
-  - `require_new_entries` 默认 `true`
+- 用户已确认：旧 `journal_draft` 不做迁移
+- 之前旧草稿丢失可接受
 
-保存链：
+### 5. 草稿保留 24 小时失效规则
 
-- `SettingsPage` 直接 `saveLetterPrefs(user.id, prefs)`
-- 底层只写 `localStorage.setItem(letter_prefs_<userId>)`
+- 超过 24 小时自动清掉
+- 避免很久以前的旧草稿反复弹出“继续”
 
-读取链：
+### 6. 内容删空时同步清草稿
 
-- `SettingsPage` 直接 `getLetterPrefs(user.id)`
-- `reviewLetterService` 生成/检查回顾信时也只读同一个本地模块
-- 坏 JSON 会清理脏数据并回默认值
+- 不再保留“空白假草稿”
+- 刷新后不应该继续弹恢复横幅
 
-### 4. 这次 follow-up 的边界
+### 7. 外部写入统一收口到编辑器命令式入口
 
-- 不恢复 `user_memory.user_profile.letter_prefs`
-- 不再依赖 `updateMemory` 保存回顾信偏好
-- 保留已做好的 provider 分槽位持久化，不回退到单 `apiKey`
-- `reviewLetterService` 只保留生成逻辑和本地 prefs 读取；不再负责把偏好写进 `user_profile`
+- `RichTextEditor` 新增 ref 方法：`setValue(text)`
+- `HomePage` 新增 `applyExternalContent(text)`
+- 草稿恢复 / 浏览器语音转写 / `@` 替换 三条路径统一走这个入口
+
+目的：
+
+- 页面 state 里的字
+- Lexical 编辑器里的字
+
+尽量保持同一份，不再各改各的
+
+### 8. 未保存图片跨重开恢复本次明确不做
+
+- plan 里的旧矛盾句已改掉
+- 本次只承诺正文 / 模板 / 时间 / `dismissedPeople` 恢复
 
 ---
 
@@ -89,14 +102,19 @@
 
 | 文件 | 本轮改动 |
 |---|---|
-| `src/lib/storage.js` | AI settings v2、旧结构兼容、provider 分槽位持久化 |
-| `src/lib/storage.test.js` | 新增 provider settings 规范化 / merge 回归测试 |
-| `src/lib/letterPrefsStorage.js` | `letter_prefs` 本地单一真源：normalize / save / get |
-| `src/lib/letterPrefsStorage.test.js` | 默认值 / days 兼容 / 写后再读 / 坏 JSON 清理测试 |
-| `src/lib/reviewLetterService.js` | 回顾信逻辑改为只从 `letterPrefsStorage` 读偏好；不再写 `user_profile` |
-| `src/lib/reviewLetterService.test.js` | 保留旧导出兼容回归，确保本地 prefs wrapper 仍可跑纯 `node --test` |
-| `src/pages/SettingsPage.jsx` | provider 切换恢复各自 key；回顾信偏好改走 `letterPrefsStorage` 本地模块 |
-| `docs/arch-context.md` | 更新 §3 真实结构与 §6 日志 |
+| `src/lib/storage.js` | AI settings v2、provider 分槽位持久化 |
+| `src/lib/storage.test.js` | provider settings 规范化 / merge 测试 |
+| `src/lib/letterPrefsStorage.js` | `letter_prefs` 本地单一真源 |
+| `src/lib/letterPrefsStorage.test.js` | 默认值 / 兼容 / 清脏数据测试 |
+| `src/lib/reviewLetterService.js` | 回顾信偏好改为只读本地真源 |
+| `src/lib/reviewLetterService.test.js` | Task1 follow-up 兼容回归 |
+| `src/pages/SettingsPage.jsx` | AI 设置 / 回顾信偏好切到新契约 |
+| `src/lib/draftStorage.js` | 新增草稿序列化 / 保存 / 读取 / 清理 |
+| `src/lib/draftStorage.test.js` | 草稿序列化 / 24h 失效 / 坏 JSON / 清理测试 |
+| `src/pages/HomePage.jsx` | 草稿改走 `draftStorage`；外部内容统一走 `applyExternalContent` |
+| `src/components/RichTextEditor.jsx` | 新增 ref `setValue(text)` |
+| `docs/arch-context.md` | 更新 §3 / §4 / §6 |
+| `docs/superpowers/plans/2026-04-28-persistence-trust-batch-a.md` | 删掉“未保存图片也能恢复”的旧矛盾句 |
 
 ---
 
@@ -107,38 +125,51 @@
 - `node --test src/lib/storage.test.js`
 - `node --test src/lib/letterPrefsStorage.test.js`
 - `node --test src/lib/reviewLetterService.test.js`
-- `node --test src/lib/storage.test.js src/lib/letterPrefsStorage.test.js src/lib/reviewLetterService.test.js`
+- `node --test src/lib/draftStorage.test.js`
 - `npm run build`
 
 结果：
 
-- 9/9 tests 通过
+- `draftStorage.test.js` 5/5 通过
 - `build` 通过
-- 构建有非阻塞 Vite warning：
-  - 大 chunk 提示（既有）
-  - `reviewLetterService.js` 的 ineffective dynamic import 提示
+- 构建仍有既有 warning：
+  - 大 chunk 提示
+  - ineffective dynamic import 提示
 
 ---
 
 ## 手工验证结果
 
-- 本次代码 session 未新增手工点击验证记录
-- 自动验证已覆盖：
-  - provider 分槽位纯函数回归
-  - `letter_prefs` 默认值 / 旧值兼容 / 写后再读 / 坏数据清理
-- 建议手测清单：
-  - Gemini / Deepseek 来回切换，确认各自 key 仍在
-  - 修改回顾信条数或切到手动生成后刷新，确认偏好保持
+已手测通过：
+
+- 草稿恢复：正文 / 模板 / 时间 / `dismissedPeople`
+- 内容删空后不再弹假草稿
+- `@` 选人后正文与 chip 状态正常
+
+手测发现 1 个已知问题：
+
+- 浏览器语音输入路径里，若先手打文字再点语音，原文字可能被语音结果顶掉
+
+当前结论：
+
+- 这不是 Task2 主体草稿链的问题
+- 根因更像浏览器语音入口本身拿了旧文本快照
+- 产品方向已偏向未来做“上传录音 / 上传视频 / 再转文字”，不再继续投资当前 Web Speech API 方案
 
 ---
 
 ## 残余风险
 
-- Batch A 只完成了 Task1 follow-up replacement；草稿正文/图片恢复、`RichTextEditor` 外部 value 同步、`startInAi` 语义收口都还没开始
-- `reviewLetterService.js` 仍保留旧偏好导出壳用于兼容测试；主链已切走，但后续若继续清理这层，可以直接删掉兼容壳并重写对应测试
+- `Task3` 还没开始，`深入觉察` 还没做 `startInAi` 真收口
+- 浏览器语音输入仍是临时能力；若暂不删除，其覆盖旧文本问题仍存在
+- 若后续确定走“上传录音 / 上传视频 / 再转文字”，当前 `useSpeechRecognition.js` 大概率只保留为历史接缝，不会成为终局主链
 
 ---
 
 ## 给下个 session 的一句话
 
-如果继续做 `Persistence Trust Batch A`，下一步直接从 plan 的 `Task2` 开始，不要回头重做 Task1，也不要把 provider key 持久化重新改回单一 `apiKey` 结构。
+如果继续做 `Persistence Trust Batch A`：
+
+- 代码层下一步从 `Task3` 开始
+- 产品层先决定浏览器语音按钮是“隐藏”还是“直接删除”
+- 不要回头把未保存图片跨重开恢复塞回 Task2

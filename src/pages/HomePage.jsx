@@ -43,59 +43,18 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { uploadImage, deleteImage, getImageUrl } from '../lib/imageStorage'
+import {
+  saveDraftSnapshot,
+  loadDraftSnapshot,
+  clearDraftSnapshot,
+} from '../lib/draftStorage'
 import RichTextEditor from '../components/RichTextEditor'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
 import AnnotationMenu from '../components/AnnotationMenu'
 
-// ─── 草稿 localStorage ──────────────────────────────────────────
-const DRAFT_KEY = 'journal_draft'
 const FLOATING_BAR_HEIGHT = 84
 const FLOATING_BAR_GAP = 12
-
-function saveDraft(content, templateId, selectedDatetime, manualOverride, dismissedPeople) {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      content,
-      template: templateId,
-      savedAt: new Date().toISOString(),
-      selectedDatetime: selectedDatetime instanceof Date ? selectedDatetime.toISOString() : null,
-      manualOverride: Boolean(manualOverride),
-      dismissedPeople: dismissedPeople ? [...dismissedPeople] : [],
-    }))
-  } catch {
-    // localStorage 操作容错，失败不影响主流程
-  }
-}
-
-function loadDraft() {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY)
-    if (!raw) return null
-    const draft = JSON.parse(raw)
-    // 超过 24 小时丢弃
-    if (Date.now() - new Date(draft.savedAt).getTime() > 86400000) {
-      localStorage.removeItem(DRAFT_KEY)
-      return null
-    }
-    // 把 ISO 字符串还原为 Date
-    if (draft.selectedDatetime) {
-      draft.selectedDatetime = new Date(draft.selectedDatetime)
-    }
-    draft.dismissedPeople = new Set(draft.dismissedPeople ?? [])
-    return draft
-  } catch {
-    return null
-  }
-}
-
-function clearDraft() {
-  try {
-    localStorage.removeItem(DRAFT_KEY)
-  } catch {
-    // localStorage 操作容错，失败不影响主流程
-  }
-}
 
 // ─── 图片宫格单项（支持拖拽） ─────────────────────────────────────
 // 必须定义在模块顶层，不能放 HomePage 函数体内（re-render 会重建组件类型）
@@ -238,7 +197,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   // 草稿恢复提示
   const [initialDraft] = useState(() => {
     if (isEditMode) return null
-    const draft = loadDraft()
+    const draft = loadDraftSnapshot()
     return draft?.content ? draft : null
   })
   const [showDraftBanner, setShowDraftBanner] = useState(() => Boolean(initialDraft?.content))
@@ -319,6 +278,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     editEntry?.people_involved ?? []
   )
 
+  const applyExternalContent = useCallback((text) => {
+    setContent(text)
+    textareaRef.current?.setValue?.(text)
+  }, [])
+
   // ── 加载联系人（seed 一次，然后读取）──────────────────────────
   useEffect(() => {
     if (!user) return
@@ -336,7 +300,17 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     if (isEditMode) return
     clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
-      if (content.trim()) saveDraft(content, template.id, selectedDatetime, manualOverride, dismissedPeople)
+      if (content.trim()) {
+        saveDraftSnapshot({
+          content,
+          template: template.id,
+          selectedDatetime,
+          manualOverride,
+          dismissedPeople,
+        })
+      } else {
+        clearDraftSnapshot()
+      }
     }, 3000)
     return () => clearTimeout(draftTimerRef.current)
   }, [content, template.id, isEditMode, selectedDatetime, manualOverride, dismissedPeople])
@@ -361,7 +335,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   // ── 恢复草稿 ──────────────────────────────────────────────────
   const handleResumeDraft = () => {
     if (draftRef.current) {
-      setContent(draftRef.current.content)
+      applyExternalContent(draftRef.current.content)
       const t = resolveTemplate(draftRef.current.template)
       setTemplate(t)
       if (draftRef.current.selectedDatetime) {
@@ -376,7 +350,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   }
 
   const handleDiscardDraft = () => {
-    clearDraft()
+    clearDraftSnapshot()
     setShowDraftBanner(false)
   }
 
@@ -398,7 +372,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       (newFinal, interim) => {
         if (newFinal) committedRef.current += newFinal
         const parts = [voiceBaseRef.current, committedRef.current + interim].filter(Boolean)
-        setContent(parts.join('\n'))
+        applyExternalContent(parts.join('\n'))
       },
       () => {},
       () => {}
@@ -452,7 +426,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     const after = content.slice(mentionAnchor)         // @ 开始往后
     const query = mentionQuery
     const afterCleaned = after.replace('@' + query, query)
-    setContent(before + afterCleaned)
+    applyExternalContent(before + afterCleaned)
     setMentionQuery(null)
 
     // 底部 chip 追加（去重）
@@ -552,7 +526,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       return
     }
 
-    clearDraft()
+    clearDraftSnapshot()
     clearTimeout(draftTimerRef.current)  // 防止 awareness 期间 timer 重写草稿
     const gotoAwareness = template.awarenessStart !== null
     setSaving(false)
@@ -608,7 +582,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     setSaving(false)
     if (error || !entry) { console.error('[insert]', error); return }
 
-    clearDraft()
+    clearDraftSnapshot()
     onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
   }, [content, saving, template, user, onDone, annotations, selectedDatetime])
 

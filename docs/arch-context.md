@@ -245,7 +245,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1 follow-up replacement：AI 设置 provider 分槽位持久化、回顾信偏好改为本地单一真源）
+**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1-2：AI 设置/回顾信偏好主链收口 + 草稿恢复与外部内容同步收口）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -319,6 +319,8 @@ src/
 │   │                           兼容旧 `ai_settings` 单 key 结构；读取时 normalize，写入后删除旧 key
 │   ├── letterPrefsStorage.js   回顾信偏好本地单一真源（`letter_prefs_<userId>`）
 │   │                           normalize/save/get；旧 `days` 统一降级为 `count`
+│   ├── draftStorage.js         草稿正文/模板/时间/dismissedPeople 本地真源（`journal_draft_v2`）
+│   │                           serialize/save/load/clear；24h 过期；读回时 Date/Set 反序列化
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
 │   ├── dateUtils.js            inferDatetime(text, now) + formatPill() + getDayRange(date) 日期工具（新增）
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
@@ -410,11 +412,12 @@ src/
 └── pages/
     ├── AuthPage.jsx            登录注册
     ├── HomePage.jsx            写作页（模板标签+日期pill+引导词+草稿恢复）
-    │                           日期 pill：inferDatetime debounce 800ms + manualOverride + localStorage 持久化
+    │                           日期 pill：inferDatetime debounce 800ms + manualOverride + draftStorage 持久化
     │                           gratitudeRefreshTrigger：监听外部 entry 变更，重拉今日感恩计数
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
     │                           新建 / 编辑完成：先经 entryRepository 拿到权威 row（含 updated_at）再导航；图片仍后台异步上传
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
+    │                           ✨ 外部内容写入统一走 applyExternalContent()；草稿恢复 / 浏览器语音 / @ 替换都调 ref.setValue()
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
     │                           键盘避让重构：顶部信息固定，只有“编辑器+图片区”内层滚动
     │                           内层滚动区负责 paddingBottom/scrollPaddingBottom；底部悬浮栏 fixed + visualViewport.resize 贴键盘
@@ -1087,7 +1090,7 @@ async function loadFull() {
 - **2026-04-23：** HomePage 传入 `disableSelectionChange: true` 给 `useAnnotationInteraction`，禁用全局 selectionchange 监听，完全依赖 Lexical 的 editor 内部链路。
 - **2026-04-27：** P1 rebase 后，HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor` 的 `MouseUpPlugin` 改为**先同步读取** selection，失败时仅做一次 `0ms setTimeout` + 一帧 `requestAnimationFrame` 的**有界重试**；`selectionSnapshot.js` 在 DEV 下记录 offsets/text 丢失点，定位问题不再回到页面层补 DOM Range。
 
-**当前状态：** 代码层已收口到 `MouseUpPlugin / AnnotationInteractionPlugin / selectionSnapshot.js`，`build` / `lint` 已通过；桌面首次选字、首次高亮、移动端 handle 拖拽、只读页回归仍需按 P1 手工矩阵逐项确认。
+**当前状态：** 代码层已收口到 `MouseUpPlugin / AnnotationInteractionPlugin / selectionSnapshot.js`，`build` / `lint` 已通过；除 `HomePage` 桌面首次拖选菜单这一项低优先级残余外，桌面首次高亮、移动端 handle 拖拽、只读页回归、保存链均已按 P1 手工矩阵验证通过。
 
 **规律：**
 - 凡使用 Lexical 富文本编辑器的页面，默认传 `disableSelectionChange: true` 给 `useAnnotationInteraction`；其他纯 DOM 文本页面保持默认 `false`
@@ -1199,6 +1202,22 @@ async function loadFull() {
 
 ---
 
+### 4.60 浏览器语音输入是临时接缝，不应继续做主链投资（2026-04-28 新增）
+
+**现状：** `HomePage` 当前仍保留 Web Speech API 语音入口，草稿恢复 / `@` 替换 / 语音转写 已统一走 `applyExternalContent()` + `RichTextEditor.setValue()`；但用户手测发现“先手打再点语音时，原文字可能被语音结果顶掉”。
+
+**结论：**
+- 这说明浏览器语音链路当前仍不够可靠，不能当长期主能力继续扩展
+- 产品方向已偏向“上传录音 / 上传视频 / 再转文字”
+- 未来若走该路线，`useSpeechRecognition.js` 多半只保留为历史接缝或直接删除，不会成为终局实现
+
+**处理原则：**
+- 在产品未明确前，不要继续围绕 Web Speech API 加新功能
+- 若只是临时停用，优先隐藏/移除 UI 入口，而不是为它继续堆补丁
+- 若后续确认彻底放弃浏览器实时语音，可直接删除 `useSpeechRecognition.js` 链路
+
+---
+
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
 - Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
@@ -1286,7 +1305,9 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
 - 2026-04-28 · 代码session · P3 提取上下文统一完成代码+数据收口：新增 `entryFullText.js` / `entryExtractionService.js` / `conversationMemoryService.js`；RecordDetail 手动提取、extractSummaryService 批量提取、reviewLetterService 富内容、Settings 手动记忆更新全部切到 `conversations` 主路径；删除 `AIConversation.jsx` / `conversationService.js` 运行时代码，`incrementConversationCount()` 一并移除；Supabase 审计结果 `legacy_only_count=9`，已回填后归零并执行 `DROP COLUMN full_conversation`；`node --test` / `npm run lint` / `npm run build` 通过；commit `2c2ce77`；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
 - 2026-04-28 · 代码session · P3 reviewer follow-up 修复：`entryFullText.js` 新增 answered-turn normalization，草稿 prompt 不再进入提取/记忆/回顾信上下文；Settings 手动记忆更新改为“最近 10 条里取最新有效回答对话”，并把 conversations 查询失败与“没有有效对话”分开；reviewLetterService conversations 查询失败时改为 fail closed；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
+- 2026-04-28 · 协调session · 按用户手测结果更新收口状态：P3 提取 / 记忆 / 回顾信主链手工验证通过；P1 除 `HomePage` 桌面首次拖选菜单外其余矩阵通过；感恩计数日期边界与 `ThreadDetailPage` AI 分析验收通过；同步卡与总方案状态已同步更新
 - 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 完成：`storage.js` 新增 AI settings v2 provider 分槽位持久化与旧结构兼容；`SettingsPage` 切 provider 恢复各自 key，不再互相清空；回顾信偏好统一 normalize 后经 `user_memory` 主链保存，localStorage 只保留 fallback；新增 `storage.test.js` / `reviewLetterService.test.js`；`node --test src/lib/storage.test.js src/lib/reviewLetterService.test.js` 与 `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
+- 2026-04-28 · 代码session · Persistence Trust Batch A / Task1-2：`draftStorage.js` 新增草稿本地真源（正文/模板/时间/dismissedPeople、24h 失效、空内容清草稿）；`RichTextEditor` 新增 ref `setValue()`；`HomePage` 的草稿恢复 / 浏览器语音 / `@` 替换统一走 `applyExternalContent()`；手测发现浏览器语音仍会顶掉先前手打文字，已记录为 §4.60，产品方向偏向后续上传录音/视频转文字；`node --test src/lib/draftStorage.test.js` 与 `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md
@@ -1319,8 +1340,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-18 · 代码session · 删除孤儿文件 keywordDetection.js（四个导出 detectEmotions/detectCategories/detectPeople/PREDEFINED_CATEGORIES 无外部调用方，build 通过确认）；同步卡：docs/sync-cards/2026-04-18-delete-keyworddetection-sync.md
 - 2026-04-18 · 代码session · 死代码清理：删除 contactsService.js 孤立注释行；删除 memory.js 三个未使用快捷方法（setRollingSummary/setUserProfile/clearMemory）；去掉 TEMPLATE_BY_ID export（内部用）；去掉 mapToBase export（内部用）；CLAUDE.md 删除已完成待处理项；⚠️ getAwarenessStartTier 未删（awarenessFlowState.js 有调用，sync card 分析有误）；同步卡：docs/sync-cards/2026-04-18-dead-code-cleanup-sync.md
 - 2026-04-21 · 代码session · 五项 bug 修复 + days 触发死代码清理 + UI 调整：① detectPeopleFromText 改为长度优先匹配（对 pairs 按 kw.length 降序排，用 usedRanges 防子词覆盖）；② dismissedPeople 持久化进草稿（Set→Array→Set，saveDraft/loadDraft/handleResumeDraft 均已处理）；③ getUserLetterPrefs 改为 export，SettingsPage useEffect 挂载时正确加载已存偏好（原为仅写不读）；④ 触发数量用独立 countInput string state，onBlur 才 clamp 保存（原 onChange 立即 clamp 导致中途数字被强制）；⑤ EditEntryPage 顶栏改为「时间pill | 保存」无取消；⑥ HomePage 编辑模式顶栏显示时间 pill（可点击弹 picker，selectedDatetime 初始化自 editEntry.created_at，保存写回 DB）；⑦ getUserLetterPrefs 三点 normalize（days→count 兼容旧存储，删 day_interval:7 默认值），checkAndGenerateLetter 删 daysSinceLast + 简化 shouldGenerate；⑧ AwarenessFlow「保存并退出」→「保存」；同步卡：docs/sync-cards/2026-04-21-bugfixes-days-ui-sync.md
-- 2026-04-21 · 代码session · code review 修复：① RecordsPage EntryCard 情绪词渲染补去重（原只修了 RecordDetail 漏掉此处）；② prompts.js emotions/emotion_display 加「不得重复」约束；③ handleBatchDelete Storage 失败不再 .catch 吞错，改为 try/catch 统一处理，Storage 失败阻止 DB 删除避免孤儿文件；④ reviewLetterService 裸 JSON 兜底正则改贪婪匹配正确捕获嵌套 JSON；同步卡：docs/sync-cards/2026-04-21-code-review-fixes.md
 - 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 follow-up replacement：保留 `ai_settings_v2` provider 分槽位持久化；新增 `letterPrefsStorage.js` + `letterPrefsStorage.test.js` 作为 `letter_prefs` 本地单一真源；SettingsPage 回顾信偏好改为只读写本地模块；reviewLetterService 改为只从本地真源读偏好，不再把 `letter_prefs` 写入 `user_profile`，也不再依赖 `updateMemory`；同步卡：docs/sync-cards/2026-04-28-persistence-trust-batch-a.md
+- 2026-04-21 · 代码session · code review 修复：① RecordsPage EntryCard 情绪词渲染补去重（原只修了 RecordDetail 漏掉此处）；② prompts.js emotions/emotion_display 加「不得重复」约束；③ handleBatchDelete Storage 失败不再 .catch 吞错，改为 try/catch 统一处理，Storage 失败阻止 DB 删除避免孤儿文件；④ reviewLetterService 裸 JSON 兜底正则改贪婪匹配正确捕获嵌套 JSON；同步卡：docs/sync-cards/2026-04-21-code-review-fixes.md
 - 2026-04-21 · 代码session · 回顾信生成三项修复：① generateReviewLetter 删除 .gt(created_at)/.lte(created_at) 时间过滤，改为纯靠 covered_by_letter_id IS NULL；② checkAndGenerateLetter 计数查询删时间过滤，传参统一 null；③ insights JSON 提取正则加容错（兼容 ~~~json 等变体），letterContent 二次清理；④ RecordsPage checkAndGenerateLetter 改为 await 保证新信当次可见；DB 变更：threads 表加 trigger_source text 列；ReviewLetterDetail 相关 threads 占位待产品 brainstorm；同步卡：docs/sync-cards/2026-04-21-review-letter-fixes2.md
 - 2026-04-21 · 代码session · 批量多选删除 + 返回按钮统一：RecordsPage 新增 isSelecting/selectedIds(Set)/showBatchDeleteConfirm state；EntryCard 支持 isSelecting/isSelected/onToggle props + 圆形 checkbox + 选中高亮 outline；长按 600ms 进入多选（首条自动选中）；header 多选态「取消/已选N条/删除」；日期组全选当天两态按钮；handleBatchDelete 先并发清理 Storage 再批量 DB 删除（deleteEntries .in()），DB 失败时保持确认框打开不重置状态；多选时回顾信卡片隐藏；journalService.js 新增 deleteEntries；6 个文件返回按钮统一为 ‹（U+2039，fontSize 20）；EditEntryPage「取消」保留；同步卡：docs/sync-cards/2026-04-21-batch-delete-nav-done.md；loadContacts SELECT 补 group_name（根因修复"保存未生效"）；SettingsPage 联系人管理新增分组输入；RecordDetail 人物 sheet 按分组展示；同步卡：docs/sync-cards/2026-04-18-people-coreneeds-sync.md
 - 2026-04-18 · 代码session · 写作页日期时间选择器完成：新建 dateUtils.js（inferDatetime 关键词识别+formatPill）；新建 DatetimePicker.jsx（快捷按钮+迷你日历+时分鼓轮双列）；HomePage 模板栏日期 pill + 800ms debounce + manualOverride；RecordDetail 时间戳改为可点击写回 DB；同步卡：docs/sync-cards/2026-04-18-datetime-picker-plan.md
