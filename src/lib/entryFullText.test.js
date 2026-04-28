@@ -5,6 +5,9 @@ import {
   buildEntryFullText,
   buildMemoryConversationText,
   buildReviewLetterRichContent,
+  getAnsweredConversationTurns,
+  hasAnsweredConversationTurns,
+  pickLatestAnsweredConversation,
 } from './entryFullText.js'
 
 test('buildEntryFullText keeps prompts and answers in order', () => {
@@ -64,4 +67,81 @@ test('buildReviewLetterRichContent appends structured supplements', () => {
   assert.match(richContent, /当下念头：我又不够好/)
   assert.match(richContent, /核心需求：被理解/)
   assert.match(richContent, /洞见：我其实在怕被否定/)
+})
+
+test('getAnsweredConversationTurns keeps only paired prompt and answer turns', () => {
+  const turns = getAnsweredConversationTurns([
+    { nodeType: 'raw_entry', content: '今天很乱。' },
+    { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+    { nodeType: 'local_prompt', content: '你当时最在意什么？' },
+    { nodeType: 'local_answer', content: '怕做不好。' },
+    { nodeType: 'ai_prompt', content: '这种怕你熟悉吗？' },
+  ])
+
+  assert.deepEqual(
+    turns.map((message) => `${message.nodeType}:${message.content}`),
+    [
+      'local_prompt:你当时最在意什么？',
+      'local_answer:怕做不好。',
+    ],
+  )
+})
+
+test('buildEntryFullText drops prompt-only turns', () => {
+  const fullText = buildEntryFullText({
+    entry: { content: '今天很乱。' },
+    messages: [
+      { nodeType: 'raw_entry', content: '今天很乱。' },
+      { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+      { nodeType: 'ai_prompt', content: '这种怕你熟悉吗？' },
+    ],
+  })
+
+  assert.match(fullText, /原始写作：\n今天很乱。/)
+  assert.doesNotMatch(fullText, /本地问题：哪个时刻最深？/)
+  assert.doesNotMatch(fullText, /AI问题：这种怕你熟悉吗？/)
+})
+
+test('buildMemoryConversationText drops prompt-only turns', () => {
+  const text = buildMemoryConversationText([
+    { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+    { nodeType: 'local_answer', content: '被催的时候。' },
+    { nodeType: 'ai_prompt', content: '这种怕你熟悉吗？' },
+  ])
+
+  assert.match(text, /本地问题：哪个时刻最深？/)
+  assert.match(text, /我的回答：被催的时候。/)
+  assert.doesNotMatch(text, /AI问题：这种怕你熟悉吗？/)
+})
+
+test('hasAnsweredConversationTurns returns false for prompt-only drafts', () => {
+  assert.equal(
+    hasAnsweredConversationTurns([
+      { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+      { nodeType: 'ai_prompt', content: '这种怕你熟悉吗？' },
+    ]),
+    false,
+  )
+})
+
+test('pickLatestAnsweredConversation skips latest draft-only row', () => {
+  const picked = pickLatestAnsweredConversation([
+    {
+      entry_id: 'draft',
+      updated_at: '2026-04-28T10:00:00.000Z',
+      messages: [
+        { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+      ],
+    },
+    {
+      entry_id: 'answered',
+      updated_at: '2026-04-28T09:00:00.000Z',
+      messages: [
+        { nodeType: 'local_prompt', content: '哪个时刻最深？' },
+        { nodeType: 'local_answer', content: '被催的时候。' },
+      ],
+    },
+  ])
+
+  assert.equal(picked?.entry_id, 'answered')
 })

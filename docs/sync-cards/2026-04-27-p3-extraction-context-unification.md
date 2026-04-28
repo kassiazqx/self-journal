@@ -2,7 +2,7 @@
 
 **状态：** 代码已完成，SQL 审计/回填/删列已完成，待剩余手工验证  
 **日期：** 2026-04-28  
-**commit：** 暂未提交（按 AGENTS 流程，待本地验证后再 commit）  
+**commit：** `2c2ce77` `refactor(ai): unify extraction context`  
 **分支：** `dev`
 
 ---
@@ -29,6 +29,17 @@
 - `buildMemoryConversationText()`：按 `nodeType` 精确映射记忆更新文本
 - `buildReviewLetterRichContent()`：共享 fullText + 结构化补充字段
 
+### 1.1 reviewer follow-up：answered-turn normalization
+
+- `entryFullText.js` 后续补了一层 answered-turn normalization
+- 现在只保留成对的：
+  - `local_prompt + local_answer`
+  - `ai_prompt + ai_answer`
+- 草稿态的 prompt-only 对话不再进入：
+  - `buildEntryFullText()`
+  - `buildMemoryConversationText()`
+  - `buildReviewLetterRichContent()`
+
 ### 2. 单条提取只保留 RecordDetail 手动入口
 
 - 新增 `src/lib/entryExtractionService.js`
@@ -51,6 +62,9 @@
 - 回顾信用 `buildReviewLetterRichContent()` 组装富内容
 - 新增 `src/lib/conversationMemoryService.js`
 - `SettingsPage.handleForceUpdateMemory()` 直接读取最近一条 `conversations.messages`
+- reviewer follow-up 后，`SettingsPage` 不再 `limit(1)` 硬拿最新一条；改为回看最近 10 条，取最新一条“有有效回答”的 conversation
+- 若 conversations 查询失败，`SettingsPage` 直接报错，不再伪装成“最近没有可用于更新记忆的已回答对话”
+- `reviewLetterService` 读取 conversations 失败时 fail closed，不生成正式回顾信，也不消耗 entry
 
 ### 5. 旧自动链已从运行时代码移除
 
@@ -75,14 +89,14 @@
 | 文件 | 本轮改动 |
 |---|---|
 | `src/lib/entryFullText.js` | 新建共享 fullText / memory / review-letter builder |
-| `src/lib/entryFullText.test.js` | 新增 builder 测试 |
+| `src/lib/entryFullText.test.js` | 新增 builder 测试；follow-up 补 answered-turn / 跳过草稿用例 |
 | `src/lib/entryExtractionService.js` | 新建单条 AI 提取服务 |
 | `src/lib/extractSummaryService.js` | 批量提取改查 `conversations` 并使用 `fullText` |
 | `src/lib/extractSummaryService.test.js` | 补 `fullText` 新用例 |
 | `src/lib/conversationMemoryService.js` | 新建手动记忆更新服务 |
 | `src/components/RecordDetail.jsx` | 手动 AI 分析改走共享 fullText + 新提取 service |
-| `src/lib/reviewLetterService.js` | 回顾信富内容改走 `conversations` 主路径 |
-| `src/pages/SettingsPage.jsx` | 手动更新记忆改查最近 `conversations.messages` |
+| `src/lib/reviewLetterService.js` | 回顾信富内容改走 `conversations` 主路径；follow-up 补 conversations 查询 fail-closed |
+| `src/pages/SettingsPage.jsx` | 手动更新记忆改查最近 `conversations.messages`；follow-up 改为最近 10 条中选最新有效回答对话，并区分查询失败 vs 无数据 |
 | `src/lib/memory.js` | 删除 `incrementConversationCount()` |
 | `src/lib/prompts.js` | 更新字段同步注释口径 |
 | `docs/arch-context.md` | 更新 §3 真实结构、§6 日志 |
@@ -97,11 +111,15 @@
 
 - `node --test src/lib/entryFullText.test.js`
 - `node --test src/lib/entryFullText.test.js src/lib/extractSummaryService.test.js`
+- `node --test src/lib/entryFullText.test.js src/lib/extractSummaryService.test.js src/lib/entrySnapshots.test.js src/store/entrySlice.test.js`
+- `npm run lint`
 - `npm run build`
 
 结果：
 
 - `node --test` 通过
+- 15/15 tests 通过
+- `lint` 通过
 - `build` 通过
 - 构建仍有既有 Vite chunk size warning，不是本轮新增问题
 
@@ -111,7 +129,10 @@
 
 - RecordDetail 打开一条已有 `conversations` 的记录，点 `AI 分析` 后字段正常回填
 - RecordDetail 打开一条只有原文、没有对话的记录，点 `AI 分析` 后仍可提取
-- Settings 页点“更新记忆”后提示正常，不报错
+- Settings 页点“更新记忆”后：
+  - 最新一条若只是草稿 prompt，不应误报成功
+  - 最近 10 条里若有更早的有效回答对话，仍应成功更新
+  - 若最近都没有有效回答，应显示“最近没有可用于更新记忆的已回答对话”
 - 生成回顾信前，缺摘要的记录仍会被批量补提取
 - 新生成的回顾信正文里能看到对话上下文，不丢后续手动修订字段
 

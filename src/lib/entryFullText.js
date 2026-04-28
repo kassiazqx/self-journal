@@ -2,6 +2,16 @@ function normalizeContent(content) {
   return typeof content === 'string' ? content.trim() : ''
 }
 
+function isPromptType(nodeType) {
+  return nodeType === 'local_prompt' || nodeType === 'ai_prompt'
+}
+
+function getExpectedAnswerType(nodeType) {
+  if (nodeType === 'local_prompt') return 'local_answer'
+  if (nodeType === 'ai_prompt') return 'ai_answer'
+  return null
+}
+
 function formatConversationLine(message) {
   const content = normalizeContent(message?.content)
   if (!content) return null
@@ -13,6 +23,40 @@ function formatConversationLine(message) {
   return null
 }
 
+export function getAnsweredConversationTurns(messages = []) {
+  const normalized = messages
+    .map((message) => {
+      const content = normalizeContent(message?.content)
+      if (!content) return null
+      return { ...message, content }
+    })
+    .filter(Boolean)
+
+  const turns = []
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const current = normalized[index]
+    if (!isPromptType(current.nodeType)) continue
+
+    const expectedAnswerType = getExpectedAnswerType(current.nodeType)
+    const next = normalized[index + 1]
+    if (next?.nodeType !== expectedAnswerType) continue
+
+    turns.push(current, next)
+    index += 1
+  }
+
+  return turns
+}
+
+export function hasAnsweredConversationTurns(messages = []) {
+  return getAnsweredConversationTurns(messages).length > 0
+}
+
+export function pickLatestAnsweredConversation(rows = []) {
+  return rows.find((row) => hasAnsweredConversationTurns(row?.messages ?? [])) ?? null
+}
+
 export function buildEntryFullText({ entry, messages = [] }) {
   const parts = []
   const raw = normalizeContent(entry?.content)
@@ -21,8 +65,7 @@ export function buildEntryFullText({ entry, messages = [] }) {
     parts.push(`原始写作：\n${raw}`)
   }
 
-  for (const message of messages) {
-    if (message?.nodeType === 'raw_entry') continue
+  for (const message of getAnsweredConversationTurns(messages)) {
     const line = formatConversationLine(message)
     if (line) parts.push(line)
   }
@@ -35,7 +78,7 @@ export function buildConversationMessageIndex(rows = []) {
 }
 
 export function buildMemoryConversationText(messages = []) {
-  return messages
+  return getAnsweredConversationTurns(messages)
     .map(formatConversationLine)
     .filter(Boolean)
     .join('\n\n')

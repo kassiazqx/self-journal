@@ -72,11 +72,16 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
   if (!entries?.length) throw new Error('NO_ENTRIES')
 
-  const { data: rows } = await db.from('conversations')
+  const { data: rows, error: conversationsError } = await db.from('conversations')
     .select('entry_id, messages')
     .eq('user_id', userId)
     .eq('context_type', 'entry')
     .in('entry_id', entries.map((entry) => entry.id))
+
+  if (conversationsError) {
+    console.error('[reviewLetter] 读取 conversations 失败:', conversationsError.message)
+    throw conversationsError
+  }
 
   // Step 2: 批量补提取缺失的 entry_summary / theme_hints（含词库）
   // （extractEntrySummaries 已在文件顶部静态 import，见 §4.14 注意事项）

@@ -298,10 +298,12 @@ src/
 │   ├── entryMutationSignals.js entry 聚合刷新信号辅助：当前仅 `template_type` / `created_at` 变更需触发派生计数重拉
 │   ├── entryFullText.js        entry 完整文本构建层（原文 + 本地问题/回答 + AI 问答）
 │   │                           buildEntryFullText/buildMemoryConversationText/buildReviewLetterRichContent/buildConversationMessageIndex
+│   │                           2026-04-28 follow-up：先做 answered-turn normalization，只保留成对 prompt+answer；草稿 prompt 不进入提取/记忆/回顾信上下文
 │   ├── entryExtractionService.js 单条 AI 提取服务（RecordDetail「AI 分析」唯一入口）
 │   │                           动态读取 category/core_need 词库；提取输入统一来自 buildEntryFullText()
 │   ├── conversationMemoryService.js 手动记忆更新服务（Settings 页触发）
 │   │                           按 nodeType 精确映射对话文本，不再把本地问题误当 AI 回复
+│   │                           Settings 手动更新记忆：回看最近 10 条 conversations，挑最新一条含有效 answered turn 的记录；查询失败走失败态，不伪装成“没有数据”
 │   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
@@ -324,6 +326,7 @@ src/
 │   ├── reviewLetterService.js  回顾信触发 + 生成
 │   │                           checkAndGenerateLetter: 仅按 count_threshold 计数触发（无时间过滤）
 │   │                           generateReviewLetter: 查全量未覆盖 entry（不过滤时间范围）
+│   │                           conversations 查询失败时 fail closed：不生成正式信、不消耗 entry
 │   │                           generateLetterNow: 手动立即生成，传 null 跳过时间限制
 │   │                           Step 7: for...of 串行写 threads + thread_entries；写入 review_letter_id 外键
 │   │                           AI 返回三种 JSON 格式均支持：```json、裸对象、裸数组
@@ -1270,7 +1273,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-27 · 代码session · P1 交互可靠性 rebase：确认 HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor.MouseUpPlugin` 改为 `sync -> 0ms timeout -> 1帧 rAF` 有界重试；`selectionSnapshot.js` 新增 DEV 诊断日志；保留 `useAnnotationInteraction` 旧 DOM 接口给 RecordDetail / ReviewLetterDetail / ThreadDetailPage；`npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p1-interaction-reliability-rebase.md`
 - 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`；commit `2ea97e3`；同步卡：`docs/sync-cards/2026-04-27-p0-data-layer-consolidation.md`
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
-- 2026-04-28 · 代码session · P3 提取上下文统一完成代码+数据收口：新增 `entryFullText.js` / `entryExtractionService.js` / `conversationMemoryService.js`；RecordDetail 手动提取、extractSummaryService 批量提取、reviewLetterService 富内容、Settings 手动记忆更新全部切到 `conversations` 主路径；删除 `AIConversation.jsx` / `conversationService.js` 运行时代码，`incrementConversationCount()` 一并移除；Supabase 审计结果 `legacy_only_count=9`，已回填后归零并执行 `DROP COLUMN full_conversation`；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
+- 2026-04-28 · 代码session · P3 提取上下文统一完成代码+数据收口：新增 `entryFullText.js` / `entryExtractionService.js` / `conversationMemoryService.js`；RecordDetail 手动提取、extractSummaryService 批量提取、reviewLetterService 富内容、Settings 手动记忆更新全部切到 `conversations` 主路径；删除 `AIConversation.jsx` / `conversationService.js` 运行时代码，`incrementConversationCount()` 一并移除；Supabase 审计结果 `legacy_only_count=9`，已回填后归零并执行 `DROP COLUMN full_conversation`；`node --test` / `npm run lint` / `npm run build` 通过；commit `2c2ce77`；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
+- 2026-04-28 · 代码session · P3 reviewer follow-up 修复：`entryFullText.js` 新增 answered-turn normalization，草稿 prompt 不再进入提取/记忆/回顾信上下文；Settings 手动记忆更新改为“最近 10 条里取最新有效回答对话”，并把 conversations 查询失败与“没有有效对话”分开；reviewLetterService conversations 查询失败时改为 fail closed；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

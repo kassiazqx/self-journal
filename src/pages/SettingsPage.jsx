@@ -5,6 +5,7 @@ import { forceUpdateMemory } from '../lib/conversationMemoryService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
 import { db } from '../lib/db'
+import { pickLatestAnsweredConversation } from '../lib/entryFullText'
 import {
   loadContacts, addContact, updateContact, deleteContact,
 } from '../lib/contactsService'
@@ -228,15 +229,25 @@ export default function SettingsPage() {
     setUpdatingMemory(true)
     setMemoryUpdateMsg('')
     try {
-      // 取最近更新的一条 entry 对话，用它来更新记忆；没有就只重置计数
-      const { data: rows } = await db.from('conversations')
+      // 回看最近几条 entry 对话，选最新一条含有效回答的记录；草稿不参与记忆更新
+      const { data: rows, error: conversationsError } = await db.from('conversations')
         .select('entry_id, updated_at, messages')
         .eq('user_id', user.id)
         .eq('context_type', 'entry')
         .order('updated_at', { ascending: false })
-        .limit(1)
+        .limit(10)
 
-      const { error } = await forceUpdateMemory({ messages: rows?.[0]?.messages ?? [] })
+      if (conversationsError) {
+        throw conversationsError
+      }
+
+      const latestAnswered = pickLatestAnsweredConversation(rows ?? [])
+      if (!latestAnswered) {
+        setMemoryUpdateMsg('最近没有可用于更新记忆的已回答对话')
+        return
+      }
+
+      const { error } = await forceUpdateMemory({ messages: latestAnswered.messages ?? [] })
       setMemoryUpdateMsg(error ? '更新失败，请重试' : '记忆已更新 ✓')
     } catch (e) {
       setMemoryUpdateMsg('更新失败：' + e.message)
