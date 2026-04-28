@@ -4,6 +4,7 @@ import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { forceUpdateMemory } from '../lib/conversationMemoryService'
 import { useAuth } from '../contexts/AuthContext'
 import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
+import { updateMemory } from '../lib/memory'
 import { db } from '../lib/db'
 import { pickLatestAnsweredConversation } from '../lib/entryFullText'
 import {
@@ -380,7 +381,14 @@ export default function SettingsPage() {
             {PROVIDERS.map(p => (
               <button
                 key={p.id}
-                onClick={() => { setSettings(s => ({ ...s, provider: p.id, apiKey: '' })); setKeyUnlocked(false) }}
+                onClick={() => {
+                  setSettings((s) => ({
+                    ...s,
+                    provider: p.id,
+                    apiKey: s.providers?.[p.id]?.apiKey ?? '',
+                  }))
+                  setKeyUnlocked(false)
+                }}
                 className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
                   settings.provider === p.id
                     ? 'border-primary-400 bg-primary-50'
@@ -424,7 +432,17 @@ export default function SettingsPage() {
               <input
                 type="text"
                 value={keyUnlocked ? settings.apiKey : (settings.apiKey ? '••••••••••••••••' : '')}
-                onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
+                onChange={(e) => {
+                  const apiKey = e.target.value
+                  setSettings((s) => ({
+                    ...s,
+                    apiKey,
+                    providers: {
+                      ...(s.providers ?? {}),
+                      [s.provider]: { apiKey },
+                    },
+                  }))
+                }}
                 placeholder={currentProvider?.hint || '请输入 API Key'}
                 readOnly={!keyUnlocked}
                 autoComplete="new-password"
@@ -649,7 +667,7 @@ export default function SettingsPage() {
               onChange={() => {
                 const updated = { ...letterPrefs, type: 'count' }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, () => {})
+                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
               }}
             />
             累积
@@ -665,7 +683,7 @@ export default function SettingsPage() {
                 setCountInput(String(n))
                 const updated = { ...letterPrefs, count_threshold: n }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, () => {})
+                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
               }}
               style={{
                 width: 48, textAlign: 'center', fontSize: 14,
@@ -689,7 +707,7 @@ export default function SettingsPage() {
               onChange={() => {
                 const updated = { ...letterPrefs, type: 'manual' }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, () => {})
+                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
               }}
             />
             手动生成（不自动触发）

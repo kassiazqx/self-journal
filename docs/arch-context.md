@@ -244,7 +244,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-28（P3 提取上下文统一：共享 fullText builder + 手动/批量提取收口；旧 `AIConversation` / `conversationService` 运行时代码移除）
+**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1：AI 设置 provider 分槽位持久化、回顾信偏好主链稳定化）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -287,6 +287,7 @@ src/
 │   ├── supabase.js             DB客户端（仅供 db.js 使用）
 │   ├── db.js                   数据访问适配层（透传 supabase，切换存储层只改这里）
 │   ├── aiClient.js             AI调用层（Gemini/Deepseek）
+│   │                           settings 契约：`{ provider, apiKey, providers }`，读写统一经 storage.js
 │   ├── memory.js               AI记忆读写（Supabase user_memory）
 │   │                           ⚠️ setRollingSummary/setUserProfile/clearMemory 已删除（零调用方）
 │   ├── entrySnapshots.js       JOURNAL_ENTRY_FULL_SELECT（交互实体统一 shape，含 updated_at / covered_by_letter_id）
@@ -313,6 +314,8 @@ src/
 │   │                           ⚠️ 所有图片操作必须经此层，不得直接调 db.storage（见4.33）
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
+│   │                           AI settings v2：`ai_settings_v2`，provider 分槽位持久化（gemini/deepseek）
+│   │                           兼容旧 `ai_settings` 单 key 结构；读取时 normalize，写入后删除旧 key
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
 │   ├── dateUtils.js            inferDatetime(text, now) + formatPill() + getDayRange(date) 日期工具（新增）
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
@@ -331,6 +334,8 @@ src/
 │   │                           Step 7: for...of 串行写 threads + thread_entries；写入 review_letter_id 外键
 │   │                           AI 返回三种 JSON 格式均支持：```json、裸对象、裸数组
 │   │                           updateReviewLetter(letterId, userId, fields)：更新回顾信任意字段（新增）
+│   │                           letter prefs：统一 normalize（`days` -> `count`），主存储 user_memory，localStorage 仅 fallback
+│   │                           为支持纯 node 测试，生成链依赖经 `getReviewLetterDeps()` 懒取；偏好读写路径保持同步语义不变
 │   ├── exportService.js        完整数据备份导出（新增 2026-04-21）
 │   │                           exportDataJson(userId)：8 表全量导出为 JSON 字符串
 │   │                           fetchImages(paths, {onProgress})：批量 3 并发下载图片 Blob
@@ -436,6 +441,9 @@ src/
     │                           handleRawChange：计算 delta + 调 applyShift 同步标注偏移；contentMap['__raw__'] 同步写入
     │                           handleSave flow 分支：从 contentMap['__raw__'] 读 raw_entry 内容（而非 contentMap[msg.id]）
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
+                                AI provider 切换：切回某 provider 时恢复该 provider 已保存的 key，不再清空另一家 key
+                                API Key 编辑：输入时同步写入 `settings.providers[activeProvider]`
+                                回顾信偏好：保存时经 `updateMemory({ user_profile.letter_prefs })` 走正式主链，localStorage 仅 fallback
                                 数据导出：新 UI（勾选图片 + 导出备份按钮 + 两阶段失败处理）
                                 旧「导出 JSON」「导出 TXT」已移除，由 exportService 全量备份替代
                                 含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
@@ -1275,6 +1283,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
 - 2026-04-28 · 代码session · P3 提取上下文统一完成代码+数据收口：新增 `entryFullText.js` / `entryExtractionService.js` / `conversationMemoryService.js`；RecordDetail 手动提取、extractSummaryService 批量提取、reviewLetterService 富内容、Settings 手动记忆更新全部切到 `conversations` 主路径；删除 `AIConversation.jsx` / `conversationService.js` 运行时代码，`incrementConversationCount()` 一并移除；Supabase 审计结果 `legacy_only_count=9`，已回填后归零并执行 `DROP COLUMN full_conversation`；`node --test` / `npm run lint` / `npm run build` 通过；commit `2c2ce77`；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
 - 2026-04-28 · 代码session · P3 reviewer follow-up 修复：`entryFullText.js` 新增 answered-turn normalization，草稿 prompt 不再进入提取/记忆/回顾信上下文；Settings 手动记忆更新改为“最近 10 条里取最新有效回答对话”，并把 conversations 查询失败与“没有有效对话”分开；reviewLetterService conversations 查询失败时改为 fail closed；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
+- 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 完成：`storage.js` 新增 AI settings v2 provider 分槽位持久化与旧结构兼容；`SettingsPage` 切 provider 恢复各自 key，不再互相清空；回顾信偏好统一 normalize 后经 `user_memory` 主链保存，localStorage 只保留 fallback；新增 `storage.test.js` / `reviewLetterService.test.js`；`node --test src/lib/storage.test.js src/lib/reviewLetterService.test.js` 与 `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

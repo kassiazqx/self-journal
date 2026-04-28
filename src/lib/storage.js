@@ -38,21 +38,85 @@ function _remove(key) {
   }
 }
 
+function safeParse(raw) {
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const DEFAULT_PROVIDER = 'gemini'
+
+function normalizeProviderId(provider) {
+  return provider === 'deepseek' ? 'deepseek' : DEFAULT_PROVIDER
+}
+
+function createEmptyProviderMap() {
+  return {
+    gemini: { apiKey: '' },
+    deepseek: { apiKey: '' },
+  }
+}
+
 // ─── AI 设置（提供商 + API Key）───────────────────────────────
 
-const AI_SETTINGS_KEY = 'ai_settings'
+const AI_SETTINGS_KEY = 'ai_settings_v2'
+const LEGACY_AI_SETTINGS_KEY = 'ai_settings'
+
+export function normalizeProviderSettings(raw) {
+  const provider = normalizeProviderId(raw?.provider)
+  const providers = createEmptyProviderMap()
+
+  if (typeof raw?.apiKey === 'string') {
+    providers[provider].apiKey = raw.apiKey
+  }
+
+  if (raw?.providers) {
+    providers.gemini.apiKey = raw.providers.gemini?.apiKey ?? providers.gemini.apiKey
+    providers.deepseek.apiKey = raw.providers.deepseek?.apiKey ?? providers.deepseek.apiKey
+  }
+
+  return {
+    provider,
+    providers,
+  }
+}
+
+export function mergeProviderSettings(prev, provider, apiKey) {
+  const nextProvider = normalizeProviderId(provider)
+  const current = normalizeProviderSettings(prev)
+
+  return {
+    provider: nextProvider,
+    providers: {
+      ...current.providers,
+      [nextProvider]: {
+        apiKey: apiKey ?? '',
+      },
+    },
+  }
+}
 
 export function getAISettingsFromStorage() {
-  const raw = _get(AI_SETTINGS_KEY)
-  try {
-    return raw ? JSON.parse(raw) : { provider: 'gemini', apiKey: '' }
-  } catch {
-    return { provider: 'gemini', apiKey: '' }
+  const parsed = safeParse(_get(AI_SETTINGS_KEY)) ?? safeParse(_get(LEGACY_AI_SETTINGS_KEY))
+  const normalized = normalizeProviderSettings(parsed)
+  const activeProvider = normalized.provider
+
+  return {
+    provider: activeProvider,
+    apiKey: normalized.providers[activeProvider]?.apiKey ?? '',
+    providers: normalized.providers,
   }
 }
 
 export function saveAISettingsToStorage(settings) {
-  _set(AI_SETTINGS_KEY, JSON.stringify(settings))
+  const normalized = typeof settings?.apiKey === 'string'
+    ? mergeProviderSettings(settings, settings.provider, settings.apiKey)
+    : normalizeProviderSettings(settings)
+
+  _set(AI_SETTINGS_KEY, JSON.stringify(normalized))
+  _remove(LEGACY_AI_SETTINGS_KEY)
 }
 
 // ─── 底部导航 Tab ──────────────────────────────────────────────

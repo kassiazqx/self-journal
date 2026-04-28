@@ -1,12 +1,37 @@
 // src/lib/reviewLetterService.js
 // 回顾信触发检查 + 生成逻辑
-import { db } from './db'
-import { callAI } from './aiClient'
-import { getReviewLetterPrompt } from './prompts'
-import { getMemory } from './memory'
-import { extractEntrySummaries } from './extractSummaryService'
-import { invalidateEntry } from './entryRepository'
-import { buildConversationMessageIndex, buildReviewLetterRichContent } from './entryFullText'
+
+let reviewLetterDepsPromise = null
+
+async function getReviewLetterDeps() {
+  if (!reviewLetterDepsPromise) {
+    reviewLetterDepsPromise = Promise.all([
+      import('./db.js'),
+      import('./aiClient.js'),
+      import('./prompts.js'),
+      import('./extractSummaryService.js'),
+      import('./entryRepository.js'),
+      import('./entryFullText.js'),
+    ]).then(([
+      dbModule,
+      aiClientModule,
+      promptsModule,
+      extractSummaryModule,
+      entryRepositoryModule,
+      entryFullTextModule,
+    ]) => ({
+      db: dbModule.db,
+      callAI: aiClientModule.callAI,
+      getReviewLetterPrompt: promptsModule.getReviewLetterPrompt,
+      extractEntrySummaries: extractSummaryModule.extractEntrySummaries,
+      invalidateEntry: entryRepositoryModule.invalidateEntry,
+      buildConversationMessageIndex: entryFullTextModule.buildConversationMessageIndex,
+      buildReviewLetterRichContent: entryFullTextModule.buildReviewLetterRichContent,
+    }))
+  }
+
+  return reviewLetterDepsPromise
+}
 
 // ── 时间问候词 ──────────────────────────────────────────────────
 function getTimeGreeting() {
@@ -18,15 +43,27 @@ function getTimeGreeting() {
   return ['还没睡呢', '深夜了'][Math.floor(Math.random() * 2)]  // 23–05
 }
 
+function normalizeLetterPrefs(raw) {
+  if (!raw) {
+    return { type: 'count', count_threshold: 10, require_new_entries: true }
+  }
+
+  return {
+    type: raw.type === 'manual' ? 'manual' : 'count',
+    count_threshold: raw.count_threshold ?? 10,
+    require_new_entries: raw.require_new_entries ?? true,
+  }
+}
+
 // ── 读取用户触发偏好 ───────────────────────────────────────────
 export async function getUserLetterPrefs(userId) {
   // 主存储：user_memory（多端同步）
   try {
+    const { getMemory } = await import('./memory.js')
     const memory = await getMemory(userId)
     const prefs = memory?.user_profile?.letter_prefs
     if (prefs) {
-      // 兼容旧存储中 type: 'days'（已弃用），降级为 count
-      return prefs.type === 'days' ? { ...prefs, type: 'count' } : prefs
+      return normalizeLetterPrefs(prefs)
     }
   } catch { /* ignore */ }
 
@@ -34,31 +71,41 @@ export async function getUserLetterPrefs(userId) {
   try {
     const stored = localStorage.getItem(`letter_prefs_${userId}`)
     if (stored) {
-      const prefs = JSON.parse(stored)
-      return prefs.type === 'days' ? { ...prefs, type: 'count' } : prefs
+      return normalizeLetterPrefs(JSON.parse(stored))
     }
   } catch { /* ignore */ }
 
   // 默认：每写 10 条自动触发
-  return { type: 'count', count_threshold: 10, require_new_entries: true }
+  return normalizeLetterPrefs(null)
 }
 
 // ── 保存用户触发偏好 ──────────────────────────────────────────
 export async function saveUserLetterPrefs(userId, prefs, updateMemoryFn) {
+  const normalized = normalizeLetterPrefs(prefs)
+
   // 主存储：user_memory
   try {
-    await updateMemoryFn({ user_profile: { letter_prefs: prefs } })
+    await updateMemoryFn({ user_profile: { letter_prefs: normalized } })
   } catch (e) {
     console.error('[reviewLetter] 保存偏好到 user_memory 失败:', e)
   }
   // 降级缓存：localStorage
   try {
-    localStorage.setItem(`letter_prefs_${userId}`, JSON.stringify(prefs))
+    localStorage.setItem(`letter_prefs_${userId}`, JSON.stringify(normalized))
   } catch { /* ignore */ }
 }
 
 // ── 生成回顾信 ────────────────────────────────────────────────
 async function generateReviewLetter(userId, periodStart, prefs) {
+  const {
+    db,
+    callAI,
+    getReviewLetterPrompt,
+    extractEntrySummaries,
+    invalidateEntry,
+    buildConversationMessageIndex,
+    buildReviewLetterRichContent,
+  } = await getReviewLetterDeps()
   const periodEnd = new Date().toISOString()
 
   // Step 1: 取最近 6~8 条 covered_by_letter_id IS NULL 的 entry（排除随手记）
@@ -287,6 +334,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 export async function checkAndGenerateLetter(userId) {
   const prefs = await getUserLetterPrefs(userId)
   if (prefs.type === 'manual') return  // 手动触发，不自动生成
+  const { db } = await getReviewLetterDeps()
 
   const { count: newEntryCount } = await db.from('journal_entries')
     .select('id', { count: 'exact', head: true })
@@ -305,6 +353,7 @@ export async function checkAndGenerateLetter(userId) {
 
 // ── 更新回顾信字段（供 ReviewLetterDetail 标注保存用）─────────
 export async function updateReviewLetter(letterId, userId, fields) {
+  const { db } = await getReviewLetterDeps()
   const { error } = await db.from('review_letters')
     .update(fields)
     .eq('id', letterId)
