@@ -5,10 +5,12 @@ import assert from 'node:assert/strict'
 
 // 内联同款实现：与 extractSummaryService.js 中的 buildSummaryPrompt 保持完全一致
 // 目的：在 Node ESM 环境下验证纯函数逻辑，不依赖 Vite 别名解析
-function buildSummaryPrompt(entries) {
+function buildSummaryPrompt(entries, vocabOptions = {}) {
   const entriesText = entries.map((e, i) =>
-    `[条目${i + 1}，id: ${e.id}]\n${e.content}`
+    `[条目${i + 1}，id: ${e.id}]\n${e.fullText ?? e.content ?? ''}`
   ).join('\n\n---\n\n')
+
+  void vocabOptions
 
   return `请对以下日记条目逐条提取摘要索引，以 JSON 数组格式返回，不要有任何其他文字。
 
@@ -57,5 +59,18 @@ describe('buildSummaryPrompt', () => {
     const prompt = buildSummaryPrompt(entries)
     assert.ok(prompt.includes('条目1'), '应有条目编号')
     assert.ok(prompt.includes('id: xyz'), '应包含条目 id')
+  })
+
+  test('uses entry fullText instead of raw content only', () => {
+    const prompt = buildSummaryPrompt([
+      {
+        id: 'e1',
+        content: 'A',
+        fullText: '原始写作：\nA\n\n本地问题：Q\n\n我的回答：B',
+      },
+    ], {})
+
+    assert.match(prompt, /本地问题：Q/)
+    assert.match(prompt, /我的回答：B/)
   })
 })

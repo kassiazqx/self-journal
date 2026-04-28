@@ -5,6 +5,7 @@ import { db } from './db'
 import { callAI } from './aiClient'
 import { createPendingCoreNeed } from './coreNeedsService'
 import { invalidateEntry } from './entryRepository'
+import { buildConversationMessageIndex, buildEntryFullText } from './entryFullText'
 
 // 情绪词库（硬编码，保持与提取一致）
 const EMOTION_VOCAB = [
@@ -21,7 +22,7 @@ export function buildSummaryPrompt(entries, vocabOptions = {}) {
   const { coreNeedsVocab = [], categoryTags = [], contacts = [] } = vocabOptions
 
   const entriesText = entries.map((e, i) =>
-    `[条目${i + 1}，id: ${e.id}]\n${e.content}`
+    `[条目${i + 1}，id: ${e.id}]\n${e.fullText ?? e.content ?? ''}`
   ).join('\n\n---\n\n')
 
   const emotionVocabLine = `情绪词库（从中选）：${EMOTION_VOCAB.join('、')}`
@@ -93,7 +94,27 @@ async function extractBatch(userId, entryIds, vocabOptions = {}) {
     return
   }
 
-  const prompt = buildSummaryPrompt(entries, vocabOptions)
+  const { data: rows, error: conversationsError } = await db.from('conversations')
+    .select('entry_id, messages')
+    .eq('user_id', userId)
+    .eq('context_type', 'entry')
+    .in('entry_id', entryIds)
+
+  if (conversationsError) {
+    console.error('[extractSummary] 读取 conversations 失败:', conversationsError.message)
+    return
+  }
+
+  const messageIndex = buildConversationMessageIndex(rows ?? [])
+  const enrichedEntries = entries.map((entry) => ({
+    ...entry,
+    fullText: buildEntryFullText({
+      entry,
+      messages: messageIndex.get(entry.id) ?? [],
+    }),
+  }))
+
+  const prompt = buildSummaryPrompt(enrichedEntries, vocabOptions)
 
   let rawResponse
   try {

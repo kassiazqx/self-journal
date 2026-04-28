@@ -7,7 +7,8 @@ import { db } from '../lib/db'
 import { updateEntry } from '../lib/entryRepository'
 import { resolveTemplate } from '../lib/templates'
 import { mapDisplayToBase } from '../lib/emotionMap'
-import { extractFields } from '../lib/conversationService'
+import { buildEntryFullText } from '../lib/entryFullText'
+import { extractEntryFields } from '../lib/entryExtractionService'
 import { loadContacts, addContact } from '../lib/contactsService'
 import { loadCoreNeeds, addCoreNeed } from '../lib/coreNeedsService'
 import { getImageUrl } from '../lib/imageStorage'
@@ -499,22 +500,8 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
   async function handleAIAnalyze() {
     setAnalyzing(true)
     try {
-      // 取 conversations 表的觉察对话记录
-      const msgText = messages
-        .filter(m => m.nodeType !== 'raw_entry')
-        .map(m => {
-          if (m.nodeType === 'local_prompt') return `问：${m.content}`
-          if (m.nodeType === 'local_answer') return `答：${m.content}`
-          if (m.nodeType === 'ai_prompt') return `AI：${m.content}`
-          if (m.nodeType === 'ai_answer') return `答：${m.content}`
-          return ''
-        })
-        .filter(Boolean)
-        .join('\n')
-
-      const hasConversation = !!msgText
-      const fullText = `原始写作：\n${entry.content}${msgText ? `\n\n对话记录：\n${msgText}` : ''}`
-      const extraction = await extractFields(fullText, hasConversation, user.id)
+      const fullText = buildEntryFullText({ entry, messages })
+      const extraction = await extractEntryFields(fullText, { userId: user.id })
 
       if (!extraction || Object.keys(extraction).length === 0) {
         showToast('分析失败，请稍后重试')

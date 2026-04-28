@@ -193,8 +193,8 @@ ${conversationText}
 // ⚠️ 同步约束：以下 JSON 字段名与 journal_entries 表列名一一对应。
 // 新增或修改 DB 字段时，必须同步修改：
 //   1. 此函数里的 JSON 字段列表
-//   2. AIConversation.jsx finishAndSave() 里的 update 字段列表
-//   3. supabase-schema.sql
+//   2. entryExtractionService / extractSummaryService 的写回字段列表
+//   3. supabase schema / 手工 SQL 文档
 export function getExtractionPrompt(userCategoryTags = [], coreNeedsVocab = []) {
   const categoryLine = userCategoryTags.length > 0
     ? `大类标签，从以下选：${userCategoryTags.join(' / ')}。只选最贴合的 1-2 个，没有匹配的就留空数组`

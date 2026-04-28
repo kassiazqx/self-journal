@@ -56,14 +56,15 @@
 AI 提取路径（手动触发，不在保存时自动跑）：
   用户在详情页点「AI 分析」→ extractFields() → 写回 journal_entries 的提取字段
 
-旧路径（兼容保留，不是 bug）：
+历史旧路径（已完成回填并移除）：
   full_conversation 字段（JSONB）← 阶段二之前的旧 AIConversation 写入
-  ⚠️ 两条路径同时存在是故意的，conversations 表是新主路径
+  2026-04-28 已完成 legacy_only_count 审计、缺失回填、删列
+  当前 entry 对话正式主路径只剩 conversations
 ```
 
 **不要改成什么：**
 - 不要在保存时自动调 AI 提取
-- 不要把 full_conversation 和 conversations 表混用或合并
+- 不要恢复任何 full_conversation 运行时读写
 - 不要认为"conversations 表不存在"是 bug（它是阶段二新建的）
 
 ### 2.2 db.js 适配层（架构接缝）
@@ -243,7 +244,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-27（P0 数据层收口：EntryRepository + EntityStore；补齐详情页感恩计数刷新入口）
+**最后更新：** 2026-04-28（P3 提取上下文统一：共享 fullText builder + 手动/批量提取收口；旧 `AIConversation` / `conversationService` 运行时代码移除）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -295,9 +296,12 @@ src/
 │   ├── entryReadQueries.js     journal_entries 只读查询入口（导出 / 今日感恩计数 / AI 上下文 / 洞察）
 │   │                           今日感恩计数语义：created_at ∈ [todayStart, tomorrowStart)
 │   ├── entryMutationSignals.js entry 聚合刷新信号辅助：当前仅 `template_type` / `created_at` 变更需触发派生计数重拉
-│   ├── conversationService.js  对话保存 + AI 字段提取
-│   │                           含 getUserCategoryTags()：动态读取用户标签，新用户自动 seed 11 个默认值
-│   │                           含 getUserCoreNeeds()：动态读取 core_needs 词库，传给 AI 提取
+│   ├── entryFullText.js        entry 完整文本构建层（原文 + 本地问题/回答 + AI 问答）
+│   │                           buildEntryFullText/buildMemoryConversationText/buildReviewLetterRichContent/buildConversationMessageIndex
+│   ├── entryExtractionService.js 单条 AI 提取服务（RecordDetail「AI 分析」唯一入口）
+│   │                           动态读取 category/core_need 词库；提取输入统一来自 buildEntryFullText()
+│   ├── conversationMemoryService.js 手动记忆更新服务（Settings 页触发）
+│   │                           按 nodeType 精确映射对话文本，不再把本地问题误当 AI 回复
 │   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
@@ -350,8 +354,7 @@ src/
 │   │                           keyboardVisible：键盘打开时隐藏底部4-tab导航（visualViewport.resize）
 │   ├── AwarenessFlow.jsx       单屏觉察流（本地+AI+自动保存）
 │   │                           键盘避让：内容区内层滚动 + fixed 底部按钮，仅响应 visualViewport.resize
-│   ├── AIConversation.jsx      AI 深入觉察对话页（entry 对话续聊 + 保存 full_conversation）
-│   │                           键盘避让：消息列表内层滚动 + fixed 输入栏，仅响应 visualViewport.resize
+│   │                           `conversations` 为唯一 entry 对话主路径；保存完整 messages，不触发自动提取
 │   ├── FilterBar.jsx           搜索框 + 情绪/类型/日期/人物/需求五维筛选（纯UI组件，不查DB）
 │   │                           props: onFilter / categoryOptions / peopleOptions / coreNeedOptions / showDate
 │   │                           文字搜索5字段：content/entry_summary/cognitive_analysis/body_sensations/reflection_insight
@@ -456,7 +459,7 @@ journal_entries：
     body_sensations, current_thought, core_needs(text[]), reflection_insight,
     overall_state_score, category_tags(text[]), people_involved(text[]),
     cognitive_analysis, cognitive_distortion_type, current_behavior, handling_rating
-  - 预留字段：attachments(jsonb), full_conversation(jsonb)（旧路径）
+  - 预留字段：attachments(jsonb)
   - **新增（图片功能）：** image_urls(text[]) DEFAULT '{}'  ← 有序图片 URL 数组
   - **新增（标注功能）：** annotations(jsonb) DEFAULT '[]'  ← [{type,start,end,color?}] 数组
 
@@ -522,9 +525,9 @@ pending_core_needs：（people_involved 批次新增）
 **当前处理：** 新增调用都走 db.js，存量代码等专项重构
 **优先级：** 低（功能稳定后再迁移）
 
-### 4.2 conversations 表与 full_conversation 字段的双路径
-**风险：** 代码 session 可能混淆两条路径
-**防护：** §2.1 已有明确说明；RecordDetail 读取时优先 conversations 表，其次 full_conversation
+### 4.2 conversations 表主路径约束（2026-04-28 更新）
+**风险：** 代码 session 恢复旧 `full_conversation` 读写，重新制造双路径
+**防护：** `full_conversation` 已在 SQL 审计回填后删列；运行时代码只能读写 `conversations`
 **优先级：** 中（每次涉及对话存取时必须确认路径）
 
 ### 4.3 user_memory 记忆固化风险（待讨论）
@@ -1267,6 +1270,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-27 · 代码session · P1 交互可靠性 rebase：确认 HomePage / EditEntryPage 页面层只消费 `SelectionSnapshot` / `AnnotationSnapshot`；`RichTextEditor.MouseUpPlugin` 改为 `sync -> 0ms timeout -> 1帧 rAF` 有界重试；`selectionSnapshot.js` 新增 DEV 诊断日志；保留 `useAnnotationInteraction` 旧 DOM 接口给 RecordDetail / ReviewLetterDetail / ThreadDetailPage；`npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p1-interaction-reliability-rebase.md`
 - 2026-04-27 · 代码session · P0 数据层收口完成：引入 RTK `entrySlice` + `entryRepository` + `entryReadQueries` + `useEntry`；`main.jsx` 接 Provider；MainLayout/RecordsPage/RecordDetail/EditEntryPage/HomePage 全部切到“导航只传 entryId + journal_entries 单一真源”；后台写路径中 conversationService 直接 upsert，extractSummaryService / reviewLetterService 写后 invalidate；删除 `EntryCacheContext.jsx` 与 `journalService.js`；commit `2ea97e3`；同步卡：`docs/sync-cards/2026-04-27-p0-data-layer-consolidation.md`
 - 2026-04-27 · 代码session · 修复“RecordDetail 把模板改成感恩/改日期后，写作页今日感恩计数不立刻刷新”：根因是详情页字段保存会更新 entry 行，但不会触发现有 `refreshKey -> HomePage.gratitudeRefreshTrigger` 聚合重拉链；现新增 `entryMutationSignals.js`，仅对 `template_type` / `created_at` 两类聚合相关字段在保存成功后上报 `onEntriesMutated`，复用 MainLayout 旧信号总线；同步卡：`docs/sync-cards/2026-04-27-gratitude-count-detail-refresh.md`
+- 2026-04-28 · 代码session · P3 提取上下文统一完成代码+数据收口：新增 `entryFullText.js` / `entryExtractionService.js` / `conversationMemoryService.js`；RecordDetail 手动提取、extractSummaryService 批量提取、reviewLetterService 富内容、Settings 手动记忆更新全部切到 `conversations` 主路径；删除 `AIConversation.jsx` / `conversationService.js` 运行时代码，`incrementConversationCount()` 一并移除；Supabase 审计结果 `legacy_only_count=9`，已回填后归零并执行 `DROP COLUMN full_conversation`；`node --test` / `npm run lint` / `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-27-p3-extraction-context-unification.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

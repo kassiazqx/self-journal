@@ -58,38 +58,6 @@ export async function updateMemory(fields) {
   }
 }
 
-// ─── 对话计数 ──────────────────────────────────────────────────
-// 每完成一次对话 +1，返回更新后的新计数
-// 若行不存在，upsert 会自动创建（count 从 1 开始）
-export async function incrementConversationCount() {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('未登录')
-
-    // 先读当前值，再 +1（Supabase 免费版不支持服务端 increment 表达式）
-    const { data: row } = await supabase
-      .from('user_memory')
-      .select('conversation_count')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    const newCount = (row?.conversation_count ?? 0) + 1
-
-    const { error } = await supabase
-      .from('user_memory')
-      .upsert(
-        { user_id: user.id, conversation_count: newCount, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' }
-      )
-
-    if (error) throw error
-    return newCount
-  } catch (err) {
-    console.error('[memory] incrementConversationCount 失败:', err)
-    return null
-  }
-}
-
 // ─── 重置对话计数（手动更新记忆后调用）──────────────────────
 export async function resetConversationCount() {
   try {
