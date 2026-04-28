@@ -17,10 +17,8 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
 import { createEntry, updateEntry } from '../lib/entryRepository'
-import { Mic, MicOff } from 'lucide-react'
 import { db } from '../lib/db'
 import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
 import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
@@ -236,11 +234,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const [showPicker, setShowPicker] = useState(false)
   const inferTimerRef = useRef(null)
 
-  // 语音
-  const { isRecording, isSupported, startRecording, stopRecording } = useSpeechRecognition()
-  const voiceBaseRef = useRef('')
-  const committedRef = useRef('')
-
   const textareaRef = useRef(null)
   const draftTimerRef = useRef(null)
   const getLatestEditorText = useCallback(() => (
@@ -358,25 +351,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   const handleTemplateClick = (tpl) => {
     setTemplate(tpl)
     textareaRef.current?.focus()
-  }
-
-  // ── 语音 ──────────────────────────────────────────────────────
-  const handleVoiceToggle = () => {
-    if (isRecording) {
-      stopRecording()
-      return
-    }
-    voiceBaseRef.current = content.trimEnd()
-    committedRef.current = ''
-    startRecording(
-      (newFinal, interim) => {
-        if (newFinal) committedRef.current += newFinal
-        const parts = [voiceBaseRef.current, committedRef.current + interim].filter(Boolean)
-        applyExternalContent(parts.join('\n'))
-      },
-      () => {},
-      () => {}
-    )
   }
 
   // ── 监听 @ 字符（实时识别由 render 时计算，不在此累积）──────
@@ -999,7 +973,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             </svg>
           </label>
 
-          {/* 左：✦ 深入觉察 + 语音 */}
+          {/* 左：✦ 深入觉察 */}
           <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
             <button
               onClick={handleDeepAwareness}
@@ -1021,24 +995,6 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
               </span>
               <span style={{ fontSize: '10px', color: '#ccc' }}>深入觉察</span>
             </button>
-
-            {isSupported && (
-              <button
-                onClick={handleVoiceToggle}
-                className={`flex items-center justify-center rounded-full active:scale-95 transition-all ${
-                  isRecording ? 'recording-pulse' : ''
-                }`}
-                style={{
-                  width: '30px',
-                  height: '30px',
-                  background: isRecording ? '#ef4444' : '#f0ece4',
-                  border: `1px solid ${isRecording ? '#ef4444' : '#ddd8cf'}`,
-                  color: isRecording ? '#fff' : '#b8a88a',
-                }}
-              >
-                {isRecording ? <MicOff size={13} /> : <Mic size={13} />}
-              </button>
-            )}
           </div>
 
           {/* 中：人物 chip（横向可滚动，实时计算）*/}

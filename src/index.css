@@ -56,22 +56,6 @@
     @apply text-primary-500;
   }
 
-  /* 语音录制脉冲动画 */
-  .recording-pulse {
-    animation: recordingPulse 1.2s ease-in-out infinite;
-  }
-
-  @keyframes recordingPulse {
-    0%, 100% {
-      transform: scale(1);
-      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
-    }
-    50% {
-      transform: scale(1.08);
-      box-shadow: 0 0 0 14px rgba(239, 68, 68, 0);
-    }
-  }
-
   .fade-in {
     animation: fadeIn 0.3s ease-in-out;
   }

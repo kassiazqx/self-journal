@@ -245,7 +245,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1-2：AI 设置/回顾信偏好主链收口 + 草稿恢复与外部内容同步收口）
+**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1-2 + 浏览器语音入口移除）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -264,9 +264,6 @@ src/
 ├── contexts/
 │   └── AuthContext.jsx         登录状态
 ├── hooks/
-│   └── useSpeechRecognition.js 语音输入
-├── hooks/
-│   ├── useSpeechRecognition.js 语音输入
 │   ├── useEntry.js             journal_entries 读 hook（返回 `{ entry, status, error, retry }`）
 │   │                           status 至少区分：loading / ready / missing / error
 │   │                           store miss：getEntryById() 自动拉取；stale 且未 suspend：后台 force refetch
@@ -417,7 +414,7 @@ src/
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
     │                           新建 / 编辑完成：先经 entryRepository 拿到权威 row（含 updated_at）再导航；图片仍后台异步上传
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
-    │                           ✨ 外部内容写入统一走 applyExternalContent()；草稿恢复 / 浏览器语音 / @ 替换都调 ref.setValue()
+    │                           ✨ 外部内容写入统一走 applyExternalContent()；草稿恢复 / @ 替换都调 ref.setValue()
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
     │                           键盘避让重构：顶部信息固定，只有“编辑器+图片区”内层滚动
     │                           内层滚动区负责 paddingBottom/scrollPaddingBottom；底部悬浮栏 fixed + visualViewport.resize 贴键盘
@@ -1202,27 +1199,26 @@ async function loadFull() {
 
 ---
 
-### 4.60 浏览器语音输入是临时接缝，不应继续做主链投资（2026-04-28 新增）
+### 4.60 浏览器实时语音已移除，不再作为未来接缝（2026-04-28 更新）
 
-**现状：** `HomePage` 当前仍保留 Web Speech API 语音入口，草稿恢复 / `@` 替换 / 语音转写 已统一走 `applyExternalContent()` + `RichTextEditor.setValue()`；但用户手测发现“先手打再点语音时，原文字可能被语音结果顶掉”。
+**背景：** 用户手测发现 Web Speech API 路径存在“先手打再点语音时，原文字可能被顶掉”的问题；同时产品方向已明确偏向“上传录音 / 上传视频 / 再转文字”，不再继续投资浏览器实时语音。
 
-**结论：**
-- 这说明浏览器语音链路当前仍不够可靠，不能当长期主能力继续扩展
-- 产品方向已偏向“上传录音 / 上传视频 / 再转文字”
-- 未来若走该路线，`useSpeechRecognition.js` 多半只保留为历史接缝或直接删除，不会成为终局实现
+**已处理：**
+- `HomePage` 已移除浏览器语音按钮
+- `useSpeechRecognition.js` 已删除
+- 语音录制脉冲样式已删除
 
-**处理原则：**
-- 在产品未明确前，不要继续围绕 Web Speech API 加新功能
-- 若只是临时停用，优先隐藏/移除 UI 入口，而不是为它继续堆补丁
-- 若后续确认彻底放弃浏览器实时语音，可直接删除 `useSpeechRecognition.js` 链路
+**当前原则：**
+- 未来若做讯飞 / 上传录音 / 上传视频 / 再转文字，需新建媒体上传与转写链路
+- 不要再恢复 Web Speech API 旧入口，也不要把它当成未来架构接缝
 
 ---
 
 ### 5.1 Capacitor APK 打包
 - 当前代码已保持"零修改"可套壳原则
-- Web Speech API 在安卓不可用，未来需接入讯飞 API（通过 useSpeechRecognition.js 接缝替换）
+- 浏览器实时语音入口已删除；未来若做讯飞 / 上传录音 / 上传视频 / 再转文字，需新建媒体/转写接缝
 - localStorage 未来需替换为 Capacitor Preferences
-- 接缝已预留：db.js（存储层）、useSpeechRecognition.js（语音层）
+- 接缝已预留：db.js（存储层）
 
 ### 5.2 Threads / 脉络系统（Phase 2 第二批）
 
@@ -1308,6 +1304,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-28 · 协调session · 按用户手测结果更新收口状态：P3 提取 / 记忆 / 回顾信主链手工验证通过；P1 除 `HomePage` 桌面首次拖选菜单外其余矩阵通过；感恩计数日期边界与 `ThreadDetailPage` AI 分析验收通过；同步卡与总方案状态已同步更新
 - 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 完成：`storage.js` 新增 AI settings v2 provider 分槽位持久化与旧结构兼容；`SettingsPage` 切 provider 恢复各自 key，不再互相清空；回顾信偏好统一 normalize 后经 `user_memory` 主链保存，localStorage 只保留 fallback；新增 `storage.test.js` / `reviewLetterService.test.js`；`node --test src/lib/storage.test.js src/lib/reviewLetterService.test.js` 与 `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
 - 2026-04-28 · 代码session · Persistence Trust Batch A / Task1-2：`draftStorage.js` 新增草稿本地真源（正文/模板/时间/dismissedPeople、24h 失效、空内容清草稿）；`RichTextEditor` 新增 ref `setValue()`；`HomePage` 的草稿恢复 / 浏览器语音 / `@` 替换统一走 `applyExternalContent()`；手测发现浏览器语音仍会顶掉先前手打文字，已记录为 §4.60，产品方向偏向后续上传录音/视频转文字；`node --test src/lib/draftStorage.test.js` 与 `npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
+- 2026-04-28 · 代码session · 浏览器实时语音入口移除：`HomePage` 删除麦克风按钮与 Web Speech API 调用链；删除 `useSpeechRecognition.js` 与 `recording-pulse` 样式；`arch-context` 更新为“未来若做讯飞 / 上传录音 / 上传视频 / 再转文字，另起媒体/转写链”；`npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-browser-voice-removal.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md
