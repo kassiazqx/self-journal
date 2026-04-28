@@ -3,8 +3,8 @@ import { Key, Check, Loader2, LogOut, Lock, Pencil } from 'lucide-react'
 import { getAISettings, saveAISettings, callAI } from '../lib/aiClient'
 import { forceUpdateMemory } from '../lib/conversationMemoryService'
 import { useAuth } from '../contexts/AuthContext'
-import { generateLetterNow, saveUserLetterPrefs, getUserLetterPrefs } from '../lib/reviewLetterService'
-import { updateMemory } from '../lib/memory'
+import { generateLetterNow } from '../lib/reviewLetterService'
+import { getLetterPrefs, saveLetterPrefs } from '../lib/letterPrefsStorage'
 import { db } from '../lib/db'
 import { pickLatestAnsweredConversation } from '../lib/entryFullText'
 import {
@@ -90,12 +90,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return
     const timer = setTimeout(() => { loadTagOptions() }, 0)
-    getUserLetterPrefs(user.id).then(prefs => {
-      if (prefs) {
-        setLetterPrefs(prefs)
-        setCountInput(String(prefs.count_threshold ?? 10))
-      }
-    }).catch(() => {})
+    const prefs = getLetterPrefs(user.id)
+    setLetterPrefs(prefs)
+    setCountInput(String(prefs.count_threshold ?? 10))
     return () => clearTimeout(timer)
   }, [user, loadTagOptions])
 
@@ -667,7 +664,7 @@ export default function SettingsPage() {
               onChange={() => {
                 const updated = { ...letterPrefs, type: 'count' }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
+                saveLetterPrefs(user.id, updated)
               }}
             />
             累积
@@ -683,7 +680,7 @@ export default function SettingsPage() {
                 setCountInput(String(n))
                 const updated = { ...letterPrefs, count_threshold: n }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
+                saveLetterPrefs(user.id, updated)
               }}
               style={{
                 width: 48, textAlign: 'center', fontSize: 14,
@@ -707,7 +704,7 @@ export default function SettingsPage() {
               onChange={() => {
                 const updated = { ...letterPrefs, type: 'manual' }
                 setLetterPrefs(updated)
-                saveUserLetterPrefs(user.id, updated, (patch) => updateMemory(patch))
+                saveLetterPrefs(user.id, updated)
               }}
             />
             手动生成（不自动触发）

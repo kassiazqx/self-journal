@@ -1,6 +1,6 @@
 # 同步卡：Persistence Trust Batch A / Task1
 
-**状态：** 仅 Task1 已完成；Batch A 其余 Task 尚未开始  
+**状态：** 仅 Task1 Follow-up Replacement 已完成；Batch A 其余 Task 尚未开始  
 **日期：** 2026-04-28  
 **commit：** 待本次提交生成  
 **分支：** `dev`
@@ -54,9 +54,10 @@
 - Gemini / Deepseek 各自保留自己的 key
 - 来回切 provider、刷新页面后，不再出现“刚填好的 key 被切没了”
 
-### 3. 回顾信偏好改为“主链稳定保存 + fallback 兜底”
+### 3. 回顾信偏好 follow-up：改为本地单一真源
 
-- `reviewLetterService.js` 新增 `normalizeLetterPrefs(raw)`
+- `letter_prefs` 从 `user_profile` / `updateMemory` / `reviewLetterService` 主链拆出
+- 新建 `src/lib/letterPrefsStorage.js`
 - 规则：
   - `type === 'manual'` 保留
   - 其余一律归一到 `count`
@@ -66,24 +67,21 @@
 
 保存链：
 
-- 主链：`updateMemory({ user_profile: { letter_prefs } })`
-- fallback：`localStorage.setItem(letter_prefs_<userId>)`
+- `SettingsPage` 直接 `saveLetterPrefs(user.id, prefs)`
+- 底层只写 `localStorage.setItem(letter_prefs_<userId>)`
 
 读取链：
 
-- 先读 `user_memory.user_profile.letter_prefs`
-- 失败或为空再读 local fallback
-- 两边都没有时回默认值
+- `SettingsPage` 直接 `getLetterPrefs(user.id)`
+- `reviewLetterService` 生成/检查回顾信时也只读同一个本地模块
+- 坏 JSON 会清理脏数据并回默认值
 
-### 4. 为纯 `node --test` 回归，偏好层与生成层解耦
+### 4. 这次 follow-up 的边界
 
-- `reviewLetterService.js` 的“偏好读写”继续保持同步语义不变
-- 生成回顾信所需依赖改为经 `getReviewLetterDeps()` 懒取
-- 目的：
-  - 让 Task1 的纯函数/偏好测试可直接跑 `node --test`
-  - 不要求在测试时初始化整条 Supabase / review-letter 生成链
-
-这不是产品架构改向，只是把测试入口和重依赖解耦。
+- 不恢复 `user_memory.user_profile.letter_prefs`
+- 不再依赖 `updateMemory` 保存回顾信偏好
+- 保留已做好的 provider 分槽位持久化，不回退到单 `apiKey`
+- `reviewLetterService` 只保留生成逻辑和本地 prefs 读取；不再负责把偏好写进 `user_profile`
 
 ---
 
@@ -93,9 +91,11 @@
 |---|---|
 | `src/lib/storage.js` | AI settings v2、旧结构兼容、provider 分槽位持久化 |
 | `src/lib/storage.test.js` | 新增 provider settings 规范化 / merge 回归测试 |
-| `src/lib/reviewLetterService.js` | letter prefs normalize、主链保存 + local fallback、生成依赖懒取 |
-| `src/lib/reviewLetterService.test.js` | 新增回顾信偏好 fallback 规范化测试 |
-| `src/pages/SettingsPage.jsx` | provider 切换恢复各自 key；回顾信偏好改走 `updateMemory` 主链 |
+| `src/lib/letterPrefsStorage.js` | `letter_prefs` 本地单一真源：normalize / save / get |
+| `src/lib/letterPrefsStorage.test.js` | 默认值 / days 兼容 / 写后再读 / 坏 JSON 清理测试 |
+| `src/lib/reviewLetterService.js` | 回顾信逻辑改为只从 `letterPrefsStorage` 读偏好；不再写 `user_profile` |
+| `src/lib/reviewLetterService.test.js` | 保留旧导出兼容回归，确保本地 prefs wrapper 仍可跑纯 `node --test` |
+| `src/pages/SettingsPage.jsx` | provider 切换恢复各自 key；回顾信偏好改走 `letterPrefsStorage` 本地模块 |
 | `docs/arch-context.md` | 更新 §3 真实结构与 §6 日志 |
 
 ---
@@ -105,38 +105,37 @@
 已执行：
 
 - `node --test src/lib/storage.test.js`
+- `node --test src/lib/letterPrefsStorage.test.js`
 - `node --test src/lib/reviewLetterService.test.js`
-- `node --test src/lib/storage.test.js src/lib/reviewLetterService.test.js`
+- `node --test src/lib/storage.test.js src/lib/letterPrefsStorage.test.js src/lib/reviewLetterService.test.js`
 - `npm run build`
 
 结果：
 
-- 4/4 tests 通过
+- 9/9 tests 通过
 - `build` 通过
 - 构建有非阻塞 Vite warning：
   - 大 chunk 提示（既有）
   - `reviewLetterService.js` 的 ineffective dynamic import 提示
 
-当前判断：
-
-- 不阻塞 Task1 交付
-- 若后续 Batch A / review-letter 层继续改动，可再评估是否把这层测试兼容方案进一步收口
-
 ---
 
 ## 手工验证结果
 
-- 2026-04-28 用户手测通过：Gemini 填 key 后切到 Deepseek 再切回，Gemini key 仍在
-- 2026-04-28 用户手测通过：Deepseek 填 key 后来回切换，两家 key 各自保留
-- 2026-04-28 用户手测通过：刷新页面后，当前 provider 与对应 key 恢复正常
-- 2026-04-28 用户手测通过：回顾信设置切“手动生成”或修改条数后，刷新不跳回旧值
+- 本次代码 session 未新增手工点击验证记录
+- 自动验证已覆盖：
+  - provider 分槽位纯函数回归
+  - `letter_prefs` 默认值 / 旧值兼容 / 写后再读 / 坏数据清理
+- 建议手测清单：
+  - Gemini / Deepseek 来回切换，确认各自 key 仍在
+  - 修改回顾信条数或切到手动生成后刷新，确认偏好保持
 
 ---
 
 ## 残余风险
 
-- Batch A 只完成了 Task1；草稿正文/图片恢复、`RichTextEditor` 外部 value 同步、`startInAi` 语义收口都还没开始
-- `reviewLetterService.js` 为测试兼容引入了依赖懒取；运行正确，但构建会提示 ineffective dynamic import，后续如继续改这层可再顺手收口
+- Batch A 只完成了 Task1 follow-up replacement；草稿正文/图片恢复、`RichTextEditor` 外部 value 同步、`startInAi` 语义收口都还没开始
+- `reviewLetterService.js` 仍保留旧偏好导出壳用于兼容测试；主链已切走，但后续若继续清理这层，可以直接删掉兼容壳并重写对应测试
 
 ---
 

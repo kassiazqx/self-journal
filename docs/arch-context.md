@@ -135,9 +135,10 @@ emotion_confidence（float）← mapDisplayToBase() 返回的 minConfidence
 ```
 AI 跨对话记忆 → Supabase user_memory 表（多端同步）
   rolling_summary：历史对话压缩摘要
-  user_profile：用户画像（包含 letter_prefs 等设置）
+  user_profile：用户画像（只存 AI 对用户的长期认知，不混产品设置）
 
 对话临时缓存 → localStorage（防刷新丢失，key: chat_session_{entry.id}）
+回顾信偏好 `letter_prefs` → 当前 Web 阶段本地单一真源（`letterPrefsStorage.js`）
 问题库 → 硬编码在 prompts.js（不存 DB，更新靠 git push）
 ```
 
@@ -244,7 +245,7 @@ options 来源：
 
 > 由代码 session 维护。记录代码现在"实际上"长什么样，包括与设计的偏差。
 
-**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1：AI 设置 provider 分槽位持久化、回顾信偏好主链稳定化）
+**最后更新：** 2026-04-28（P3 提取上下文统一 + Persistence Trust Batch A / Task1 follow-up replacement：AI 设置 provider 分槽位持久化、回顾信偏好改为本地单一真源）
 
 ### 分支规范（2026-04-19 新增）
 
@@ -316,6 +317,8 @@ src/
 │   ├── storage.js              localStorage 工具
 │   │                           AI settings v2：`ai_settings_v2`，provider 分槽位持久化（gemini/deepseek）
 │   │                           兼容旧 `ai_settings` 单 key 结构；读取时 normalize，写入后删除旧 key
+│   ├── letterPrefsStorage.js   回顾信偏好本地单一真源（`letter_prefs_<userId>`）
+│   │                           normalize/save/get；旧 `days` 统一降级为 `count`
 │   ├── contentAnalysis.js      内容分析 + getAwarenessStartTier()（awarenessFlowState.js 第93行调用）
 │   ├── dateUtils.js            inferDatetime(text, now) + formatPill() + getDayRange(date) 日期工具（新增）
 │   ├── emotionMap.js           61词情绪词库 + mapDisplayToBase()
@@ -334,8 +337,8 @@ src/
 │   │                           Step 7: for...of 串行写 threads + thread_entries；写入 review_letter_id 外键
 │   │                           AI 返回三种 JSON 格式均支持：```json、裸对象、裸数组
 │   │                           updateReviewLetter(letterId, userId, fields)：更新回顾信任意字段（新增）
-│   │                           letter prefs：统一 normalize（`days` -> `count`），主存储 user_memory，localStorage 仅 fallback
-│   │                           为支持纯 node 测试，生成链依赖经 `getReviewLetterDeps()` 懒取；偏好读写路径保持同步语义不变
+│   │                           letter prefs：只读取 `letterPrefsStorage` 本地真源，不再写 `user_profile`
+│   │                           为支持纯 node 测试，生成链依赖经 `getReviewLetterDeps()` 懒取；旧偏好导出仅保留兼容壳
 │   ├── exportService.js        完整数据备份导出（新增 2026-04-21）
 │   │                           exportDataJson(userId)：8 表全量导出为 JSON 字符串
 │   │                           fetchImages(paths, {onProgress})：批量 3 并发下载图片 Blob
@@ -443,7 +446,7 @@ src/
     └── SettingsPage.jsx        我的页（AI配置/API Key/AI记忆/数据导出/回顾信设置）
                                 AI provider 切换：切回某 provider 时恢复该 provider 已保存的 key，不再清空另一家 key
                                 API Key 编辑：输入时同步写入 `settings.providers[activeProvider]`
-                                回顾信偏好：保存时经 `updateMemory({ user_profile.letter_prefs })` 走正式主链，localStorage 仅 fallback
+                                回顾信偏好：读写只走 `letterPrefsStorage` 本地真源，刷新后保持；不再依赖 `updateMemory`
                                 数据导出：新 UI（勾选图片 + 导出备份按钮 + 两阶段失败处理）
                                 旧「导出 JSON」「导出 TXT」已移除，由 exportService 全量备份替代
                                 含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
@@ -508,7 +511,7 @@ thread_entries：（第二批新增，无 user_id，RLS 通过 threads 子查询
 
 user_memory：
   - 每用户一行，rolling_summary + user_profile(jsonb)
-  - user_profile.letter_prefs 存回顾信触发设置
+  - `user_profile` 仅存 AI 画像；不再混存回顾信偏好
 
 user_options：
   - 用户自定义下拉选项
@@ -1317,6 +1320,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-18 · 代码session · 死代码清理：删除 contactsService.js 孤立注释行；删除 memory.js 三个未使用快捷方法（setRollingSummary/setUserProfile/clearMemory）；去掉 TEMPLATE_BY_ID export（内部用）；去掉 mapToBase export（内部用）；CLAUDE.md 删除已完成待处理项；⚠️ getAwarenessStartTier 未删（awarenessFlowState.js 有调用，sync card 分析有误）；同步卡：docs/sync-cards/2026-04-18-dead-code-cleanup-sync.md
 - 2026-04-21 · 代码session · 五项 bug 修复 + days 触发死代码清理 + UI 调整：① detectPeopleFromText 改为长度优先匹配（对 pairs 按 kw.length 降序排，用 usedRanges 防子词覆盖）；② dismissedPeople 持久化进草稿（Set→Array→Set，saveDraft/loadDraft/handleResumeDraft 均已处理）；③ getUserLetterPrefs 改为 export，SettingsPage useEffect 挂载时正确加载已存偏好（原为仅写不读）；④ 触发数量用独立 countInput string state，onBlur 才 clamp 保存（原 onChange 立即 clamp 导致中途数字被强制）；⑤ EditEntryPage 顶栏改为「时间pill | 保存」无取消；⑥ HomePage 编辑模式顶栏显示时间 pill（可点击弹 picker，selectedDatetime 初始化自 editEntry.created_at，保存写回 DB）；⑦ getUserLetterPrefs 三点 normalize（days→count 兼容旧存储，删 day_interval:7 默认值），checkAndGenerateLetter 删 daysSinceLast + 简化 shouldGenerate；⑧ AwarenessFlow「保存并退出」→「保存」；同步卡：docs/sync-cards/2026-04-21-bugfixes-days-ui-sync.md
 - 2026-04-21 · 代码session · code review 修复：① RecordsPage EntryCard 情绪词渲染补去重（原只修了 RecordDetail 漏掉此处）；② prompts.js emotions/emotion_display 加「不得重复」约束；③ handleBatchDelete Storage 失败不再 .catch 吞错，改为 try/catch 统一处理，Storage 失败阻止 DB 删除避免孤儿文件；④ reviewLetterService 裸 JSON 兜底正则改贪婪匹配正确捕获嵌套 JSON；同步卡：docs/sync-cards/2026-04-21-code-review-fixes.md
+- 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 follow-up replacement：保留 `ai_settings_v2` provider 分槽位持久化；新增 `letterPrefsStorage.js` + `letterPrefsStorage.test.js` 作为 `letter_prefs` 本地单一真源；SettingsPage 回顾信偏好改为只读写本地模块；reviewLetterService 改为只从本地真源读偏好，不再把 `letter_prefs` 写入 `user_profile`，也不再依赖 `updateMemory`；同步卡：docs/sync-cards/2026-04-28-persistence-trust-batch-a.md
 - 2026-04-21 · 代码session · 回顾信生成三项修复：① generateReviewLetter 删除 .gt(created_at)/.lte(created_at) 时间过滤，改为纯靠 covered_by_letter_id IS NULL；② checkAndGenerateLetter 计数查询删时间过滤，传参统一 null；③ insights JSON 提取正则加容错（兼容 ~~~json 等变体），letterContent 二次清理；④ RecordsPage checkAndGenerateLetter 改为 await 保证新信当次可见；DB 变更：threads 表加 trigger_source text 列；ReviewLetterDetail 相关 threads 占位待产品 brainstorm；同步卡：docs/sync-cards/2026-04-21-review-letter-fixes2.md
 - 2026-04-21 · 代码session · 批量多选删除 + 返回按钮统一：RecordsPage 新增 isSelecting/selectedIds(Set)/showBatchDeleteConfirm state；EntryCard 支持 isSelecting/isSelected/onToggle props + 圆形 checkbox + 选中高亮 outline；长按 600ms 进入多选（首条自动选中）；header 多选态「取消/已选N条/删除」；日期组全选当天两态按钮；handleBatchDelete 先并发清理 Storage 再批量 DB 删除（deleteEntries .in()），DB 失败时保持确认框打开不重置状态；多选时回顾信卡片隐藏；journalService.js 新增 deleteEntries；6 个文件返回按钮统一为 ‹（U+2039，fontSize 20）；EditEntryPage「取消」保留；同步卡：docs/sync-cards/2026-04-21-batch-delete-nav-done.md；loadContacts SELECT 补 group_name（根因修复"保存未生效"）；SettingsPage 联系人管理新增分组输入；RecordDetail 人物 sheet 按分组展示；同步卡：docs/sync-cards/2026-04-18-people-coreneeds-sync.md
 - 2026-04-18 · 代码session · 写作页日期时间选择器完成：新建 dateUtils.js（inferDatetime 关键词识别+formatPill）；新建 DatetimePicker.jsx（快捷按钮+迷你日历+时分鼓轮双列）；HomePage 模板栏日期 pill + 800ms debounce + manualOverride；RecordDetail 时间戳改为可点击写回 DB；同步卡：docs/sync-cards/2026-04-18-datetime-picker-plan.md

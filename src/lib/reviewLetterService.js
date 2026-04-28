@@ -1,6 +1,8 @@
 // src/lib/reviewLetterService.js
 // 回顾信触发检查 + 生成逻辑
 
+import { getLetterPrefs, saveLetterPrefs } from './letterPrefsStorage.js'
+
 let reviewLetterDepsPromise = null
 
 async function getReviewLetterDeps() {
@@ -43,56 +45,12 @@ function getTimeGreeting() {
   return ['还没睡呢', '深夜了'][Math.floor(Math.random() * 2)]  // 23–05
 }
 
-function normalizeLetterPrefs(raw) {
-  if (!raw) {
-    return { type: 'count', count_threshold: 10, require_new_entries: true }
-  }
-
-  return {
-    type: raw.type === 'manual' ? 'manual' : 'count',
-    count_threshold: raw.count_threshold ?? 10,
-    require_new_entries: raw.require_new_entries ?? true,
-  }
-}
-
-// ── 读取用户触发偏好 ───────────────────────────────────────────
 export async function getUserLetterPrefs(userId) {
-  // 主存储：user_memory（多端同步）
-  try {
-    const { getMemory } = await import('./memory.js')
-    const memory = await getMemory(userId)
-    const prefs = memory?.user_profile?.letter_prefs
-    if (prefs) {
-      return normalizeLetterPrefs(prefs)
-    }
-  } catch { /* ignore */ }
-
-  // 降级：localStorage
-  try {
-    const stored = localStorage.getItem(`letter_prefs_${userId}`)
-    if (stored) {
-      return normalizeLetterPrefs(JSON.parse(stored))
-    }
-  } catch { /* ignore */ }
-
-  // 默认：每写 10 条自动触发
-  return normalizeLetterPrefs(null)
+  return getLetterPrefs(userId)
 }
 
-// ── 保存用户触发偏好 ──────────────────────────────────────────
-export async function saveUserLetterPrefs(userId, prefs, updateMemoryFn) {
-  const normalized = normalizeLetterPrefs(prefs)
-
-  // 主存储：user_memory
-  try {
-    await updateMemoryFn({ user_profile: { letter_prefs: normalized } })
-  } catch (e) {
-    console.error('[reviewLetter] 保存偏好到 user_memory 失败:', e)
-  }
-  // 降级缓存：localStorage
-  try {
-    localStorage.setItem(`letter_prefs_${userId}`, JSON.stringify(normalized))
-  } catch { /* ignore */ }
+export async function saveUserLetterPrefs(userId, prefs) {
+  return saveLetterPrefs(userId, prefs)
 }
 
 // ── 生成回顾信 ────────────────────────────────────────────────
@@ -332,7 +290,7 @@ async function generateReviewLetter(userId, periodStart, prefs) {
 
 // ── 主入口：检查是否需要生成（应用启动 / 记录页加载时调用）──
 export async function checkAndGenerateLetter(userId) {
-  const prefs = await getUserLetterPrefs(userId)
+  const prefs = getLetterPrefs(userId)
   if (prefs.type === 'manual') return  // 手动触发，不自动生成
   const { db } = await getReviewLetterDeps()
 
@@ -363,7 +321,7 @@ export async function updateReviewLetter(letterId, userId, fields) {
 
 // ── 手动立即生成（设置页按钮调用）──────────────────────────────
 export async function generateLetterNow(userId) {
-  const prefs = await getUserLetterPrefs(userId)
+  const prefs = getLetterPrefs(userId)
   // 手动触发不限制时间范围：covered_by_letter_id IS NULL 已能识别未覆盖条目
   // 不传 period_end 作为 periodStart，避免旧时间戳条目被排除
   await generateReviewLetter(userId, null, prefs)
