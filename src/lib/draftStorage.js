@@ -1,10 +1,23 @@
 const DRAFT_KEY = 'journal_draft_v2'
-const DRAFT_TTL_MS = 24 * 60 * 60 * 1000
+
+function safeRemoveDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    // localStorage 容错
+  }
+}
 
 function toIsoString(value) {
   if (!value) return null
   if (value instanceof Date) return value.toISOString()
   return value
+}
+
+function parseValidDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 export function serializeDraftSnapshot(snapshot) {
@@ -32,27 +45,38 @@ export function loadDraftSnapshot() {
     if (!raw) return null
 
     const parsed = JSON.parse(raw)
-    const savedAtMs = parsed.savedAt ? new Date(parsed.savedAt).getTime() : null
-    if (savedAtMs && Date.now() - savedAtMs > DRAFT_TTL_MS) {
-      localStorage.removeItem(DRAFT_KEY)
+    const content = typeof parsed.content === 'string' ? parsed.content : ''
+    if (!content.trim()) {
+      safeRemoveDraft()
       return null
     }
 
+    const template =
+      typeof parsed.template === 'string' && parsed.template
+        ? parsed.template
+        : 'awareness'
+
+    const savedAt = parseValidDate(parsed.savedAt) ?? new Date()
+
+    const selectedDatetime = parsed.selectedDatetime
+      ? parseValidDate(parsed.selectedDatetime)
+      : null
+
     return {
       ...parsed,
-      selectedDatetime: parsed.selectedDatetime ? new Date(parsed.selectedDatetime) : null,
-      dismissedPeople: new Set(parsed.dismissedPeople ?? []),
+      content,
+      template,
+      savedAt: savedAt.toISOString(),
+      selectedDatetime,
+      manualOverride: selectedDatetime ? Boolean(parsed.manualOverride) : false,
+      dismissedPeople: new Set(Array.isArray(parsed.dismissedPeople) ? parsed.dismissedPeople : []),
     }
   } catch {
-    localStorage.removeItem(DRAFT_KEY)
+    safeRemoveDraft()
     return null
   }
 }
 
 export function clearDraftSnapshot() {
-  try {
-    localStorage.removeItem(DRAFT_KEY)
-  } catch {
-    // localStorage 容错
-  }
+  safeRemoveDraft()
 }

@@ -104,13 +104,17 @@ function MainLayoutContent() {
   }
 
   // ── HomePage 完成写作后 ─────────────────────────────────────
-  function handleHomeSaved(entry, gotoAwareness) {
+  function handleHomeSaved(entry, navigation = {}) {
     setRefreshKey(k => k + 1)
+    const gotoAwareness = Boolean(navigation?.gotoAwareness)
+    const startMode = navigation?.startMode === 'ai' ? 'ai' : 'local'
+
     if (gotoAwareness) {
-      push({ type: 'awareness', entryId: entry.id })
-    } else {
-      goTab('records')
+      push({ type: 'awareness', entryId: entry.id, startMode })
+      return
     }
+
+    goTab('records')
   }
 
   // ── AwarenessFlow 完成后 ────────────────────────────────────
@@ -236,6 +240,7 @@ function MainLayoutContent() {
           onComplete={handleAwarenessComplete}
           onExit={handleAwarenessExit}
           initialFlowState={screen.initialFlowState ?? null}
+          startMode={screen.startMode ?? 'local'}
         />
       )
     }

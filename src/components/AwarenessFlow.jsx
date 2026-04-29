@@ -3,7 +3,7 @@ import { db } from '../lib/db'
 import { callAI } from '../lib/aiClient'
 import { AWARENESS_SYSTEM_PROMPT, buildAwarenessContext } from '../lib/prompts'
 import {
-  createFlowState,
+  createInitialAwarenessState,
   getCurrentNode,
   getDraftAnswer,
   syncDraftAnswer,
@@ -47,6 +47,7 @@ export default function AwarenessFlow({
   onComplete,
   onExit,
   initialFlowState,
+  startMode = 'local',
 }) {
   const [flowState, setFlowState] = useState(null)
   const [currentAnswer, setCurrentAnswer] = useState('')
@@ -93,25 +94,37 @@ export default function AwarenessFlow({
 
   useEffect(() => {
     initDoneRef.current = false
-  }, [entry.id])
+  }, [entry.id, initialFlowState, startMode])
 
   useEffect(() => {
     if (initDoneRef.current) return
     initDoneRef.current = true
+    let cancelled = false
 
-    const immediateState = createFlowState({
-      entryContent: entry.content,
-      now: new Date().toISOString(),
-      snapshot: initialFlowState || null,
-      messages: null,
-    })
-    setFlowState(immediateState)
-    setCurrentAnswer(getDraftAnswer(immediateState))
+    setFlowState(null)
+    setCurrentAnswer('')
     setAiLoading(false)
     setAiError('')
 
     async function init() {
-      if (initialFlowState) return
+      const now = new Date().toISOString()
+      const contextEntry = {
+        content: entry.content,
+        created_at: entry.created_at,
+      }
+
+      if (initialFlowState) {
+        const restoredSnapshotState = createInitialAwarenessState({
+          entryContent: entry.content,
+          now,
+          snapshot: initialFlowState,
+          messages: null,
+        })
+        if (cancelled) return
+        setFlowState(restoredSnapshotState)
+        setCurrentAnswer(getDraftAnswer(restoredSnapshotState))
+        return
+      }
 
       const { data } = await db.from('conversations')
         .select('messages')
@@ -119,23 +132,71 @@ export default function AwarenessFlow({
         .eq('context_type', 'entry')
         .maybeSingle()
 
-      if (!Array.isArray(data?.messages) || data.messages.length === 0) return
+      if (cancelled) return
 
-      const restoredState = createFlowState({
+      if (Array.isArray(data?.messages) && data.messages.length > 0) {
+        const restoredState = createInitialAwarenessState({
+          entryContent: entry.content,
+          now: new Date().toISOString(),
+          snapshot: null,
+          messages: data.messages,
+        })
+        setFlowState(restoredState)
+        setCurrentAnswer(getDraftAnswer(restoredState))
+        return
+      }
+
+      const baseState = createInitialAwarenessState({
         entryContent: entry.content,
         now: new Date().toISOString(),
         snapshot: null,
-        messages: data.messages,
+        messages: null,
       })
 
-      setFlowState(restoredState)
-      setCurrentAnswer(getDraftAnswer(restoredState))
-      setAiLoading(false)
-      setAiError('')
+      if (startMode !== 'ai') {
+        setFlowState(baseState)
+        setCurrentAnswer(getDraftAnswer(baseState))
+        return
+      }
+
+      setAiLoading(true)
+
+      try {
+        const ctxMessages = buildConversationMessages(contextEntry, baseState)
+        const raw = await callAI(
+          [{ role: 'user', content: buildAwarenessContext(entry.content, ctxMessages) }],
+          AWARENESS_SYSTEM_PROMPT,
+          { maxTokens: 220 },
+        )
+        if (cancelled) return
+
+        const nextState = createInitialAwarenessState({
+          entryContent: entry.content,
+          now: new Date().toISOString(),
+          snapshot: null,
+          messages: null,
+          startMode: 'ai',
+          aiBlock: raw,
+          aiNodeId: createAiNodeId(),
+        })
+        setFlowState(nextState)
+        setCurrentAnswer(getDraftAnswer(nextState))
+      } catch (error) {
+        if (cancelled) return
+        console.error('[AwarenessFlow] AI 首轮引导失败:', error)
+        setFlowState(baseState)
+        setCurrentAnswer(getDraftAnswer(baseState))
+        setAiError(error.message || 'AI 调用失败，请稍后再试')
+      } finally {
+        if (!cancelled) setAiLoading(false)
+      }
     }
 
     init()
-  }, [entry.id, entry.content, initialFlowState])
+    return () => {
+      cancelled = true
+    }
+  }, [entry.id, entry.content, entry.created_at, initialFlowState, startMode])
 
   useEffect(() => {
     return () => {
@@ -356,7 +417,21 @@ export default function AwarenessFlow({
     }
   }
 
-  if (!flowState || !currentNode) return null
+  if (!flowState || !currentNode) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        background: '#faf8f4',
+        color: '#bbb',
+        fontSize: 14,
+      }}>
+        {aiLoading ? 'AI 正在生成引导…' : '正在准备觉察卡片…'}
+      </div>
+    )
+  }
 
   const canRefresh = mode === 'local' && (currentNode?.text ? flowState.localNodes[currentNode.localIndex]?.texts?.length > 1 : false)
   const isAtLastVisibleNode = flowState.currentIdx === flowState.visibleNodes.length - 1

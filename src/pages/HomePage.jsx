@@ -11,7 +11,7 @@
  *   - 草稿 3 秒自动存 localStorage，重开有恢复提示
  *
  * Props：
- *   onDone(entry, gotoAwareness)  新建完成回调，gotoAwareness=false 时直接跳列表
+ *   onDone(entry, navigation)  新建完成回调，navigation 决定是否进觉察以及起始模式
  *   editEntry                      编辑模式传入已有记录
  *   onCancel                       编辑模式取消按钮
  */
@@ -394,7 +394,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   }, [openMenuFromAnnotationSnapshot])
 
   // ── @ 选人 ────────────────────────────────────────────────────
-  const handleMentionSelect = async (contact) => {
+  const handleMentionSelect = useCallback(async (contact) => {
     // 把 @<query> 替换为 alias 原文（去掉 @，文字保留）
     const before = content.slice(0, mentionAnchor)   // @ 之前
     const after = content.slice(mentionAnchor)         // @ 开始往后
@@ -408,7 +408,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     setSelectedPeople(prev =>
       prev.includes(canonical) ? prev : [...prev, canonical]
     )
-  }
+  }, [content, mentionAnchor, mentionQuery, applyExternalContent])
+
+  const handleMentionItemClick = useCallback((event) => {
+    const { contactId } = event.currentTarget.dataset
+    if (!contactId) return
+    const contact = contacts.find(item => String(item.id) === contactId)
+    if (!contact) return
+    void handleMentionSelect(contact)
+  }, [contacts, handleMentionSelect])
 
   const handleMentionAddNew = async (name) => {
     if (!name.trim()) return
@@ -420,11 +428,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     )
   }
 
-  // ── 点 ✓（完成写作）──────────────────────────────────────────
-  const handleDone = useCallback(async () => {
-    // 保存时直接从 Lexical editor 读最新文本，防止 onChange 异步延迟导致 content state 落后
+  const saveNewEntryAndNavigate = useCallback(async (navigation) => {
     const latestContent = textareaRef.current?.getValue?.() ?? content
     if (!latestContent.trim() || saving) return
+
     setSaving(true)
 
     const trimmed = latestContent.trim()
@@ -432,67 +439,15 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     const allPeople = [...new Set([...selectedPeople, ...autoDetected])]
       .filter(p => !dismissedPeople.has(p))
 
-    if (isEditMode) {
-      const fields = {
-        content: trimmed,
-        template_type: template.id,
-        people_involved: allPeople,
-        image_urls: imagePaths,
-        created_at: selectedDatetime.toISOString(),
-        annotations,
-      }
-      const entryId = editEntry.id
-      const userId = user.id
-      const filesToUpload = [...selectedFiles]
-      const existingPaths = [...imagePaths]
-      const notifyFn = onNotify
-
-      const { data: updatedEntry, error } = await updateEntry({ id: entryId, userId, fields })
-      if (error || !updatedEntry) {
-        console.error('[edit]', error)
-        setSaving(false)
-        notifyFn?.('记录保存失败，请检查网络后重试')
-        return
-      }
-
-      setSaving(false)
-      onDone?.(updatedEntry, false)
-
-      ;(async () => {
-        // DB 写成功后，才删 Storage（防止取消时产生孤儿文件）
-        const toDelete = [...pathsToDeleteRef.current]
-        pathsToDeleteRef.current = []
-        if (toDelete.length > 0) {
-          await Promise.all(toDelete.map(p => deleteImage(p)))
-        }
-        if (!filesToUpload.length) return
-        const newPaths = await Promise.all(
-          filesToUpload.map(f => uploadImage(f, userId, entryId))
-        )
-        const successPaths = newPaths.filter(Boolean)
-        const failedCount = newPaths.length - successPaths.length
-        if (successPaths.length > 0) {
-          await updateEntry({
-            id: entryId, userId,
-            fields: { image_urls: [...existingPaths, ...successPaths] },
-          })
-        }
-        if (failedCount > 0) notifyFn?.('图片上传失败，进入记录可重新添加')
-      })().catch(console.error)
-      return
-    }
-
-    // 新建模式：先拿真实权威行，再导航；图片仍后台异步上传
-    const draftEntry = {
+    const { data: createdEntry, error } = await createEntry({
       user_id: user.id,
       content: trimmed,
       template_type: template.id,
       created_at: selectedDatetime.toISOString(),
       people_involved: allPeople,
       annotations,
-    }
+    })
 
-    const { data: createdEntry, error } = await createEntry(draftEntry)
     if (error || !createdEntry) {
       console.error('[insert]', error)
       setSaving(false)
@@ -501,10 +456,12 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     }
 
     clearDraftSnapshot()
-    clearTimeout(draftTimerRef.current)  // 防止 awareness 期间 timer 重写草稿
-    const gotoAwareness = template.awarenessStart !== null
+    clearTimeout(draftTimerRef.current)
     setSaving(false)
-    onDone?.(createdEntry, gotoAwareness)
+    onDone?.(createdEntry, {
+      gotoAwareness: Boolean(navigation?.gotoAwareness),
+      startMode: navigation?.startMode === 'ai' ? 'ai' : 'local',
+    })
 
     const entryId = createdEntry.id
     const userId = user.id
@@ -536,29 +493,85 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
         }
       })()
     }
+  }, [content, saving, contacts, selectedPeople, dismissedPeople, user, template.id, selectedDatetime, annotations, onNotify, onDone, selectedFiles])
+
+  // ── 点 ✓（完成写作）──────────────────────────────────────────
+  const handleDone = useCallback(async () => {
+    // 保存时直接从 Lexical editor 读最新文本，防止 onChange 异步延迟导致 content state 落后
+    const latestContent = textareaRef.current?.getValue?.() ?? content
+    if (!latestContent.trim() || saving) return
+
+    if (!isEditMode) {
+      await saveNewEntryAndNavigate({
+        gotoAwareness: template.awarenessStart !== null,
+        startMode: 'local',
+      })
+      return
+    }
+
+    setSaving(true)
+
+    const trimmed = latestContent.trim()
+    const autoDetected = detectPeopleFromText(trimmed, contacts)
+    const allPeople = [...new Set([...selectedPeople, ...autoDetected])]
+      .filter(p => !dismissedPeople.has(p))
+
+    const fields = {
+      content: trimmed,
+      template_type: template.id,
+      people_involved: allPeople,
+      image_urls: imagePaths,
+      created_at: selectedDatetime.toISOString(),
+      annotations,
+    }
+    const entryId = editEntry.id
+    const userId = user.id
+    const filesToUpload = [...selectedFiles]
+    const existingPaths = [...imagePaths]
+    const notifyFn = onNotify
+
+    const { data: updatedEntry, error } = await updateEntry({ id: entryId, userId, fields })
+    if (error || !updatedEntry) {
+      console.error('[edit]', error)
+      setSaving(false)
+      notifyFn?.('记录保存失败，请检查网络后重试')
+      return
+    }
+
+    setSaving(false)
+    onDone?.(updatedEntry)
+
+    ;(async () => {
+      // DB 写成功后，才删 Storage（防止取消时产生孤儿文件）
+      const toDelete = [...pathsToDeleteRef.current]
+      pathsToDeleteRef.current = []
+      if (toDelete.length > 0) {
+        await Promise.all(toDelete.map(p => deleteImage(p)))
+      }
+      if (!filesToUpload.length) return
+      const newPaths = await Promise.all(
+        filesToUpload.map(f => uploadImage(f, userId, entryId))
+      )
+      const successPaths = newPaths.filter(Boolean)
+      const failedCount = newPaths.length - successPaths.length
+      if (successPaths.length > 0) {
+        await updateEntry({
+          id: entryId, userId,
+          fields: { image_urls: [...existingPaths, ...successPaths] },
+        })
+      }
+      if (failedCount > 0) notifyFn?.('图片上传失败，进入记录可重新添加')
+    })().catch(console.error)
   }, [content, saving, isEditMode, template, editEntry, user, onDone, contacts,
-      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations])
+      selectedPeople, dismissedPeople, selectedDatetime, imagePaths, selectedFiles, onNotify, annotations, saveNewEntryAndNavigate])
 
   // ── 点 ✦ 深入觉察（写作页直接进 AI 模式）─────────────────────
   const handleDeepAwareness = useCallback(async () => {
-    const latestContent = textareaRef.current?.getValue?.() ?? content
-    if (!latestContent.trim() || saving) return
-    setSaving(true)
-
-    const { data: entry, error } = await createEntry({
-      user_id: user.id,
-      content: latestContent.trim(),
-      template_type: template.id,
-      created_at: selectedDatetime.toISOString(),
-      annotations,
+    await saveNewEntryAndNavigate({
+      gotoAwareness: true,
+      startMode: 'ai',
     })
-
-    setSaving(false)
-    if (error || !entry) { console.error('[insert]', error); return }
-
-    clearDraftSnapshot()
-    onDone?.(entry, true)   // 强制进觉察流（直接 AI 模式）
-  }, [content, saving, template, user, onDone, annotations, selectedDatetime])
+  }, [saveNewEntryAndNavigate])
 
   // ── 图片选择 ──────────────────────────────────────────────────
   const handleImageSelect = (e) => {
@@ -847,7 +860,8 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
                 {filtered.map(c => (
                   <div
                     key={c.id}
-                    onClick={() => handleMentionSelect(c)}
+                    data-contact-id={String(c.id)}
+                    onClick={handleMentionItemClick}
                     style={{
                       padding: '10px 14px',
                       cursor: 'pointer',

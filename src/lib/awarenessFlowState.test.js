@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createFlowState,
+  createInitialAwarenessState,
   continueLocalNode,
   enterAiMode,
   continueAiNode,
@@ -173,6 +174,46 @@ test('createFlowState can build the first visible node immediately without waiti
   assert.equal(state.currentNode.kind, 'local')
   assert.equal(state.visibleNodes.length, 1)
   assert.equal(state.currentIdx, 0)
+})
+
+test('createInitialAwarenessState enters ai immediately when startMode is ai', () => {
+  const state = createInitialAwarenessState({
+    entryContent: makeEntry().content,
+    now: '2026-04-10T10:01:00.000Z',
+    snapshot: null,
+    messages: null,
+    startMode: 'ai',
+    aiBlock: '先接住这份慌。你现在最想让自己被怎样对待？',
+    aiNodeId: 'ai-bootstrap-1',
+  })
+
+  assert.equal(state.currentNode.kind, 'ai')
+  assert.equal(state.currentNode.id, 'ai-bootstrap-1')
+  assert.equal(state.visibleNodes.length, 2)
+})
+
+test('createInitialAwarenessState lets snapshot win over ai bootstrap', () => {
+  const base = createFlowState({
+    entryContent: makeEntry().content,
+    now: '2026-04-10T10:01:00.000Z',
+  })
+  const next = continueLocalNode(base, {
+    answer: '我脑子很乱。',
+    now: '2026-04-10T10:02:00.000Z',
+  })
+
+  const state = createInitialAwarenessState({
+    entryContent: makeEntry().content,
+    now: '2026-04-10T10:03:00.000Z',
+    snapshot: serializeFlowState(next),
+    messages: null,
+    startMode: 'ai',
+    aiBlock: '这段不该生效',
+    aiNodeId: 'ai-bootstrap-2',
+  })
+
+  assert.equal(state.currentNode.kind, 'local')
+  assert.equal(state.currentNode.id, next.currentNode.id)
 })
 
 test('restored snapshot keeps the exact current node instead of resetting to first unanswered local card', () => {

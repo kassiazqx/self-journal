@@ -89,10 +89,12 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!user) return
-    const timer = setTimeout(() => { loadTagOptions() }, 0)
-    const prefs = getLetterPrefs(user.id)
-    setLetterPrefs(prefs)
-    setCountInput(String(prefs.count_threshold ?? 10))
+    const timer = setTimeout(() => {
+      loadTagOptions()
+      const prefs = getLetterPrefs(user.id)
+      setLetterPrefs(prefs)
+      setCountInput(String(prefs.count_threshold ?? 10))
+    }, 0)
     return () => clearTimeout(timer)
   }, [user, loadTagOptions])
 

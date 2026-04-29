@@ -22,19 +22,19 @@ function createFakeStorage() {
 }
 
 test('saveUserLetterPrefs 写入 local fallback 时会规范化数据', async () => {
-  global.localStorage = createFakeStorage()
+  globalThis.localStorage = createFakeStorage()
 
   await saveUserLetterPrefs('u1', { type: 'days', count_threshold: 7 }, async () => {})
 
-  const raw = JSON.parse(global.localStorage.getItem('letter_prefs_u1'))
+  const raw = JSON.parse(globalThis.localStorage.getItem('letter_prefs_u1'))
 
   assert.equal(raw.type, 'count')
   assert.equal(raw.count_threshold, 7)
 })
 
 test('getUserLetterPrefs 从 local fallback 读取旧 days 值时会回退为 count', async () => {
-  global.localStorage = createFakeStorage()
-  global.localStorage.setItem('letter_prefs_u1', JSON.stringify({ type: 'days', count_threshold: 10 }))
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('letter_prefs_u1', JSON.stringify({ type: 'days', count_threshold: 10 }))
 
   const prefs = await getUserLetterPrefs('u1')
 

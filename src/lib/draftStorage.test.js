@@ -42,17 +42,43 @@ test('serializeDraftSnapshot 保留正文/模板/时间/人物 dismiss 信息', 
 })
 
 test('loadDraftSnapshot 遇到坏 JSON 时返回 null 并清掉脏数据', () => {
-  global.localStorage = createFakeStorage()
-  global.localStorage.setItem('journal_draft_v2', '{bad json')
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', '{bad json')
 
   const loaded = loadDraftSnapshot()
 
   assert.equal(loaded, null)
-  assert.equal(global.localStorage.getItem('journal_draft_v2'), null)
+  assert.equal(globalThis.localStorage.getItem('journal_draft_v2'), null)
+})
+
+test('loadDraftSnapshot 遇到只有空格和换行的草稿时返回 null 并清掉脏数据', () => {
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', JSON.stringify({
+    content: '  \n   ',
+    savedAt: new Date().toISOString(),
+  }))
+
+  const loaded = loadDraftSnapshot()
+
+  assert.equal(loaded, null)
+  assert.equal(globalThis.localStorage.getItem('journal_draft_v2'), null)
+})
+
+test('loadDraftSnapshot 遇到存储 API 抛错时返回 null 不再二次抛错', () => {
+  globalThis.localStorage = {
+    getItem() {
+      throw new Error('deny')
+    },
+    removeItem() {
+      throw new Error('deny remove')
+    },
+  }
+
+  assert.equal(loadDraftSnapshot(), null)
 })
 
 test('saveDraftSnapshot 写入后可按正确类型读回', () => {
-  global.localStorage = createFakeStorage()
+  globalThis.localStorage = createFakeStorage()
 
   saveDraftSnapshot({
     content: 'hello',
@@ -71,9 +97,9 @@ test('saveDraftSnapshot 写入后可按正确类型读回', () => {
   assert.deepEqual([...loaded.dismissedPeople], ['张三'])
 })
 
-test('loadDraftSnapshot 超过 24 小时返回 null 并清理草稿', () => {
-  global.localStorage = createFakeStorage()
-  global.localStorage.setItem('journal_draft_v2', JSON.stringify({
+test('loadDraftSnapshot 超过 24 小时仍保留草稿正文', () => {
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', JSON.stringify({
     content: 'old draft',
     savedAt: '2026-04-26T08:00:00.000Z',
   }))
@@ -83,18 +109,47 @@ test('loadDraftSnapshot 超过 24 小时返回 null 并清理草稿', () => {
 
   try {
     const loaded = loadDraftSnapshot()
-    assert.equal(loaded, null)
-    assert.equal(global.localStorage.getItem('journal_draft_v2'), null)
+    assert.equal(loaded.content, 'old draft')
   } finally {
     Date.now = realNow
   }
 })
 
+test('loadDraftSnapshot 遇到坏 savedAt 时保留正文', () => {
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', JSON.stringify({
+    content: 'draft',
+    savedAt: 'bad-date',
+    template: 'awareness',
+  }))
+
+  const loaded = loadDraftSnapshot()
+
+  assert.equal(loaded.content, 'draft')
+  assert.equal(loaded.template, 'awareness')
+})
+
+test('loadDraftSnapshot 遇到坏 selectedDatetime 时只丢时间不丢正文', () => {
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', JSON.stringify({
+    content: 'draft',
+    savedAt: new Date().toISOString(),
+    selectedDatetime: 'bad-date',
+    manualOverride: true,
+  }))
+
+  const loaded = loadDraftSnapshot()
+
+  assert.equal(loaded.content, 'draft')
+  assert.equal(loaded.selectedDatetime, null)
+  assert.equal(loaded.manualOverride, false)
+})
+
 test('clearDraftSnapshot 会删除草稿', () => {
-  global.localStorage = createFakeStorage()
-  global.localStorage.setItem('journal_draft_v2', JSON.stringify({ content: 'hello' }))
+  globalThis.localStorage = createFakeStorage()
+  globalThis.localStorage.setItem('journal_draft_v2', JSON.stringify({ content: 'hello' }))
 
   clearDraftSnapshot()
 
-  assert.equal(global.localStorage.getItem('journal_draft_v2'), null)
+  assert.equal(globalThis.localStorage.getItem('journal_draft_v2'), null)
 })

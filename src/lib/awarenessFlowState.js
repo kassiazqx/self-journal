@@ -258,6 +258,42 @@ export function createFlowState({ entryContent, now, snapshot = null, messages =
   })
 }
 
+// AwarenessFlow 首次进入时的统一初始化入口：
+// snapshot / 已存消息优先；只有全新进入且指定 ai 模式时，才直接种入首轮 AI 节点。
+export function createInitialAwarenessState({
+  entryContent,
+  now,
+  snapshot = null,
+  messages = null,
+  startMode = 'local',
+  aiBlock = '',
+  aiNodeId = null,
+}) {
+  const hasMessages = Array.isArray(messages) && messages.length > 0
+  const baseState = createFlowState({
+    entryContent,
+    now,
+    snapshot,
+    messages: hasMessages ? messages : null,
+  })
+
+  if (snapshot || hasMessages || startMode !== 'ai') {
+    return baseState
+  }
+
+  const trimmedBlock = typeof aiBlock === 'string' ? aiBlock.trim() : ''
+  if (!trimmedBlock || !aiNodeId) {
+    return baseState
+  }
+
+  return enterAiMode(baseState, {
+    draftLocalAnswer: '',
+    aiBlock: trimmedBlock,
+    aiNodeId,
+    now,
+  })
+}
+
 export function restoreFlowState({ entryContent, messages, snapshot = null, now }) {
   if (snapshot) return enrichState(clone(snapshot))
 
