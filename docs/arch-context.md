@@ -310,6 +310,8 @@ src/
 │   ├── imageStorage.js         图片 Storage 抽象层（新增，图片功能）
 │   │                           uploadImage / deleteImage / getImageUrl / compressImage
 │   │                           ⚠️ 所有图片操作必须经此层，不得直接调 db.storage（见4.33）
+│   ├── homePageImageLayout.js  HomePage 图片可见性 helper（Task5）
+│   │                           getHomePageEditorMinHeight / getDesiredVisibleImageHeight / getImageRevealScrollTop
 │   ├── insightsService.js      洞察页数据查询服务层（含候选数 candidateCount 查询）
 │   ├── storage.js              localStorage 工具
 │   │                           AI settings v2：`ai_settings_v2`，provider 分槽位持久化（gemini/deepseek）
@@ -417,6 +419,8 @@ src/
     │                           @ mention：内存过滤 contacts，chip 渲染时实时 detect + dismissedPeople
     │                           新建 / 编辑完成：先经 entryRepository 拿到权威 row（含 updated_at）再导航；图片仍后台异步上传
     │                           Task3：新建模式统一走 `saveNewEntryAndNavigate()`；`✓` 与 `✦` 共用同一保存语义，仅 `startMode` 不同
+    │                           Task5：保留单一图片区，不做横向 strip；有图时轻度缩短编辑区默认空白，新图加入后自动滚到“正文末尾 + 图片开头”
+    │                           图片露出规则：1行图只露约 1 行；2行图只露约 1.5 行；长按调序/删除/全屏查看仍走原网格交互
     │                           ✨ 编辑器升级：textarea 换为 RichTextEditor + AnnotationMenu（写作时即可标注）
     │                           ✨ 外部内容写入统一走 applyExternalContent()；草稿恢复 / @ 替换都调 ref.setValue()
     │                           ✨ 标注保存：handleDone/handleDeepAwareness 的 useCallback 已补 annotations dep（stale closure 修复）
@@ -1311,6 +1315,8 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-28 · 代码session · 浏览器实时语音入口移除：`HomePage` 删除麦克风按钮与 Web Speech API 调用链；删除 `useSpeechRecognition.js` 与 `recording-pulse` 样式；`arch-context` 更新为“未来若做讯飞 / 上传录音 / 上传视频 / 再转文字，另起媒体/转写链”；`npm run build` 通过；同步卡：`docs/sync-cards/2026-04-28-browser-voice-removal.md`
 - 2026-04-29 · 代码session · Persistence Trust Batch A / Task3：`HomePage` 新建保存统一收口到 `saveNewEntryAndNavigate()`，`✓` / `✦` 共用同一保存语义，仅导航对象 `startMode` 不同；`MainLayout` 改为透传 `navigation.startMode`；`AwarenessFlow` 新增首启优先级 `initialFlowState > conversations > startMode='ai' bootstrap > local`，全新点 `✦` 不再先闪本地题，首轮 AI 失败时 fallback 本地卡片；新增 `createInitialAwarenessState()` 与 2 条状态测试；`node --test src/lib/awarenessFlowState.test.js` / `npm run lint` / `npm run build` 通过；同步卡：docs/sync-cards/2026-04-28-persistence-trust-batch-a.md
 - 2026-04-29 · 代码session · Persistence Trust Batch A / Task4 checkpoint：重跑 `node --test src/lib/draftStorage.test.js src/lib/awarenessFlowState.test.js`、`npm run lint`、`npm run build` 均通过；尝试 `npm run dev` 时 CLI 沙箱拒绝监听 `0.0.0.0:5173`，因此本轮只完成自动验证复核，用户手测矩阵仍待本地执行；同步卡已改为“Task4 Step1 已复核，Step2-3 未闭环”的真实状态
+- 2026-04-29 · 代码session · Persistence Trust Batch A / Task4 complete：`npm run dev` 在 `http://localhost:5174/` 正常启动；用户手测确认 5 项全部通过：`✓` 本地觉察、`✦` 直入 AI、选图+`@人`+`✦` 闭环、API key provider 切换/重开持久化、回顾信偏好刷新/重开不回跳；同步卡已收口为 `Task4` 完成，下一步可按 plan 进入 `Task5`
+- 2026-04-29 · 代码session · Persistence Trust Batch A / Task5 complete：Task5 改口为“单一图片区，不做横向 strip”；新增 `homePageImageLayout.js` 纯函数层，按图片数量轻度缩短 HomePage 编辑区默认空白，并在新图加入时精确滚到“正文末尾 + 图片开头”；长文 + 1行图只露约 1 行，长文 + 2行图只露约 1.5 行；`node --test src/lib/homePageImageLayout.test.js` / 联合测试 27/27 / `npm run lint` / `npm run build` 通过；用户手测确认图片露出量、底部栏、长按调序/删除/全屏均正常；同步卡：`docs/sync-cards/2026-04-28-persistence-trust-batch-a.md`
 - 2026-04-26 · 代码session · 修复“删除当天感恩记录后写作页计数不回落”：根因是 MainLayout 常驻挂载导致 HomePage 不重挂，`gratitudeCount` 又只在 mount/保存感恩成功时刷新；现复用 `refreshKey` 作为统一 entry 变更信号，连到 `HomePage.gratitudeRefreshTrigger`，RecordsPage 单删/批删通过 `onEntriesMutated` 上报；新增 §4.57；commit 34d3e5c；同步卡：docs/sync-cards/2026-04-26-gratitude-count-refresh-fix.md
 - 2026-04-25 · 代码session · AwarenessFlow / AIConversation 键盘避让对齐：两处都改为“内层滚动区 + fixed 底栏”，删除 visualViewport.scroll 补偿，只在 resize 时更新 bottom；同步卡：docs/sync-cards/2026-04-25-awareness-ai-keyboard-fix.md
 - 2026-04-25 · 代码session · HomePage 键盘避让重构：MainLayout 键盘态隐藏底部4-tab；HomePage 改为“顶部固定 + 内层编辑滚动区”；paddingBottom/scrollPaddingBottom 移到内层滚动容器；底部悬浮栏 fixed 且仅响应 visualViewport resize；同步卡：docs/sync-cards/2026-04-25-homepage-keyboard-layout-fix.md

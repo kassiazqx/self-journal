@@ -1,6 +1,6 @@
-# 同步卡：Persistence Trust Batch A / Task1-3
+# 同步卡：Persistence Trust Batch A / Task1-5
 
-**状态：** `Task1 Follow-up Replacement` + `Task2` + `Task3` 已完成；`Task4 Step1` 已复核通过，`Step2-3` 未闭环；`Task5+` 未开始
+**状态：** `Task1 Follow-up Replacement` + `Task2` + `Task3` + `Task4` + `Task5` 已完成；`Task6+` 未开始
 **日期：** 2026-04-29
 **commit：** 待本次提交生成  
 **分支：** `dev`
@@ -18,6 +18,8 @@
 - `Task1 Follow-up Replacement`
 - `Task2: 草稿正文恢复与外部内容同步收口`
 - `Task3: 深入觉察真正支持“直接进 AI”`
+- `Task4: 验证、文档、手测矩阵`
+- `Task5: HomePage 图片首屏可见`
 
 本次明确不做：
 
@@ -123,6 +125,18 @@
   - 恢复旧觉察进度时，不会被 `startMode: 'ai'` 覆盖
   - 若首轮 AI 失败，会回退到本地卡片并展示错误，而不是卡空白页
 
+### 11. Task5 最终改口：不用横向 strip，保留单一图片区
+
+- 用户确认：输入区就是“文字区 + 图片区”，不要第二套图片 UI
+- 因此 Task5 不做 plan 里原推荐的横向 strip
+- 最终实现改为：
+  - 仍只保留 HomePage 当前这一个图片网格
+  - 选图后轻度缩短编辑区默认空白
+  - 再轻推滚动到“正文末尾 + 图片开头”
+  - 长文 + 1行图：只露约 1 行
+  - 长文 + 2行图：只露约 1.5 行
+- 这样避免“上面一条小图、下面又一套大图”的双重心智模型
+
 ---
 
 ## 实际改动文件
@@ -144,6 +158,9 @@
 | `src/components/AwarenessFlow.jsx` | 首次进入支持 `startMode='ai'` 真直入 AI；失败 fallback 本地卡片 |
 | `src/lib/awarenessFlowState.js` | 新增 `createInitialAwarenessState()`，统一首启优先级 |
 | `src/lib/awarenessFlowState.test.js` | 补 `startMode='ai'` / snapshot 优先级测试 |
+| `src/lib/homePageImageLayout.js` | Task5 图片可见性 helper：编辑区高度 / 可见图片行数 / 自动滚动目标 |
+| `src/lib/homePageImageLayout.test.js` | Task5 行为测试：1行图=1行、2行图=1.5行、滚动目标计算 |
+| `src/pages/HomePage.jsx` | Task5 单一图片区可见性修正：轻度缩空白 + 精确自动滚动 |
 | `docs/arch-context.md` | 更新 §3 / §6 |
 | `docs/superpowers/plans/2026-04-28-persistence-trust-batch-a.md` | 删掉“未保存图片也能恢复”的旧矛盾句 |
 
@@ -178,6 +195,20 @@
   - 大 chunk 提示
   - ineffective dynamic import 提示
 
+Task5 本 session 新增执行：
+
+- `node --test src/lib/homePageImageLayout.test.js`
+- `node --test src/lib/homePageImageLayout.test.js src/lib/draftStorage.test.js src/lib/awarenessFlowState.test.js`
+- `npm run lint`
+- `npm run build`
+
+Task5 结果：
+
+- `homePageImageLayout.test.js` 8/8 通过
+- 联合测试 27/27 通过
+- `lint` 通过
+- `build` 通过
+
 ---
 
 ## 手工验证结果
@@ -188,7 +219,7 @@
 - 内容删空后不再弹假草稿
 - `@` 选人后正文与 chip 状态正常
 
-Task4 / Task3 仍待用户手测重点：
+2026-04-29 用户手测通过：
 
 - 点 `✓`：保存后进入本地觉察
 - 点 `✦`：保存后直接进入 AI，不先闪本地题
@@ -196,20 +227,34 @@ Task4 / Task3 仍待用户手测重点：
 - API Key：切 provider 再切回，当前 provider key 仍在；关闭网页后重开仍在
 - 回顾信偏好：改成“手动生成”后，刷新页面/重开网页不回跳
 
-## Task4 当前阻塞
+2026-04-29 Task5 用户手测通过：
 
-- `Step1` 已完成并由本 session 重跑复核
-- `Step2` 需起 `npm run dev` 给用户手测；当前 CLI 沙箱监听 `0.0.0.0:5173` 被拒
-- `Step3` 依赖用户在本地完成上面手测矩阵
-- `Step4` 文档已更新到“部分完成”真实状态，待 `Step2-3` 结束后再收最终结论
+- 选图后会自动把视角带到“正文末尾 + 图片开头”，不再是大段空白后才见图
+- 长文 + 1行图：只露约 1 行图
+- 长文 + 2行图：只露约 1.5 行图
+- 底部浮动栏未被图片区挡住
+- 长按调序 / 删除 / 点图全屏三项旧能力未回归
+
+## Task4 收口结果
+
+- `Step1` 自动验证已完成并由本 session 重跑复核
+- `Step2` `npm run dev` 已启动，Vite 本地环境可正常打开
+- `Step3` 用户已完成手测矩阵并确认“都验证没问题了”
+- `Step4` 同步卡 / arch-context 已更新到最终完成状态
+
+## Task5 收口结果
+
+- `Step1-2` 已按用户确认改口为“单一图片区，不做横向 strip”
+- `Step3-4` 已落地：新增图片后轻度缩空白 + 精确滚动到正文末尾接图片
+- `Step5` 用户手测通过，1行/2行图片露出量已按最终要求收口
 
 ---
 
 ## 残余风险
 
 - `template.awarenessStart` 当前仍主要承担“是否进入觉察”的入口判断；真实起点语义现在由 `startMode` + 觉察状态机共同决定，后续若做更细模板起点，需再统一
-- Task3 的代码承诺已落地，但“选图 + `@` 人 + 点 `✦`”仍需用户手测最终闭环
 - 若后续确定走“上传录音 / 上传视频 / 再转文字”，媒体入口会另起链路，不应再回头把旧 Web 语音模式塞回本批
+- Task5 现在仍属 Web 过渡层：图片可见性逻辑基于当前网格高度与滚动容器；后续若进入 APK 终局媒体模型，仍建议整体收敛到统一媒体区组件
 
 ---
 
@@ -217,6 +262,5 @@ Task4 / Task3 仍待用户手测重点：
 
 如果继续做 `Persistence Trust Batch A`：
 
-- 代码层下一步从 `Task4` 验证矩阵与文档扫尾开始
-- 优先补用户手测 `✓ / ✦ / 图片 / @人物` 闭环
+- 代码层下一步从 `Task6` 开始
 - 不要回头把未保存图片跨重开恢复塞回 Task2

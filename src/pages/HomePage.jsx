@@ -46,6 +46,12 @@ import {
   loadDraftSnapshot,
   clearDraftSnapshot,
 } from '../lib/draftStorage'
+import {
+  getDesiredVisibleImageHeight,
+  getHomePageEditorMinHeight,
+  getImageRevealScrollTop,
+  shouldRevealImageSection,
+} from '../lib/homePageImageLayout'
 import RichTextEditor from '../components/RichTextEditor'
 import { useAnnotations } from '../hooks/useAnnotations'
 import { useAnnotationInteraction } from '../hooks/useAnnotationInteraction'
@@ -225,6 +231,11 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
     ...imagePaths.map(p => ({ id: p, previewSrc: getImageUrl(p), type: 'path' })),
     ...selectedPreviews.map((src, i) => ({ id: `new-${i}`, previewSrc: src, type: 'file', fileIndex: i })),
   ]
+  const editorMinHeight = getHomePageEditorMinHeight(imageItems.length)
+  const scrollContainerRef = useRef(null)
+  const imageSectionRef = useRef(null)
+  const imageGridRef = useRef(null)
+  const previousImageCountRef = useRef(totalImages)
 
   // 日期时间选择
   const [selectedDatetime, setSelectedDatetime] = useState(() =>
@@ -324,6 +335,42 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   useEffect(() => {
     textareaRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    const previousCount = previousImageCountRef.current
+    previousImageCountRef.current = totalImages
+
+    if (!shouldRevealImageSection(previousCount, totalImages)) return
+
+    const rafId = window.requestAnimationFrame(() => {
+      const scrollContainer = scrollContainerRef.current
+      const imageSection = imageSectionRef.current
+      const imageGrid = imageGridRef.current
+      if (!scrollContainer || !imageSection || !imageGrid) return
+
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const imageRect = imageSection.getBoundingClientRect()
+      const imageGridRect = imageGrid.getBoundingClientRect()
+      const desiredVisibleImageHeight = getDesiredVisibleImageHeight({
+        imageCount: totalImages,
+        gridHeight: imageGridRect.height,
+      })
+      const nextTop = getImageRevealScrollTop({
+        currentScrollTop: scrollContainer.scrollTop,
+        imageTop: imageRect.top,
+        containerTop: containerRect.top,
+        containerHeight: containerRect.height,
+        desiredVisibleImageHeight,
+      })
+
+      scrollContainer.scrollTo({
+        top: nextTop,
+        behavior: 'smooth',
+      })
+    })
+
+    return () => window.cancelAnimationFrame(rafId)
+  }, [totalImages])
 
   // ── 恢复草稿 ──────────────────────────────────────────────────
   const handleResumeDraft = () => {
@@ -795,6 +842,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
       </div>
 
       <div
+        ref={scrollContainerRef}
         className="flex-1 min-h-0"
         style={{
           overflowY: 'auto',
@@ -818,7 +866,7 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
             onSelectionSnapshot={handleSelectionSnapshot}
             onAnnotationSnapshot={handleAnnotationSnapshot}
             placeholder="把脑子里的写下来…"
-            style={{ minHeight: '60vh' }}
+            style={{ minHeight: editorMinHeight }}
           />
           <AnnotationMenu
             position={menuPosition}
@@ -891,10 +939,14 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           })()}
         </div>
 
-        {/* ── 图片宫格（有图时渲染，位于输入区与底部浮动栏之间） ── */}
+        {/* ── 图片区规则：仍只保留这一套图片区；有图后轻度缩短编辑区，并自动滚到这里让用户立刻看到上传成功 ── */}
         {imageItems.length > 0 && (
           <div
-            style={{ padding: '4px 18px 2px' }}
+            ref={imageSectionRef}
+            style={{
+              padding: '4px 18px 2px',
+              scrollMarginBottom: scrollContentBottomPadding + 12,
+            }}
             onTouchStart={handleImageTouchStart}
             onTouchEnd={handleImageTouchEnd}
             onMouseLeave={() => clearTimeout(touchTimerRef.current)}
@@ -902,7 +954,10 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
           >
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={imageItems.map(it => it.id)} strategy={rectSortingStrategy}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+                <div
+                  ref={imageGridRef}
+                  style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}
+                >
                   {imageItems.map(item => (
                     <SortableImageItem
                       key={item.id}

@@ -827,9 +827,11 @@ Expected: Vite dev server starts without errors
 
 **Files:**
 - Modify: `src/pages/HomePage.jsx`
+- Create: `src/lib/homePageImageLayout.js`
+- Create: `src/lib/homePageImageLayout.test.js`
 - Test/Verify: 手工交互
 
-- [ ] **Step 1: 先写目标规则到实现注释**
+- [x] **Step 1: 先写目标规则到实现注释**
 
 ```js
 // src/pages/HomePage.jsx
@@ -839,68 +841,52 @@ Expected: Vite dev server starts without errors
 // 3. 不把整套图片区重做成全新 UI 系统，本轮只做当前布局下的最小可见性修正
 ```
 
-- [ ] **Step 2: 收口渲染策略，选一种最小实现并固定**
+- [x] **Step 2: 收口渲染策略，选一种最小实现并固定**
 
-推荐实现：
+**2026-04-29 follow-up 决定：** 不采用横向 strip 双 UI。改为“单一图片区 + 轻度缩短编辑区 + 选图后轻推滚动到正文末尾接图片”。
 
 ```js
-// 方案：保留正文区大结构不变，但把图片预览条移到底部浮动栏上方的首屏区域
-// - 首屏显示：横向可滚动预览条（固定/粘住，可立即看到）
-// - 若需要保留现有 3xN 宫格，可在正文区继续渲染完整版本，或本轮直接替换为预览条
-// - 重点：上传后第一时间看得见，不必手动下滑
+// 方案：
+// - 仍只保留 HomePage 现有这一套图片区
+// - 新增图片后，先吃掉默认空白，再轻推滚动到“正文末尾 + 图片开头”
+// - 1行图：目标露出 1 行
+// - 2行图：目标露出约 1.5 行
+// - 不新增第二套图片 UI，不改图片状态架构
 ```
 
-- [ ] **Step 3: 修改 `HomePage` 图片区布局**
+- [x] **Step 3: 修改 `HomePage` 图片区布局**
 
 ```js
+// src/lib/homePageImageLayout.js
+// - getHomePageEditorMinHeight(imageCount)
+// - getDesiredVisibleImageHeight({ imageCount, gridHeight })
+// - getImageRevealScrollTop(...)
+//
 // src/pages/HomePage.jsx
-{imageItems.length > 0 && (
-  <div
-    style={{
-      marginTop: 10,
-      display: 'flex',
-      gap: 6,
-      overflowX: 'auto',
-      paddingBottom: 4,
-    }}
-  >
-    {imageItems.map((item) => (
-      <div
-        key={item.id}
-        style={{
-          width: 72,
-          height: 72,
-          flex: '0 0 auto',
-          borderRadius: 8,
-          overflow: 'hidden',
-        }}
-      >
-        <img src={item.previewSrc} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      </div>
-    ))}
-  </div>
-)}
+// - RichTextEditor 最小高度按图片数量轻度缩短
+// - scrollContainerRef + imageSectionRef + imageGridRef 精确控制自动滚动
+// - 不改现有 DnD / 删除 / 全屏查看交互
 ```
 
-- [ ] **Step 4: 如仍保留正文区宫格，自动把新图滚进可视区域**
+- [x] **Step 4: 如仍保留正文区宫格，自动把新图滚进可视区域**
 
 ```js
-// src/pages/HomePage.jsx
-const imageStripRef = useRef(null)
-
-useEffect(() => {
-  if (!imageItems.length) return
-  imageStripRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-}, [imageItems.length])
+// 新图加入时：
+// - 不再 scrollIntoView 粗暴跳到底
+// - 改为按容器高度 + 图片网格实际高度，算出目标 scrollTop
+// - 长文 + 1行图：只露 1 行
+// - 长文 + 2行图：只露约 1.5 行
 ```
 
-- [ ] **Step 5: 手工验证**
+- [x] **Step 5: 手工验证**
 
 ```text
 - 在 HomePage 选 1 张图后，不用手动下滑，首屏能立刻看到图片预览
 - 连续选 2~5 张图后，至少第一行/第一条预览始终在首屏
 - 底部浮动栏（相机 / 深入觉察 / 保存）不被图片区挡住
 - 长按调序/删除/全屏查看能力不回归
+- 长文 + 1行图：只露约 1 行图
+- 长文 + 2行图：只露约 1.5 行图
 ```
 
 ---
