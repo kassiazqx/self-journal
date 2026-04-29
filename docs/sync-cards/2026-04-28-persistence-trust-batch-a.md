@@ -1,6 +1,6 @@
-# 同步卡：Persistence Trust Batch A / Task1-5
+# 同步卡：Persistence Trust Batch A / Task1-5 收口
 
-**状态：** `Task1 Follow-up Replacement` + `Task2` + `Task3` + `Task4` + `Task5` 已完成；`Task6+` 未开始
+**状态：** `Task1 Follow-up Replacement` + `Task2` + `Task3` + `Task4` + `Task5` 已完成；原 `Task6` 已拆出，转入后续文本统一专项
 **日期：** 2026-04-29
 **commit：** 待本次提交生成  
 **分支：** `dev`
@@ -26,6 +26,7 @@
 - 未保存图片跨“刷新 / 关闭后重开”恢复
 - `Task4` 手测矩阵之外的新功能扩展
 - 语音能力重设计（讯飞 / 上传录音 / 上传视频）
+- 原 `Task6` 的 `RecordDetail` 最小分段小修；改由后续更大文本专项统一处理
 
 ---
 
@@ -136,6 +137,14 @@
   - 长文 + 1行图：只露约 1 行
   - 长文 + 2行图：只露约 1.5 行
 - 这样避免“上面一条小图、下面又一套大图”的双重心智模型
+
+### 12. 原 `Task6` 不再单独继续
+
+- 用户确认：不再接受“只修 `RecordDetail` 原文分段”的局部方案
+- 后续方向升级为：
+  - 输入页 / 编辑页 / 详情页 / Thread / ReviewLetter 使用统一文本段落规则
+  - 标注 / 富文本与文字一体化，而不是长期继续依赖“只读页按 offset 套样式”的终局模型
+- 因此本同步卡到 `Task5` 收口；原 `Task6` 仅保留为后续专项背景，不再作为本批待办
 
 ---
 
@@ -248,6 +257,12 @@ Task5 结果：
 - `Step3-4` 已落地：新增图片后轻度缩空白 + 精确滚动到正文末尾接图片
 - `Step5` 用户手测通过，1行/2行图片露出量已按最终要求收口
 
+## 原 Task6 收口结果
+
+- 已确认不按旧 plan 执行
+- 原因：需求已升级，不再是 `RecordDetail` 单点排版修正，而是全链路文本规则与文本模型专项
+- 后续动作：新开 brainstorm + 新 spec / 新 plan，单独承接
+
 ---
 
 ## 残余风险
@@ -260,7 +275,8 @@ Task5 结果：
 
 ## 给下个 session 的一句话
 
-如果继续做 `Persistence Trust Batch A`：
+`Persistence Trust Batch A` 到 `Task5` 为止已经收口。
 
-- 代码层下一步从 `Task6` 开始
+- 不要继续执行旧 `Task6`
+- 下一步直接进入“文本段落规则统一 + 标注/富文本一体化”新 brainstorm / 新 plan
 - 不要回头把未保存图片跨重开恢复塞回 Task2

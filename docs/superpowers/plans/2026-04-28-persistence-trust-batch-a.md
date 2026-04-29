@@ -19,13 +19,13 @@
   - `RichTextEditor` 支持命令式外部内容同步，收口草稿恢复 / 语音转写 / @ 替换同类问题
   - `深入觉察` 真正支持“保存后直接起首轮 AI”，且保存语义与 `✓` 一致（people / images / draft cleanup 不再漏）
   - `HomePage` 上传图片后首屏可见，不再必须手动下滑到第二屏
-  - `RecordDetail` 原文最小分段渲染，先解决“整坨文字”问题，不等 UI 大改
 - 不做：
   - UI 大改、全局排版系统、段间距系统
   - 云端草稿、多设备草稿同步
   - Web 阶段为 `letter_prefs` 做本地/云端双源协调
   - 未保存图片跨“刷新 / 关闭后重开”的本地恢复
   - 图片最终迁移到 Capacitor 本地目录（那是 P4 / APK 阶段）
+  - 文本段落规则全链路统一 / 标注与富文本一体化（2026-04-29 确认转入后续独立专项）
 
 ## Assumptions
 
@@ -53,7 +53,7 @@
 - 但本批不是“全部都会推翻”：
   - Task 1 的“设置规范化 / provider 分槽位 / 回顾信偏好主链收口”在 APK 仍然成立，只是底层存储适配器可能从 Web Storage 改成原生安全存储。
   - Task 3 的 `startInAi` 导航语义在 APK 仍然成立，属于业务行为，不依赖 Web。
-  - Task 5 / Task 6 属于纯 UI/渲染修正，APK 仍然直接受益，不属于过渡债。
+  - Task 5 的图片可见性修正，APK 仍然直接受益，不属于过渡债。
 - 本轮已决定砍掉“未保存图片跨重开恢复”，原因：
   - 它最像 Web 过渡层，APK 阶段会改成本地文件存储，届时仍要重写
   - 牵连 `HomePage` 图片选择 / 删除 / 排序 / 清理链，当前收益不值这轮复杂度
@@ -893,6 +893,8 @@ Expected: Vite dev server starts without errors
 
 ### Task 6: RecordDetail 原文最小分段渲染
 
+> **2026-04-29 close-out override：** 本节原计划只修 `RecordDetail` 原文最小分段，已不再执行。用户已确认把需求升级为“文本段落规则全链路统一 + 标注/富文本与文字一体化”的后续独立专项；因此 `Persistence Trust Batch A` 到 `Task5` 收口，`Task6` 仅保留作历史记录与需求来源。
+
 **Files:**
 - Modify: `src/components/AnnotatedText.jsx`
 - Modify: `src/components/RecordDetail.jsx`
@@ -979,5 +981,5 @@ function groupSegmentsIntoParagraphs(segments) {
 - 草稿恢复不只恢复横幅，正文 / 模板 / 时间 / dismissedPeople 都能回来
 - `深入觉察` 与实际行为一致，真正直接进 AI
 - `HomePage` 选图后首屏即可见预览
-- `RecordDetail` 原文完成最小分段渲染
+- `Task6` 原始“RecordDetail 最小分段渲染”已确认拆出，不再作为本批 done gate
 - 自动验证通过，手工矩阵完成，文档同步
