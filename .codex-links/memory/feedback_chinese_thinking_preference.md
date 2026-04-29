@@ -1,0 +1,1 @@
+/Users/kassia/.claude/projects/-Users-kassia-Desktop-AI----noteapp-self-journal/memory/feedback_chinese_thinking_preference.md

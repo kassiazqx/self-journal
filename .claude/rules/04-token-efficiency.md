@@ -8,26 +8,26 @@
 
 ```bash
 # Extract types/interfaces/enums from a file (instead of reading the whole file)
-node scripts/stats/vibe-code.js types <file>
+node scripts/stats/vibe-code.cjs types <file>
 
 # Show directory structure (instead of reading each folder individually)
-node scripts/stats/vibe-code.js tree [dir]
+node scripts/stats/vibe-code.cjs tree [dir]
 
 # Show imports of a file (for dependency checks)
-node scripts/stats/vibe-code.js imports <file>
+node scripts/stats/vibe-code.cjs imports <file>
 
 # Extract function signatures (instead of reading the whole file)
-node scripts/stats/vibe-code.js functions <file>
+node scripts/stats/vibe-code.cjs functions <file>
 ```
 
 ### When to Use
 
 | Situation | Instead of | Use |
 |-----------|------------|-----|
-| You want to know what types a file has | `Read` the whole file | `vibe-code.js types <file>` |
-| You need an overview of a folder | Multiple `Read`/`ls` calls | `vibe-code.js tree <dir>` |
-| You want to check a file's dependencies | `Read` and search manually | `vibe-code.js imports <file>` |
-| You want to understand a file's API | `Read` the whole file | `vibe-code.js functions <file>` |
+| You want to know what types a file has | `Read` the whole file | `vibe-code.cjs types <file>` |
+| You need an overview of a folder | Multiple `Read`/`ls` calls | `vibe-code.cjs tree <dir>` |
+| You want to check a file's dependencies | `Read` and search manually | `vibe-code.cjs imports <file>` |
+| You want to understand a file's API | `Read` the whole file | `vibe-code.cjs functions <file>` |
 
 ### NEVER
 
@@ -40,6 +40,6 @@ node scripts/stats/vibe-code.js functions <file>
 After usage, savings are automatically tracked in `.vibe-stats.json`.
 Check progress:
 ```bash
-node scripts/stats/vibe-stats.js summary    # One-liner: total savings
-node scripts/stats/vibe-stats.js report     # Detailed report
+node scripts/stats/vibe-stats.cjs summary    # One-liner: total savings
+node scripts/stats/vibe-stats.cjs report     # Detailed report
 ```

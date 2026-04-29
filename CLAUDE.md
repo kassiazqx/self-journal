@@ -13,7 +13,7 @@
 - 数据库/Auth：Supabase（Tokyo 地区）
 - AI：Google Gemini（gemini-2.5-flash-lite）/ Deepseek（可切换）
 - 部署：Vercel（推送 main 分支自动部署）
-- 语音：Web Speech API（桌面 Chrome 可用，安卓暂不可用）
+- 语音：浏览器实时语音已移除；未来若做，走上传录音/视频 + 转文字链路
 - 未来：Capacitor 打包 Android APK（功能稳定后）
 
 ## Supabase 信息
@@ -30,7 +30,7 @@
 1. 邮箱注册/登录（Supabase Auth）
 2. 5种模板快捷按钮（感恩/学习/情绪/行动/随手记）+ 引导文字
 3. 文字输入框（自适应高度）
-4. 语音输入（桌面 Chrome 正常；安卓暂不可用）
+4. 浏览器语音输入（旧能力，2026-04-28 已移除）
 5. 保存到 Supabase
 6. 记录列表页（按日期分组，可删除）
 7. PWA + Vercel 部署
@@ -85,7 +85,7 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 - [ ] `lib/` 内部按职责建子文件夹（data/ / ai/ / utils/），改完所有 import 路径——等项目稳定或下次大重构时顺手做
 - [ ] 静默提取失败时给用户简短反馈
 - [ ] Cloudflare Pages 部署（国内访问无需 VPN）
-- [ ] 安卓语音输入（接入讯飞 API）
+- [ ] 语音/视频转写能力（上传录音/视频 + 讯飞等转写）
 - [ ] 设置页加"清空记忆"按钮
 - [ ] Capacitor APK 打包
 
@@ -232,7 +232,7 @@ git commit      ← 才可以提交
 - [ ] 新建 `docs/UI_GUIDELINES.md`（主色/圆角/字号/间距设计规范，UI 设计完成后再做）
 - [ ] 静默提取失败时给用户简短反馈
 - [ ] Cloudflare Pages 部署（国内访问无需 VPN）
-- [ ] 安卓语音输入（接入讯飞 API）
+- [ ] 语音/视频转写能力（上传录音/视频 + 讯飞等转写）
 - [ ] 设置页加"清空记忆"按钮
 - [ ] Capacitor APK 打包
 

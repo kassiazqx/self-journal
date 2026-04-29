@@ -1,0 +1,1 @@
+/Users/kassia/Desktop/AI/个人/noteapp/self-journal/docs/coding-lessons.md

@@ -1,0 +1,1 @@
+/Users/kassia/.claude/projects/-Users-kassia-Desktop-AI----noteapp-self-journal/memory/feedback_arch_verification_rule.md

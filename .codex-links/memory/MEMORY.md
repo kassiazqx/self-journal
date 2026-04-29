@@ -1,0 +1,1 @@
+/Users/kassia/.claude/projects/-Users-kassia-Desktop-AI----noteapp-self-journal/memory/MEMORY.md

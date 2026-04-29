@@ -1,6 +1,6 @@
 # 同步卡：脉络详情页 AI 分析（碎片 + 此刻这里）
 
-> **状态：✅ 已实现（commit 3879c6a，2026-04-21，待用户验收）**
+> **状态：✅ 已实现并通过用户验收（commit 3879c6a，2026-04-21；2026-04-28 补记验收通过）**
 > Spec：`docs/superpowers/specs/2026-04-21-thread-detail-analysis-design.md`
 > Plan：`docs/superpowers/plans/2026-04-21-thread-detail-analysis.md`
 

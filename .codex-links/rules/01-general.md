@@ -1,0 +1,1 @@
+/Users/kassia/Desktop/AI/个人/noteapp/self-journal/.claude/rules/01-general.md
