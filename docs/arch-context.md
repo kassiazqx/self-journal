@@ -1252,6 +1252,7 @@ async function loadFull() {
 - 浏览器实时语音入口已删除；未来若做讯飞 / 上传录音 / 上传视频 / 再转文字，需新建媒体/转写接缝
 - localStorage 未来需替换为 Capacitor Preferences
 - 接缝已预留：db.js（存储层）
+- APK 后续待办、Auth 方案 A/B/C、local-first 收口提示，统一记在 `docs/sync-cards/2026-04-27-apk-packaging-todo.md`
 
 ### 5.2 Threads / 脉络系统（Phase 2 第二批）
 

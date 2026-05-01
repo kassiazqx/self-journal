@@ -109,7 +109,7 @@
 | `src/lib/supabase.js` | `import.meta.env` 改 Node-safe 读取，方便纯单测 |
 | `docs/supabase-manual-sql.md` | trigger 修复 / 唯一约束 / 退役旧 seeder 文档 |
 | `docs/arch-context.md` | §2 / §3 / §6 更新为新真实架构 |
-| `docs/sync-cards/2026-04-27-entry-delete-asset-consistency-todo.md` | 已追加 APK / local-first 收口方向 |
+| `docs/sync-cards/2026-04-27-apk-packaging-todo.md` | 已追加 APK / local-first 收口方向 |
 
 ---
 
