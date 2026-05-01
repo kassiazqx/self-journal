@@ -157,7 +157,7 @@ AI 跨对话记忆 → Supabase user_memory 表（多端同步）
 ```
 canonical（规范名称）+ aliases[]（识别别名）+ group_name（分组，nullable）存 user_contacts 表。
 新用户首次登录时，从代码硬编码的 DEFAULT_CONTACTS 自动写入默认联系人（22 条），含 group_name 预填（家人/伴侣/朋友/同事）。
-已有用户迁移：首次打开 app 时检测若 user_contacts 为空则自动写入默认数据。
+初始化由 App 启动期 bootstrap 统一负责；legacy user 不因版本更新或空列表被自动补回默认联系人。
 
 detectPeople() 改用用户自己的联系人库（进页面时一次性加载到内存），不再使用硬编码 PEOPLE_KEYWORD_MAP。
 @mention 搜索走内存过滤（user_contacts 通常 < 50 条），不重复查 DB。
@@ -175,7 +175,7 @@ RecordDetail 人物 sheet 按 group_name 分组展示，null 归入「其他」�
 ### 2.9 core_needs 词库约束
 
 ```
-词库存 user_options（field_name='core_need'），默认 20 个词条，新用户自动 seed。
+词库存 user_options（field_name='core_need'），默认 20 个词条，由启动期 bootstrap 对 brand-new user 写入一次。
 AI 提取 core_needs 时，system prompt 传入用户词库，AI 从中选词，不自由生成。
 未匹配的词写入 pending_core_needs 表（独立表，含 entry_id 外键 + ON DELETE CASCADE），持久至用户处理。
 改措辞通过 replace_core_need RPC 级联替换历史数据（同 replace_category_tag 模式）。
@@ -212,6 +212,25 @@ RecordDetail：左上角时间戳可点击，弹 DatetimePicker sheet，确认�
 - 不要把 `inferDatetime` 内联在 `HomePage.jsx`（纯函数属 lib/ 层）
 - 不要在 `DatetimePicker` 里直接调 DB（只管 UI 状态，写回由调用方负责）
 - 不要在编辑模式（`editEntry`）下显示日期 pill（已有记录走 RecordDetail 修改）
+
+### 2.x 默认用户数据初始化（代码真源）
+
+默认 `content_category / core_need / user_contacts` 只在代码里维护一份真源：
+- `src/lib/defaultUserData.js`
+
+初始化规则：
+- brand-new user：首次启动 bootstrap 写入默认数据一次
+- legacy user：只写 seed marker，不补默认值
+- 用户后续删除或改名后，版本更新不得自动补回
+
+过渡期规则：
+- Web 阶段 seed marker 暂存 `storage.js`，只作过渡，不是长期真相源
+- 若旧 DB 注册逻辑只先写了默认 category，App bootstrap 仍可为 zero-entry user 补齐缺失 `core_need / user_contacts`
+- bootstrap 写入必须依赖 DB 唯一约束 + duplicate-safe 行为，抗双端并发首登
+
+禁止：
+- 不再用 “count === 0” 判断新用户并在页面/提取链路里自动 reseed
+- 不再在 `HomePage` / `RecordDetail` / `entryExtractionService` 里偷偷插默认数据
 
 ### 2.11 搜索筛选增强（FilterBar）
 
@@ -300,12 +319,15 @@ src/
 │   │                           2026-04-28 follow-up：先做 answered-turn normalization，只保留成对 prompt+answer；草稿 prompt 不进入提取/记忆/回顾信上下文
 │   ├── entryExtractionService.js 单条 AI 提取服务（RecordDetail「AI 分析」唯一入口）
 │   │                           动态读取 category/core_need 词库；提取输入统一来自 buildEntryFullText()
+│   │                           ⚠️ 不再在提取链路里自动补默认 category
 │   ├── conversationMemoryService.js 手动记忆更新服务（Settings 页触发）
 │   │                           按 nodeType 精确映射对话文本，不再把本地问题误当 AI 回复
 │   │                           Settings 手动更新记忆：回看最近 10 条 conversations，挑最新一条含有效 answered turn 的记录；查询失败走失败态，不伪装成“没有数据”
 │   ├── contactsService.js      联系人 CRUD + detectPeopleFromText()（内存匹配，不查DB）
+│   │                           默认联系人常量已迁出，服务层不再负责 seed
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── coreNeedsService.js     core_needs 词库 CRUD + pending_core_needs 管理
+│   │                           默认 core_needs 常量已迁出，服务层不再负责 seed
 │   │                           ⚠️ 所有 insert 必须显式传 user_id（见4.30）
 │   ├── imageStorage.js         图片 Storage 抽象层（新增，图片功能）
 │   │                           uploadImage / deleteImage / getImageUrl / compressImage
@@ -316,6 +338,9 @@ src/
 │   ├── storage.js              localStorage 工具
 │   │                           AI settings v2：`ai_settings_v2`，provider 分槽位持久化（gemini/deepseek）
 │   │                           兼容旧 `ai_settings` 单 key 结构；读取时 normalize，写入后删除旧 key
+│   │                           默认用户数据 seed marker：`default_user_data_seed_<userId>`
+│   ├── defaultUserData.js      默认 `content_category / core_need / user_contacts` 单一代码真源
+│   ├── defaultUserBootstrap.js 默认用户数据启动期 bootstrap（brand-new seed / legacy mark / 过渡补齐）
 │   ├── letterPrefsStorage.js   回顾信偏好本地单一真源（`letter_prefs_<userId>`）
 │   │                           normalize/save/get；旧 `days` 统一降级为 `count`
 │   ├── draftStorage.js         草稿正文/模板/时间/dismissedPeople 本地真源（`journal_draft_v2`）
@@ -1351,6 +1376,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-18 · 代码session · 死代码清理：删除 contactsService.js 孤立注释行；删除 memory.js 三个未使用快捷方法（setRollingSummary/setUserProfile/clearMemory）；去掉 TEMPLATE_BY_ID export（内部用）；去掉 mapToBase export（内部用）；CLAUDE.md 删除已完成待处理项；⚠️ getAwarenessStartTier 未删（awarenessFlowState.js 有调用，sync card 分析有误）；同步卡：docs/sync-cards/2026-04-18-dead-code-cleanup-sync.md
 - 2026-04-21 · 代码session · 五项 bug 修复 + days 触发死代码清理 + UI 调整：① detectPeopleFromText 改为长度优先匹配（对 pairs 按 kw.length 降序排，用 usedRanges 防子词覆盖）；② dismissedPeople 持久化进草稿（Set→Array→Set，saveDraft/loadDraft/handleResumeDraft 均已处理）；③ getUserLetterPrefs 改为 export，SettingsPage useEffect 挂载时正确加载已存偏好（原为仅写不读）；④ 触发数量用独立 countInput string state，onBlur 才 clamp 保存（原 onChange 立即 clamp 导致中途数字被强制）；⑤ EditEntryPage 顶栏改为「时间pill | 保存」无取消；⑥ HomePage 编辑模式顶栏显示时间 pill（可点击弹 picker，selectedDatetime 初始化自 editEntry.created_at，保存写回 DB）；⑦ getUserLetterPrefs 三点 normalize（days→count 兼容旧存储，删 day_interval:7 默认值），checkAndGenerateLetter 删 daysSinceLast + 简化 shouldGenerate；⑧ AwarenessFlow「保存并退出」→「保存」；同步卡：docs/sync-cards/2026-04-21-bugfixes-days-ui-sync.md
 - 2026-04-28 · 代码session · Persistence Trust Batch A / Task1 follow-up replacement：保留 `ai_settings_v2` provider 分槽位持久化；新增 `letterPrefsStorage.js` + `letterPrefsStorage.test.js` 作为 `letter_prefs` 本地单一真源；SettingsPage 回顾信偏好改为只读写本地模块；reviewLetterService 改为只从本地真源读偏好，不再把 `letter_prefs` 写入 `user_profile`，也不再依赖 `updateMemory`；同步卡：docs/sync-cards/2026-04-28-persistence-trust-batch-a.md
+- 2026-05-01 · 代码session · 默认用户数据收口：新增 `defaultUserData.js` 作为 `content_category / core_need / user_contacts` 唯一代码真源；新增 `defaultUserBootstrap.js` + `storage.js` seed marker，启动期只对 brand-new user seed，一次写入后由 marker 锁定；legacy user 仅标记不补默认；删除 `HomePage` / `RecordDetail` / `entryExtractionService` opportunistic reseed；`SettingsPage` 人物管理改共享 bootstrap 状态局部提示；并补 `user_options/user_contacts` 并发唯一约束 SQL 文档
 - 2026-04-21 · 代码session · code review 修复：① RecordsPage EntryCard 情绪词渲染补去重（原只修了 RecordDetail 漏掉此处）；② prompts.js emotions/emotion_display 加「不得重复」约束；③ handleBatchDelete Storage 失败不再 .catch 吞错，改为 try/catch 统一处理，Storage 失败阻止 DB 删除避免孤儿文件；④ reviewLetterService 裸 JSON 兜底正则改贪婪匹配正确捕获嵌套 JSON；同步卡：docs/sync-cards/2026-04-21-code-review-fixes.md
 - 2026-04-21 · 代码session · 回顾信生成三项修复：① generateReviewLetter 删除 .gt(created_at)/.lte(created_at) 时间过滤，改为纯靠 covered_by_letter_id IS NULL；② checkAndGenerateLetter 计数查询删时间过滤，传参统一 null；③ insights JSON 提取正则加容错（兼容 ~~~json 等变体），letterContent 二次清理；④ RecordsPage checkAndGenerateLetter 改为 await 保证新信当次可见；DB 变更：threads 表加 trigger_source text 列；ReviewLetterDetail 相关 threads 占位待产品 brainstorm；同步卡：docs/sync-cards/2026-04-21-review-letter-fixes2.md
 - 2026-04-21 · 代码session · 批量多选删除 + 返回按钮统一：RecordsPage 新增 isSelecting/selectedIds(Set)/showBatchDeleteConfirm state；EntryCard 支持 isSelecting/isSelected/onToggle props + 圆形 checkbox + 选中高亮 outline；长按 600ms 进入多选（首条自动选中）；header 多选态「取消/已选N条/删除」；日期组全选当天两态按钮；handleBatchDelete 先并发清理 Storage 再批量 DB 删除（deleteEntries .in()），DB 失败时保持确认框打开不重置状态；多选时回顾信卡片隐藏；journalService.js 新增 deleteEntries；6 个文件返回按钮统一为 ‹（U+2039，fontSize 20）；EditEntryPage「取消」保留；同步卡：docs/sync-cards/2026-04-21-batch-delete-nav-done.md；loadContacts SELECT 补 group_name（根因修复"保存未生效"）；SettingsPage 联系人管理新增分组输入；RecordDetail 人物 sheet 按分组展示；同步卡：docs/sync-cards/2026-04-18-people-coreneeds-sync.md

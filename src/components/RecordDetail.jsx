@@ -292,21 +292,6 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
         .eq('field_name', 'content_category')
         .order('sort_order', { ascending: true })
 
-      // A1：新用户首次打开，静默种入 11 个默认标签
-      if ((data ?? []).length === 0) {
-        const defaults = ['工作','家庭','恋爱与亲密关系','个人成长','学习','财务','运动健康','社交','玩乐休闲','灵性修行','日常生活']
-        const rows = defaults.map((label, i) => ({
-          user_id: user.id,
-          field_name: 'content_category',
-          option_value: label,
-          sort_order: i,
-        }))
-        const { data: inserted } = await db.from('user_options').insert(rows).select('id, option_value, sort_order')
-        setCategoryOptions((inserted ?? []).map(r => r.option_value))
-        return
-      }
-
-      // B1：孤儿标签合并（entry 上有、但 user_options 里已删除的标签）
       const userOptionLabels = (data ?? []).map(r => r.option_value)
       const orphans = (entry.category_tags ?? []).filter(t => !userOptionLabels.includes(t))
       setCategoryOptions([...userOptionLabels, ...orphans])

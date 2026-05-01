@@ -12,7 +12,7 @@
  *   - SQLite：替换 from/rpc 的实现，接口不变，调用方零修改
  *   - 离线缓存：在这里加中间层（读缓存 → 写队列 → 同步）
  */
-import { supabase } from './supabase'
+import { supabase } from './supabase.js'
 
 export const db = {
   // 表操作（目前透传 Supabase，将来可换实现）

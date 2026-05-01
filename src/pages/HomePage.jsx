@@ -20,8 +20,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { TEMPLATES, DEFAULT_TEMPLATE, resolveTemplate } from '../lib/templates'
 import { createEntry, updateEntry } from '../lib/entryRepository'
 import { db } from '../lib/db'
-import { loadContacts, seedDefaultContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
-import { seedDefaultCoreNeeds } from '../lib/coreNeedsService'
+import { loadContacts, addContact, detectPeopleFromText } from '../lib/contactsService'
 import DatetimePicker from '../components/DatetimePicker'
 import { inferDatetime, formatPill } from '../lib/dateUtils'
 import { queryTodayGratitudeCount } from '../lib/entryReadQueries'
@@ -100,7 +99,15 @@ function SortableImageItem({ id, previewSrc, editingImages, onDelete, onFullscre
 }
 
 // ─── 主组件 ──────────────────────────────────────────────────────
-export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, onNotify, gratitudeRefreshTrigger = 0 }) {
+export default function HomePage({
+  onDone,
+  editEntry,
+  onCancel,
+  onOpenLetter,
+  onNotify,
+  gratitudeRefreshTrigger = 0,
+  defaultUserDataStatus = 'idle',
+}) {
   const { user } = useAuth()
   const isEditMode = Boolean(editEntry)
 
@@ -290,14 +297,13 @@ export default function HomePage({ onDone, editEntry, onCancel, onOpenLetter, on
   // ── 加载联系人（seed 一次，然后读取）──────────────────────────
   useEffect(() => {
     if (!user) return
+    if (defaultUserDataStatus !== 'ready') return
     async function init() {
-      await seedDefaultContacts()
-      await seedDefaultCoreNeeds()
       const list = await loadContacts()
       setContacts(list)
     }
     init().catch(console.error)
-  }, [user])
+  }, [user, defaultUserDataStatus])
 
   // ── 自动保存草稿（新建模式，每 3 秒）──────────────────────────
   useEffect(() => {

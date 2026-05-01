@@ -1,12 +1,5 @@
 import { db } from './db'
 
-const DEFAULT_CORE_NEEDS = [
-  '被理解', '被看见', '被接纳', '被爱', '被需要',
-  '被认可', '被信任', '安全感', '掌控感', '归属感',
-  '独立自主', '公平', '边界被尊重', '被支持', '休息',
-  '成就感', '意义感', '自我表达', '连接感', '被倾听',
-]
-
 // 读取用户 core_needs 词库
 export async function loadCoreNeeds() {
   const { data, error } = await db
@@ -16,28 +9,6 @@ export async function loadCoreNeeds() {
     .order('sort_order', { ascending: true })
   if (error) throw error
   return data
-}
-
-// 新用户 seed 默认词库（若 field_name='core_need' 记录为空）
-export async function seedDefaultCoreNeeds() {
-  const { data: { user } } = await db.auth.getUser()
-  if (!user) return
-
-  const { count, error: countErr } = await db
-    .from('user_options')
-    .select('id', { count: 'exact', head: true })
-    .eq('field_name', 'core_need')
-  if (countErr) throw countErr
-  if (count > 0) return
-
-  const rows = DEFAULT_CORE_NEEDS.map((v, i) => ({
-    user_id: user.id,
-    field_name: 'core_need',
-    option_value: v,
-    sort_order: i,
-  }))
-  const { error } = await db.from('user_options').insert(rows)
-  if (error) throw error
 }
 
 // 新增词条

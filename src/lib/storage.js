@@ -119,6 +119,24 @@ export function saveAISettingsToStorage(settings) {
   _remove(LEGACY_AI_SETTINGS_KEY)
 }
 
+const DEFAULT_USER_DATA_SEED_PREFIX = 'default_user_data_seed'
+
+function getDefaultUserDataSeedKey(scopeId) {
+  return `${DEFAULT_USER_DATA_SEED_PREFIX}_${scopeId}`
+}
+
+export function getDefaultUserDataSeedVersion(scopeId) {
+  const parsed = safeParse(_get(getDefaultUserDataSeedKey(scopeId)))
+  return Number.isInteger(parsed?.version) ? parsed.version : 0
+}
+
+export function saveDefaultUserDataSeedVersion(scopeId, version) {
+  _set(getDefaultUserDataSeedKey(scopeId), JSON.stringify({
+    version,
+    savedAt: new Date().toISOString(),
+  }))
+}
+
 // ─── 底部导航 Tab ──────────────────────────────────────────────
 
 const ACTIVE_TAB_KEY = 'activeTab'

@@ -20,6 +20,7 @@ import EditEntryPage from '../pages/EditEntryPage'
 import { useEntry } from '../hooks/useEntry'
 import { entryActions } from '../store/entrySlice'
 import EntryStatusFallback from './EntryStatusFallback'
+import { ensureDefaultUserData } from '../lib/defaultUserBootstrap'
 
 const NAV_ITEMS = [
   { id: 'write',    label: '写',   icon: null },
@@ -37,10 +38,10 @@ export default function MainLayout() {
     dispatch(entryActions.clearAll())
   }, [cacheScopeKey, dispatch])
 
-  return <MainLayoutContent />
+  return <MainLayoutContent user={user} />
 }
 
-function MainLayoutContent() {
+function MainLayoutContent({ user }) {
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
@@ -51,7 +52,28 @@ function MainLayoutContent() {
   const [settingsResetKey, setSettingsResetKey] = useState(0)
   const [toast, setToast] = useState(null)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
+  const [defaultUserDataStatus, setDefaultUserDataStatus] = useState('idle')
   const toastTimerRef = useRef(null)
+  const bootstrappedUserRef = useRef(null)
+
+  useEffect(() => {
+    if (!user?.id) {
+      bootstrappedUserRef.current = null
+      setDefaultUserDataStatus('idle')
+      return
+    }
+    if (bootstrappedUserRef.current === user.id) return
+
+    bootstrappedUserRef.current = user.id
+    setDefaultUserDataStatus('loading')
+
+    ensureDefaultUserData(user.id)
+      .then(() => setDefaultUserDataStatus('ready'))
+      .catch((error) => {
+        console.error('[defaultUserData] bootstrap failed:', error)
+        setDefaultUserDataStatus('error')
+      })
+  }, [user?.id])
 
   function notify(msg) {
     clearTimeout(toastTimerRef.current)
@@ -330,6 +352,7 @@ function MainLayoutContent() {
           onCancel={() => { reset(); goTab('records') }}
           onOpenLetter={letter => push({ type: 'letter', letter })}
           onNotify={notify}
+          defaultUserDataStatus={defaultUserDataStatus}
         />
       )
     }
@@ -386,6 +409,7 @@ function MainLayoutContent() {
             onDone={handleHomeSaved}
             onOpenLetter={letter => push({ type: 'letter', letter })}
             onNotify={notify}
+            defaultUserDataStatus={defaultUserDataStatus}
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -407,7 +431,7 @@ function MainLayoutContent() {
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'mine' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <SettingsPage key={settingsResetKey} />
+          <SettingsPage key={settingsResetKey} defaultUserDataStatus={defaultUserDataStatus} />
         </div>
 
         {/* 全屏覆盖页 */}

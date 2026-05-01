@@ -2,8 +2,6 @@ import { callAI } from './aiClient'
 import { db } from './db'
 import { getExtractionPrompt } from './prompts'
 
-const DEFAULT_CATEGORY_TAGS = ['工作', '家庭', '恋爱与亲密关系', '个人成长', '学习', '财务', '运动健康', '社交', '玩乐休闲', '灵性修行', '日常生活']
-
 async function getUserCategoryTags(userId) {
   const { data } = await db.from('user_options')
     .select('option_value, sort_order')
@@ -11,18 +9,7 @@ async function getUserCategoryTags(userId) {
     .eq('field_name', 'content_category')
     .order('sort_order', { ascending: true })
 
-  if ((data ?? []).length > 0) {
-    return data.map((row) => row.option_value)
-  }
-
-  const rows = DEFAULT_CATEGORY_TAGS.map((label, index) => ({
-    user_id: userId,
-    field_name: 'content_category',
-    option_value: label,
-    sort_order: index,
-  }))
-  await db.from('user_options').insert(rows)
-  return DEFAULT_CATEGORY_TAGS
+  return (data ?? []).map((row) => row.option_value)
 }
 
 async function getUserCoreNeeds(userId) {

@@ -32,7 +32,7 @@ const PROVIDERS = [
   },
 ]
 
-export default function SettingsPage() {
+export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
   const { user, signOut } = useAuth()
   const [settings, setSettings] = useState(() => getAISettings())
   const [testing, setTesting] = useState(false)
@@ -97,6 +97,12 @@ export default function SettingsPage() {
     }, 0)
     return () => clearTimeout(timer)
   }, [user, loadTagOptions])
+
+  useEffect(() => {
+    if (!showPeoplePage) return
+    if (defaultUserDataStatus !== 'ready') return
+    loadContactsData().catch(console.error)
+  }, [showPeoplePage, defaultUserDataStatus])
 
   async function loadContactsData() {
     const data = await loadContacts()
@@ -752,10 +758,12 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">人物管理</p>
-              <p className="text-xs text-gray-400 mt-0.5">管理联系人和识别关键词</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {defaultUserDataStatus === 'loading' ? '正在准备联系人词库...' : '管理联系人和识别关键词'}
+              </p>
             </div>
             <button
-              onClick={() => { loadContactsData(); setShowPeoplePage(true) }}
+              onClick={() => { setShowPeoplePage(true) }}
               className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
             >
               进入 ›
@@ -913,6 +921,12 @@ export default function SettingsPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            {defaultUserDataStatus === 'loading' && contacts.length === 0 ? (
+              <div style={{ padding: '8px 2px', fontSize: 12, color: '#9ca3af' }}>
+                正在准备联系人词库...
+              </div>
+            ) : (
+              <>
             <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
               <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>＋ 新增人物</div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -1023,7 +1037,8 @@ export default function SettingsPage() {
                 )}
               </div>
             ))}
-
+              </>
+            )}
           </div>
         </div>
       )}
