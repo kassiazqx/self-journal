@@ -14,6 +14,8 @@ import {
   loadCoreNeeds, addCoreNeed, updateCoreNeed, deleteCoreNeed,
 } from '../lib/coreNeedsService'
 import { exportDataJson, fetchImages, buildZip } from '../lib/exportService'
+import LexicalJsonPrototype from '../components/prototypes/LexicalJsonPrototype'
+import TipTapJsonPrototype from '../components/prototypes/TipTapJsonPrototype'
 
 const PROVIDERS = [
   {
@@ -70,6 +72,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
   const [contactAliasesDraft, setContactAliasesDraft]   = useState('')
   const [contactGroupDraft, setContactGroupDraft]       = useState('')
   const [newContactCanonical, setNewContactCanonical]   = useState('')
+  const [showTextPrototypeLab, setShowTextPrototypeLab] = useState(false)
 
   // core_needs 词库子页
   const [showNeedsPage, setShowNeedsPage]     = useState(false)
@@ -99,10 +102,10 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
   }, [user, loadTagOptions])
 
   useEffect(() => {
-    if (!showPeoplePage) return
+    if (!showPeoplePage && !showTextPrototypeLab) return
     if (defaultUserDataStatus !== 'ready') return
     loadContactsData().catch(console.error)
-  }, [showPeoplePage, defaultUserDataStatus])
+  }, [showPeoplePage, showTextPrototypeLab, defaultUserDataStatus])
 
   async function loadContactsData() {
     const data = await loadContacts()
@@ -785,6 +788,45 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
               进入 ›
             </button>
           </div>
+        </div>
+
+        {/* 文本原型实验 */}
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-gray-600">文本原型实验</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                正式写作链路不受影响。A = Lexical JSON，B = TipTap JSON，二者都只存本地。
+              </p>
+            </div>
+            <button
+              onClick={() => setShowTextPrototypeLab(prev => !prev)}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {showTextPrototypeLab ? '收起 ›' : '展开 ›'}
+            </button>
+          </div>
+
+          {showTextPrototypeLab && (
+            <div className="mt-4 space-y-6">
+              <div className="rounded-[28px] border border-[#ede9e2] bg-[#f8f6f1] p-4">
+                <div className="mb-3 text-xs leading-6 text-gray-500">
+                  观察重点：中文输入顺滑度、只改样式时识别是否稳定、JSON 回填后段落/空行是否还在、以及手机端操作手感。
+                </div>
+                <LexicalJsonPrototype
+                  contacts={contacts}
+                  contactsStatus={defaultUserDataStatus === 'loading' ? 'loading' : 'ready'}
+                />
+              </div>
+
+              <div className="rounded-[28px] border border-[#ede9e2] bg-[#f8f6f1] p-4">
+                <TipTapJsonPrototype
+                  contacts={contacts}
+                  contactsStatus={defaultUserDataStatus === 'loading' ? 'loading' : 'ready'}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 分割线 */}
