@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { getEmailRedirectTo } from '../lib/authRedirect'
 
 const AuthContext = createContext({})
 
@@ -27,7 +28,12 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signUp = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const emailRedirectTo = getEmailRedirectTo()
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: emailRedirectTo ? { emailRedirectTo } : undefined,
+    })
     return { data, error }
   }
 
