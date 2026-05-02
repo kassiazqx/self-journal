@@ -37,3 +37,8 @@ stats/report.html
 .claude/memory/user_profile.md
 .claude/settings.json
 .claude/settings.local.json
+
+# Playwright
+playwright/.auth/
+playwright-report/
+test-results/

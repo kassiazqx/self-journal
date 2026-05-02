@@ -55,11 +55,11 @@ function MainLayoutContent({ user }) {
   const [defaultUserDataStatus, setDefaultUserDataStatus] = useState('idle')
   const toastTimerRef = useRef(null)
   const bootstrappedUserRef = useRef(null)
+  const visibleDefaultUserDataStatus = user?.id ? defaultUserDataStatus : 'idle'
 
   useEffect(() => {
     if (!user?.id) {
       bootstrappedUserRef.current = null
-      setDefaultUserDataStatus('idle')
       return
     }
     if (bootstrappedUserRef.current === user.id) return
@@ -352,7 +352,7 @@ function MainLayoutContent({ user }) {
           onCancel={() => { reset(); goTab('records') }}
           onOpenLetter={letter => push({ type: 'letter', letter })}
           onNotify={notify}
-          defaultUserDataStatus={defaultUserDataStatus}
+          defaultUserDataStatus={visibleDefaultUserDataStatus}
         />
       )
     }
@@ -409,7 +409,7 @@ function MainLayoutContent({ user }) {
             onDone={handleHomeSaved}
             onOpenLetter={letter => push({ type: 'letter', letter })}
             onNotify={notify}
-            defaultUserDataStatus={defaultUserDataStatus}
+            defaultUserDataStatus={visibleDefaultUserDataStatus}
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'records' ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -431,7 +431,7 @@ function MainLayoutContent({ user }) {
           />
         </div>
         <div style={{ height: '100%', display: !currentScreen && activeTab === 'mine' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <SettingsPage key={settingsResetKey} defaultUserDataStatus={defaultUserDataStatus} />
+          <SettingsPage key={settingsResetKey} defaultUserDataStatus={visibleDefaultUserDataStatus} />
         </div>
 
         {/* 全屏覆盖页 */}

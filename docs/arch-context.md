@@ -485,6 +485,26 @@ src/
                                 含内容大类标签管理子页（增删 ✎ 重命名 + 拖动排序）
                                 含人物管理子页（canonical+aliases+group_name，RPC级联替换）
                                 含内心需求词库子页（core_needs，RPC级联替换）
+
+e2e/
+├── smoke/
+│   └── playwright-baseline.spec.ts  Playwright 基线 smoke（当前仅验证 app shell 可启动）
+└── helpers/                Stage 1 预留目录（auth/reset/AI stub 待后续任务落地）
+
+repo root/
+├── playwright.config.ts    Playwright Stage 1 基线配置
+│                           当前用 `channel: 'chrome'` 复用本机已安装 Google Chrome
+│                           webServer 启 `npm run dev -- --host 127.0.0.1 --port 4173`
+│                           暂启用 screenshot/trace，video 关闭（避免 ffmpeg 依赖）
+└── package.json scripts
+                            `test:unit` → `node --test`
+                            `test:e2e` → `playwright test`
+
+**当前测试设施边界（Stage 1 / Task 1 已落地部分）**
+- 已引入 Playwright 页面流程测试底座，但当前仅有 1 条 baseline smoke
+- 当前自动化基线复用本机 Chrome，不依赖 `playwright install chromium`
+- 真实 Supabase 测试项目 / auth state / reset fixture / AI stub 仍待后续 Task 2-3 落地
+- 测试辅助逻辑收口在 `e2e/` 和根级 `playwright.config.ts`，不写进业务运行时代码路径
 ```
 
 **已删除：**
@@ -1388,6 +1408,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-16 · 架构session · 审查全局搜索+筛选spec：三问题全部回答；新增4.25（FilterBar userId必须useAuth不能prop）/4.26（日期UTC偏差低优先级）；.overlaps()受RLS保护+显式eq双保险确认合规；整体设计无违反§2约束
 - 2026-04-16 · 产品session · 全局搜索+筛选功能设计完成：FilterBar共享组件（情绪/类型/日期三筛选器）；RecordsPage🔍入口+有筛选时隐藏回顾信；ThreadDetailPage编辑模式加情绪/类型筛选；数组字段用.overlaps()绕开§4.24限制；spec: 2026-04-16-search-filter-design.md；待架构审查3个问题（FilterBar查DB分层/overlaps RLS/UTC时区偏差）
 - 2026-04-15 · 架构session · 同步代码session偏差；补全4.24 RPC正确实现方案（search_my_entries SQL）；4.20/4.22/4.23标注已处理状态核对完毕；无新架构风险
+- 2026-05-02 · 代码session · Stage 1 / Task 1 测试底座已落地：引入 `@playwright/test`、新增 `playwright.config.ts` 与 `e2e/` 基线目录、注册 `test:unit` / `test:e2e`；当前 Playwright 基线复用本机 Chrome channel，1 条 baseline smoke 已通过；真实 Supabase / reset fixture / AI stub 待后续 Task 2-3 落地
 - 2026-04-15 · 代码session · category修复批次（RecordDetail useAuth修复/prompts动态标签/conversationService getUserCategoryTags）+ RecordsPage无限滚动分页（plan外补丁）+ ThreadDetailPage搜索框布局修正；搜索降级为2字段（array::text cast在Supabase JS触发400，新增4.24）
 - 2026-04-15 · 产品session · 实施计划写完，待代码session执行：plan: 2026-04-14-edit-entries-search-and-category-tags-fix.md（Task 0 SQL需用户先在Supabase执行；Task 1–3代码改动；Task 4验证+commit）
 - 2026-04-14 · 架构session · 审查搜索升级+category_tags修复：新增4.22（RPC函数需绑定auth.uid()，高优先级安全漏洞，SQL需改版）/4.23（ilike通配符未转义，低）；确认B1孤儿标签无XSS风险；array::text ilike兼容性通过；整体评级97分
