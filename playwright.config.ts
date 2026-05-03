@@ -9,7 +9,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,
@@ -18,7 +18,7 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: `npm run dev -- --host 127.0.0.1 --port ${port}`,
+    command: `bash -lc 'if [ -f .env.e2e.local ]; then set -a; source .env.e2e.local; set +a; fi; npm run dev -- --host 127.0.0.1 --port ${port}'`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,

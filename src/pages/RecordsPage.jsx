@@ -544,7 +544,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
             </>
           ) : (
             <>
-              <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>记录</span>
+              <span data-testid="records-page-title" style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>记录</span>
               <button
                 onClick={() => {
                   if (showSearch) {
@@ -689,7 +689,7 @@ export default function RecordsPage({ refreshTrigger, onOpenDetail, onOpenLetter
       </div>}
 
       {/* 按日期分组的时间流 */}
-      <div style={{ padding: '12px 16px' }}>
+      <div data-testid="records-entry-list" style={{ padding: '12px 16px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', color: '#ccc',
             fontSize: 14, padding: '60px 0' }}>

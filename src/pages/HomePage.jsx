@@ -861,6 +861,7 @@ export default function HomePage({
         {/* ── 输入区（相对定位容器，供 @ 浮层定位）── */}
         <div
           ref={editorContainerRef}
+          data-testid="home-editor"
           className="px-[18px] pt-[14px]"
           style={{ position: 'relative', minHeight: 0 }}
         >
@@ -1052,6 +1053,7 @@ export default function HomePage({
           <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
             <button
               onClick={handleDeepAwareness}
+              data-testid="home-start-ai-awareness"
               disabled={!content.trim() || saving}
               className="flex items-center gap-[5px] disabled:opacity-30 active:scale-95 transition-transform"
             >
@@ -1116,6 +1118,7 @@ export default function HomePage({
           {/* 右：✓ 完成按钮 */}
           <button
             onClick={handleDone}
+            data-testid="home-done-button"
             disabled={!content.trim() || saving}
             className="flex items-center justify-center rounded-full active:scale-95 transition-all disabled:opacity-30"
             style={{

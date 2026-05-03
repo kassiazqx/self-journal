@@ -449,6 +449,7 @@ export default function AwarenessFlow({
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px 0', gap: 10 }}>
         <button
+          data-testid="awareness-back-button"
           onClick={handleBack}
           style={{ background: 'none', border: 'none', color: '#bbb', cursor: 'pointer', fontSize: 13, padding: 0 }}
         >
@@ -520,6 +521,7 @@ export default function AwarenessFlow({
         </div>
 
         <textarea
+          data-testid="awareness-answer-input"
           ref={textareaRef}
           value={currentAnswer}
           onChange={e => syncAnswerDraft(e.target.value)}
@@ -559,6 +561,7 @@ export default function AwarenessFlow({
         zIndex: 40,
       }}>
         <button
+          data-testid="awareness-toggle-ai"
           onClick={handleToggleAI}
           disabled={aiLoading || transitioning}
           style={{
@@ -590,6 +593,7 @@ export default function AwarenessFlow({
         </button>
 
         <button
+          data-testid="awareness-next-button"
           onClick={handleNext}
           disabled={transitioning || aiLoading || (mode === 'ai' && !currentAnswer.trim())}
           style={{
