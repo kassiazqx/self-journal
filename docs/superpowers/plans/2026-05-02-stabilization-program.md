@@ -90,6 +90,7 @@
 - 保留现有 `build` / `lint` / `node --test`
 - 新增最小 smoke / e2e 主链测试
 - 明确测试运行方式、测试数据策略、通过标准
+- 为测试库补最小 schema migration baseline，避免后续 schema 演进持续依赖手工 dump/import
 
 **Outputs:**  
 - Stage 1 spec
@@ -97,6 +98,7 @@
 - 最小测试命令集
 - 第一批 smoke / e2e 用例清单
 - 测试护栏通过标准
+- 测试库 schema 同步基线（从当前状态起正规化）
 
 **Hard rule:**  
 无最小护栏，不进入任何高风险主链重构。

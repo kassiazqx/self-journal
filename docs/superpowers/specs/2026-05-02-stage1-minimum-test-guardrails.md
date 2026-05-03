@@ -216,6 +216,7 @@ Stage 1 推荐采用 **混合策略**，而不是“全真”或“全 mock”�
 
 - **独立 Supabase 测试项目**
 - **专用测试账号**
+- **仓库内可追踪的 schema migration 基线**
 
 Stage 1 默认要求以下流程走 **真实 Supabase 测试项目**：
 
@@ -231,8 +232,34 @@ Stage 1 默认要求以下流程走 **真实 Supabase 测试项目**：
 - 不污染正式数据
 - 可以真实验证 Auth、RLS、插入、更新、列表查询、初始化 bootstrap
 - 对“新用户首次登录”这类强依赖数据库状态的链路更可信
+- 测试库 schema 不再依赖手工 dump/import 才能同步，后续 schema 演进更不容易漂移
 
 因为用户当前有空闲免费名额，这条路线默认 **不要求额外付费**。
+
+### 1.1 Schema sync baseline：从当前状态起正规化
+
+Stage 1 额外补一层最小数据库工程护栏：
+
+- **从当前生产/主开发状态生成一份 schema migration 基线**
+- **从这份基线开始，后续测试库 schema 用仓库内 migration 同步**
+- **目标是测试库 schema 可以用一条命令重建/同步**
+
+这层护栏的职责非常克制，只解决一件事：
+
+- 不再依赖每次手工 dump/import 才能让测试库跟上当前 schema
+
+它**不负责**：
+
+- 不补齐过去每一次历史迁移
+- 不顺手建设 CI/CD pipeline
+- 不顺手接管 fixture/reset/auth-state
+- 不把当前 Stage 1 变成完整数据库基础设施重构
+
+选择“从当前状态起建立基线”，而不是“回溯全部历史”，原因是：
+
+- 当前最重要的是让测试库和当前真实 schema 稳定对齐
+- 回溯旧历史成本高、收益低、容易把 Stage 1 主线拖住
+- 从现在开始正规化，已经足够支撑后续 Stage 1 剩余任务和 Stage 2/3/6 的 schema 演进
 
 ### 2. AI 提供商：mock / stub，不打真实模型
 
@@ -277,6 +304,20 @@ Stage 1 应要求每次测试运行前，先把测试账号的数据清回基线
 - 清空该测试账号名下的业务数据
 - 清空浏览器 localStorage / session 状态
 - 重新写入测试所需最小 fixture
+
+### 5. Schema migration baseline：成功标准
+
+Stage 1 补入 migration baseline 后，额外成功标准是：
+
+- 仓库内存在 Supabase CLI 可识别的 `supabase/` 结构
+- 当前业务 schema 已固化为一份“从现在开始”的基线 migration
+- 新测试库 schema 不再依赖手工网页导入 SQL；执行者按文档运行一条命令即可同步
+- 同步后的测试库仍能跑通 Task 3 的 reset/auth-state 工具
+
+这里的“一条命令”是指：
+
+- 执行者不需要再手工导出旧库、清洗 SQL、粘贴到 SQL Editor
+- 后续 schema 变更只需追加 migration，并把测试库同步到最新状态
 
 对“新用户首次登录 bootstrap”场景，应单独准备一个“空白测试用户”基线，确保：
 

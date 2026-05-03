@@ -206,6 +206,48 @@
 
 ---
 
+### Task 3.5：建立 schema migration baseline
+
+**做什么**
+
+- 引入 Supabase CLI 所需的仓库内 `supabase/` 基线结构。
+- 以“当前真实业务 schema”为准，生成一份 **从现在开始生效** 的 baseline migration。
+- 明确 Stage 1 后续测试库 schema 的同步方式：
+  - 不再依赖手工 dump/import
+  - 统一改为文档约定的一条 Supabase CLI 命令
+- 更新相关文档，记录：
+  - 为什么不追历史迁移考古
+  - 为什么当前不扩展到 CI/CD pipeline
+  - 测试库 schema 如何同步
+- 用一个全新或已清空的测试库验证：按文档执行 schema 同步命令后，Task 3 的 reset/auth-state 仍能跑通。
+
+**产出物**
+
+- 可追踪的 baseline migration。
+- 可执行的测试库 schema 同步命令。
+- 更新后的 Stage 1 文档说明。
+
+**验证方式**
+
+- 在测试库上执行一次 schema 同步命令成功。
+- 同步后运行 `node scripts/e2e/reset-fixtures.mjs` 成功。
+- 同步后运行 `node scripts/e2e/create-auth-state.mjs` 成功。
+
+**如何手工验证这个 Task 对了**
+
+- 按文档从空白测试库执行一次 schema 同步，不再需要手工打开 SQL Editor 粘贴导入。
+- 同步完成后再跑 reset 和 auth-state，确认测试基础设施仍可用。
+
+**依赖哪个前置 Task**
+
+- Task 3
+
+**Commit 边界**
+
+- 可独立 commit：`build(db): add supabase schema migration baseline`
+
+---
+
 ### Task 4：实现 Minimum gate 前三条主链
 
 **做什么**
@@ -235,6 +277,7 @@
 **依赖哪个前置 Task**
 
 - Task 3
+- Task 3.5
 
 **Commit 边界**
 
@@ -269,6 +312,7 @@
 **依赖哪个前置 Task**
 
 - Task 3
+- Task 3.5
 
 **Commit 边界**
 
@@ -301,6 +345,7 @@
 **依赖哪个前置 Task**
 
 - Task 3
+- Task 3.5
 
 **Commit 边界**
 
@@ -334,6 +379,7 @@
 
 - Task 4
 - Task 3
+- Task 3.5
 
 **Commit 边界**
 
@@ -409,6 +455,7 @@
 **依赖哪个前置 Task**
 
 - Task 4
+- Task 3.5
 - Task 5
 - Task 6
 - Task 7
