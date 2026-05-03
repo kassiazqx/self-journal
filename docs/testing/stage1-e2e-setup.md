@@ -192,20 +192,54 @@ cp .env.e2e.example .env.e2e.local
 
 如果你习惯密码管理器或 shell profile，也可以把这些值放到本地 secret manager，只要最终脚本读取到的是同名变量即可。
 
-## 11. Current Status After Task 2
+## 11. Schema Sync Baseline (Task 3.5)
 
-完成 Task 2 后，表示：
+从 Task 3.5 开始，Stage 1 测试库 schema 同步不再依赖手工 dump/import。
+
+仓库内基线位置：
+
+- `supabase/config.toml`
+- `supabase/migrations/20260503130000_stage1_schema_baseline.sql`
+
+当前约定：
+
+- 这份 baseline migration 代表“从现在开始”的正式 schema 基线
+- 不追溯补齐过去每一次历史迁移
+- 后续 schema 变更应在 `supabase/migrations/` 里继续追加新 migration
+
+推荐同步方式：
+
+1. 新测试库或空白测试库：
+
+```bash
+supabase db push --db-url "<test-db-session-pooler-uri>"
+```
+
+2. 像本轮这样，测试库已通过手工 SQL 导入过同一套 schema：
+
+先登记 baseline 已存在：
+
+```bash
+supabase migration repair --status applied 20260503130000 --db-url "<test-db-session-pooler-uri>"
+```
+
+再用 `supabase migration list` 确认本地与远端版本一致。
+
+目标不是一步到位建完整 CI/CD pipeline，而是把“测试库 schema 怎么同步”从手工网页操作，收口到仓库内可追踪 migration。
+
+## 12. Current Status After Task 3.5
+
+完成 Task 3.5 后，表示：
 
 - 变量命名已固定
 - 测试项目职责已固定
 - 两类测试账号职责已固定
 - reset 边界已固定
+- 测试库 schema baseline 已进入仓库
+- 测试库 schema 可通过 Supabase CLI migration 机制同步
 
 但**还不表示**：
 
-- reset 脚本已实现
-- auth state 脚本已实现
-- AI stub 已实现
-- Playwright 已能跑真实 Supabase 场景
+- Minimum gate 与 target batch 页面流程测试已全部落地
 
-这些属于后续 Task 3。
+这些属于后续 Task 4 及之后。
