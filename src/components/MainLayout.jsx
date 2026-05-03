@@ -38,10 +38,10 @@ export default function MainLayout() {
     dispatch(entryActions.clearAll())
   }, [cacheScopeKey, dispatch])
 
-  return <MainLayoutContent user={user} />
+  return <MainLayoutContent user={user} session={session} />
 }
 
-function MainLayoutContent({ user }) {
+function MainLayoutContent({ user, session }) {
   const [activeTab, setActiveTab] = useState(() => {
     const saved = getActiveTab()
     return NAV_ITEMS.some(n => n.id === saved) ? saved : 'write'
@@ -53,27 +53,31 @@ function MainLayoutContent({ user }) {
   const [toast, setToast] = useState(null)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
   const [defaultUserDataStatus, setDefaultUserDataStatus] = useState('idle')
+  const [bootstrapRetryNonce, setBootstrapRetryNonce] = useState(0)
   const toastTimerRef = useRef(null)
   const bootstrappedUserRef = useRef(null)
   const visibleDefaultUserDataStatus = user?.id ? defaultUserDataStatus : 'idle'
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !session?.access_token) {
       bootstrappedUserRef.current = null
       return
     }
-    if (bootstrappedUserRef.current === user.id) return
+    const bootstrapAttemptKey = `${user.id}:${session.access_token}`
+    if (bootstrappedUserRef.current === bootstrapAttemptKey) return
 
-    bootstrappedUserRef.current = user.id
+    bootstrappedUserRef.current = bootstrapAttemptKey
     setDefaultUserDataStatus('loading')
 
     ensureDefaultUserData(user.id)
       .then(() => setDefaultUserDataStatus('ready'))
       .catch((error) => {
         console.error('[defaultUserData] bootstrap failed:', error)
+        bootstrappedUserRef.current = null
         setDefaultUserDataStatus('error')
+        setBootstrapRetryNonce(value => value + 1)
       })
-  }, [user?.id])
+  }, [bootstrapRetryNonce, session?.access_token, user?.id])
 
   function notify(msg) {
     clearTimeout(toastTimerRef.current)

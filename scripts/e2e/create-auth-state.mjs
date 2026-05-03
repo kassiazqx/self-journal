@@ -33,7 +33,6 @@ async function signInAndSave(client, targetPath, email, password, projectUrl) {
 export async function createAuthStates(env = process.env) {
   loadLocalE2EEnv(env)
   const envConfig = getRequiredEnv(env)
-  const client = createAnonClient(envConfig)
 
   await mkdir(AUTH_DIR, { recursive: true })
 
@@ -41,24 +40,20 @@ export async function createAuthStates(env = process.env) {
   const bootstrapPath = path.join(AUTH_DIR, 'bootstrap-user.json')
 
   await signInAndSave(
-    client,
+    createAnonClient(envConfig),
     existingPath,
     envConfig.existingUser.email,
     envConfig.existingUser.password,
     envConfig.supabaseUrl,
   )
 
-  await client.auth.signOut()
-
   await signInAndSave(
-    client,
+    createAnonClient(envConfig),
     bootstrapPath,
     envConfig.bootstrapUser.email,
     envConfig.bootstrapUser.password,
     envConfig.supabaseUrl,
   )
-
-  await client.auth.signOut()
 
   return {
     status: 'ok',
