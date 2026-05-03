@@ -97,6 +97,10 @@ docs/              # 所有文档（arch-context、spec、plan、sync-card）
 - 流程：superpowers:brainstorming 讨论 → 用户确认 → 执行
 - 大改动用 Agent 后台跑，小修改直接用 Edit 工具
 - 写大文件用 Write 工具直接写，不要交给 Agent（会 504 超时）
+- **凡是涉及 Supabase schema 变更，必须先写仓库内 migration，再改数据库**
+- **Supabase schema 变更默认顺序：先在测试项目应用 migration 并验证，再应用到主项目**
+- **禁止只在 Supabase Dashboard 手工改 schema 而不回写 migration**
+- **测试库已接入 migration baseline 后，后续优先用 `supabase migration list` / `supabase db push` 保持同步**
 
 ## 🌿 分支管理规范
 - **所有开发在 `dev` 分支进行**，`main` 只接受发布合并，不直接在 main 上改代码
@@ -227,6 +231,7 @@ git commit      ← 才可以提交
 - 不允许跳过 dev 直接在 main 上提交修复
 - Gemini 免费版：1500次/天，模型 gemini-flash-latest
 - Supabase maxOutputTokens：对话用450，提取用1200，记忆更新用600
+- 数据库流程：不改表 → 不碰 migration；要改表 → 先写 migration，先推测试项目，验证通过后再推主项目
 
 ## 📋 待处理清单
 - [ ] 新建 `docs/UI_GUIDELINES.md`（主色/圆角/字号/间距设计规范，UI 设计完成后再做）

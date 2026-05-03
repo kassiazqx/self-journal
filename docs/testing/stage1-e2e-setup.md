@@ -243,3 +243,23 @@ supabase migration repair --status applied 20260503130000 --db-url "<test-db-ses
 - Minimum gate 与 target batch 页面流程测试已全部落地
 
 这些属于后续 Task 4 及之后。
+
+## 13. Future Schema Change Workflow
+
+后续如果主项目要改数据库表结构，统一按这套顺序走：
+
+1. 在仓库内新建 migration 文件，不先去 Dashboard 手工改
+2. 先把 migration 应用到测试 Supabase 项目
+3. 跑相关验证：
+   - `supabase migration list`
+   - `node scripts/e2e/reset-fixtures.mjs`
+   - `node scripts/e2e/create-auth-state.mjs`
+   - 必要时再跑对应 Playwright 用例
+4. 验证通过后，再把**同一份 migration** 应用到主项目
+
+最简判断规则：
+
+- 不改表结构：不用碰 migration
+- 改表结构：必须先写 migration，先推测试项目，后推主项目
+
+这样做的目的，是避免“主项目和测试项目 schema 漂移”，也避免重新回到手工 dump/import 的流程。
