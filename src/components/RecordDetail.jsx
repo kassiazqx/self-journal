@@ -624,6 +624,7 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
         position: 'sticky', top: 0, zIndex: 10, background: '#faf8f4',
       }}>
         <button
+          data-testid="record-detail-back-button"
           onClick={onBack}
           style={{
             background: 'none', border: 'none',
@@ -1106,6 +1107,7 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
             ── 原始记录流 ──
             {onEdit && (
               <span
+                data-testid="record-detail-edit-button"
                 onClick={() => onEdit(entry.id)}
                 style={{ cursor: 'pointer', fontSize: 14, color: '#c9a96e', lineHeight: 1, padding: '6px 8px', margin: '-6px -8px' }}
               >
@@ -1117,6 +1119,7 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
           {messages.length === 0 ? (
             <React.Fragment>
               <div
+                data-testid="record-detail-raw-content"
                 ref={contentContainerRef}
                 style={{ position: 'relative', fontSize: 14, color: '#2d2d2d', lineHeight: 1.85,
                   marginBottom: (entry.image_urls ?? []).length > 0 ? 8 : 0,
@@ -1164,6 +1167,7 @@ function RecordDetailContent({ entryId, entrySnapshot, onBack, onOpenAwareness, 
                 return (
                   <React.Fragment key={i}>
                     <div
+                      data-testid="record-detail-raw-content"
                       ref={contentContainerRef}
                       style={{
                         position: 'relative',

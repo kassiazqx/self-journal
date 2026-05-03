@@ -323,7 +323,7 @@ function EditEntryPageContent({ entry, onBack, onDone, setSuspendRefetch }) {
         >
           {formatPill(editDatetime)}
         </button>
-        <button onClick={handleSave} disabled={saving}
+        <button data-testid="edit-entry-save-button" onClick={handleSave} disabled={saving}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 14, fontWeight: 500,
@@ -346,6 +346,7 @@ function EditEntryPageContent({ entry, onBack, onDone, setSuspendRefetch }) {
                 onChange={handleRawChange}
                 onSelectionSnapshot={handleSelectionSnapshot}
                 onAnnotationSnapshot={handleAnnotationSnapshot}
+                contentEditableProps={{ 'data-testid': 'edit-entry-editor' }}
                 style={{ minHeight: '60vh', fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
               />
               <AnnotationMenu
@@ -377,6 +378,7 @@ function EditEntryPageContent({ entry, onBack, onDone, setSuspendRefetch }) {
                     onChange={handleRawChange}
                     onSelectionSnapshot={handleSelectionSnapshot}
                     onAnnotationSnapshot={handleAnnotationSnapshot}
+                    contentEditableProps={{ 'data-testid': 'edit-entry-editor' }}
                     style={{ minHeight: 60, fontSize: 15, lineHeight: 1.85, color: '#2d2d2d' }}
                   />
                   <AnnotationMenu

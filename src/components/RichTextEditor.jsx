@@ -176,6 +176,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     placeholder,
     style,
     platformPorts,
+    contentEditableProps = {},
   },
   ref
 ) {
@@ -275,6 +276,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           contentEditable={
             <ContentEditable
               ref={contentEditableRef}
+              {...contentEditableProps}
               data-clipboard-port={clipboardPort.canWriteText() ? 'web' : 'none'}
               data-viewport-port={viewportPort.getVisualViewport() ? 'visualViewport' : 'window'}
               style={{

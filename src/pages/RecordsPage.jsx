@@ -63,6 +63,7 @@ function EntryCard({ entry, onOpen, onLongPress, isSelecting, isSelected, onTogg
 
   return (
     <div
+      data-testid={`record-entry-card-${entry.id}`}
       onClick={handleClick}
       onMouseDown={startPress}
       onMouseUp={cancelPress}
