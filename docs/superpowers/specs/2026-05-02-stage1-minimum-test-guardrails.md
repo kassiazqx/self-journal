@@ -302,7 +302,7 @@ Stage 1 不建议让 Playwright 在自动化里直接调用真实 Gemini / Deeps
 Stage 1 应要求每次测试运行前，先把测试账号的数据清回基线。至少包括：
 
 - 清空该测试账号名下的业务数据
-- 清空浏览器 localStorage / session 状态
+- 清空测试运行所用浏览器上下文中的测试残留状态，并按用例需要重建登录态
 - 重新写入测试所需最小 fixture
 
 ### 5. Schema migration baseline：成功标准

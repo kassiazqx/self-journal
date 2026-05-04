@@ -375,7 +375,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
   return (
     <div className="flex flex-col h-full">
       {/* 顶部 */}
-      <div className="px-5 pt-5 pb-3">
+      <div data-testid="settings-page-root" className="px-5 pt-5 pb-3">
         <h1 className="text-xl font-bold text-gray-800">设置</h1>
         <p className="text-sm text-gray-400 mt-0.5">AI 对话配置</p>
       </div>
@@ -389,6 +389,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
             {PROVIDERS.map(p => (
               <button
                 key={p.id}
+                data-testid={`settings-provider-${p.id}`}
                 onClick={() => {
                   setSettings((s) => ({
                     ...s,
@@ -438,6 +439,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
             <div className="relative flex-1">
               <Key size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
               <input
+                data-testid="settings-api-key-input"
                 type="text"
                 value={keyUnlocked ? settings.apiKey : (settings.apiKey ? '••••••••••••••••' : '')}
                 onChange={(e) => {
@@ -465,6 +467,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
             </div>
             {/* 锁 / 编辑 切换按钮 */}
             <button
+              data-testid="settings-api-key-toggle"
               onClick={() => setKeyUnlocked(v => !v)}
               className={`flex-shrink-0 w-11 h-11 rounded-2xl border flex items-center justify-center transition-all active:scale-95 ${
                 keyUnlocked
@@ -499,6 +502,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
         {/* 操作按钮 */}
         <div className="flex gap-3">
           <button
+            data-testid="settings-test-button"
             onClick={handleTest}
             disabled={!settings.apiKey.trim() || testing}
             className="flex-1 py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-600 flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all"
@@ -509,6 +513,7 @@ export default function SettingsPage({ defaultUserDataStatus = 'idle' }) {
             }
           </button>
           <button
+            data-testid="settings-save-button"
             onClick={handleSave}
             disabled={!settings.apiKey.trim()}
             className={`flex-1 py-3.5 rounded-2xl text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 ${
