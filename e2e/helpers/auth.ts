@@ -28,17 +28,23 @@ export function getE2EAccountCredentials(env = process.env) {
 
 export async function ensureSignedIn(page, account = 'existingUser') {
   await page.goto('/')
+  const homeEditor = page.getByTestId('home-editor')
+  if (await homeEditor.count()) {
+    return
+  }
 
-  if (await page.getByTestId('home-editor').count()) {
+  const emailInput = page.getByPlaceholder('your@email.com')
+  if (!await emailInput.count()) {
+    await expect(homeEditor).toBeVisible()
     return
   }
 
   const credentials = getE2EAccountCredentials()
   const target = credentials[account]
 
-  await page.getByPlaceholder('your@email.com').fill(target.email)
+  await emailInput.fill(target.email)
   await page.getByPlaceholder('请输入密码').fill(target.password)
   await page.getByRole('button', { name: '登录' }).last().click()
 
-  await expect(page.getByTestId('home-editor')).toBeVisible()
+  await expect(homeEditor).toBeVisible()
 }
