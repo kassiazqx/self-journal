@@ -192,6 +192,30 @@ cp .env.e2e.example .env.e2e.local
 
 如果你习惯密码管理器或 shell profile，也可以把这些值放到本地 secret manager，只要最终脚本读取到的是同名变量即可。
 
+## 12. Hook and CI
+
+本地 git hook：
+
+- `pre-commit` → `npm run test:smoke`
+- `pre-push` → `npm run test:guardrails`
+
+GitHub Actions：
+
+- push / pull request 时先跑 `lint / build / unit / smoke`
+- 再用 secrets 写出 `.env.e2e.local`，跑 `npm run test:e2e`
+
+需要的 CI secrets：
+
+- `E2E_SUPABASE_URL`
+- `E2E_SUPABASE_ANON_KEY`
+- `E2E_SUPABASE_SERVICE_ROLE_KEY`
+- `E2E_EXISTING_USER_EMAIL`
+- `E2E_EXISTING_USER_PASSWORD`
+- `E2E_BOOTSTRAP_USER_EMAIL`
+- `E2E_BOOTSTRAP_USER_PASSWORD`
+- `E2E_EXISTING_USER_ID`
+- `E2E_BOOTSTRAP_USER_ID`
+
 ## 11. Schema Sync Baseline (Task 3.5)
 
 从 Task 3.5 开始，Stage 1 测试库 schema 同步不再依赖手工 dump/import。

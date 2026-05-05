@@ -1,0 +1,86 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Smoke tests
+        run: npm run test:smoke
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: guardrails
+    env:
+      E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_EXISTING_USER_EMAIL: ${{ secrets.E2E_EXISTING_USER_EMAIL }}
+      E2E_EXISTING_USER_PASSWORD: ${{ secrets.E2E_EXISTING_USER_PASSWORD }}
+      E2E_BOOTSTRAP_USER_EMAIL: ${{ secrets.E2E_BOOTSTRAP_USER_EMAIL }}
+      E2E_BOOTSTRAP_USER_PASSWORD: ${{ secrets.E2E_BOOTSTRAP_USER_PASSWORD }}
+      E2E_EXISTING_USER_ID: ${{ secrets.E2E_EXISTING_USER_ID }}
+      E2E_BOOTSTRAP_USER_ID: ${{ secrets.E2E_BOOTSTRAP_USER_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
+      PLAYWRIGHT_BASE_PORT: 4173
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Write local e2e env
+        run: |
+          cat > .env.e2e.local <<EOF
+          E2E_SUPABASE_URL=${E2E_SUPABASE_URL}
+          E2E_SUPABASE_ANON_KEY=${E2E_SUPABASE_ANON_KEY}
+          E2E_SUPABASE_SERVICE_ROLE_KEY=${E2E_SUPABASE_SERVICE_ROLE_KEY}
+          E2E_EXISTING_USER_EMAIL=${E2E_EXISTING_USER_EMAIL}
+          E2E_EXISTING_USER_PASSWORD=${E2E_EXISTING_USER_PASSWORD}
+          E2E_BOOTSTRAP_USER_EMAIL=${E2E_BOOTSTRAP_USER_EMAIL}
+          E2E_BOOTSTRAP_USER_PASSWORD=${E2E_BOOTSTRAP_USER_PASSWORD}
+          E2E_EXISTING_USER_ID=${E2E_EXISTING_USER_ID}
+          E2E_BOOTSTRAP_USER_ID=${E2E_BOOTSTRAP_USER_ID}
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}
+          PLAYWRIGHT_BASE_PORT=${PLAYWRIGHT_BASE_PORT}
+          EOF
+
+      - name: E2E tests
+        run: npm run test:e2e

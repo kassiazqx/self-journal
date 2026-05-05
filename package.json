@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "postinstall": "node scripts/setup-git-hooks.mjs",
     "test:unit": "node --test",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --grep @smoke",

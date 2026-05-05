@@ -520,6 +520,7 @@ repo root/
 - `reset-fixtures.mjs` 带白名单保护，只允许清理 `E2E_EXISTING_USER_ID` / `E2E_BOOTSTRAP_USER_ID`
 - `create-auth-state.mjs` 产物写入 `playwright/.auth/`，供后续场景测试直接复用
 - `test:guardrails` 作为本地最小健康入口，串起 lint / build / unit / smoke
+- 本地 git hook 约定：`pre-commit` 跑 smoke，`pre-push` 跑 guardrails；CI 负责 push / PR 上的 e2e 兜底
 - 测试辅助逻辑收口在 `e2e/` 和根级 `playwright.config.ts`，不写进业务运行时代码路径
 ```
 
