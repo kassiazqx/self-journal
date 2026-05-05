@@ -488,7 +488,7 @@ src/
 
 e2e/
 ├── smoke/
-│   └── playwright-baseline.spec.ts  Playwright 基线 smoke（当前仅验证 app shell 可启动）
+│   └── playwright-baseline.spec.ts  Playwright 基线用例（只进全量 e2e，不进 smoke）
 ├── helpers/
 │   ├── aiStub.ts           AI HTTP 统一 stub；校验请求真实发出且命中预期上下文
 │   ├── auth.ts             Playwright 两套 storageState 路径收口
@@ -503,8 +503,9 @@ repo root/
 │                           `globalSetup` 接 `e2e/global.setup.ts`，在 E2E 环境齐备时自动跑 reset/auth-state
 └── package.json scripts
                             `test:unit` → `node --test`
-                            `test:e2e` → `playwright test`
+                            `test:e2e` → `playwright test`（全量 9 条）
                             `test:smoke` → `playwright test --grep @smoke`
+                            `test:guardrails` → `lint + build + test:unit + test:smoke`
 ├── scripts/e2e/
 │   ├── e2e-contract.mjs    统一读取 `.env.e2e.local`，收口白名单账号 / anon key / service role key
 │   ├── reset-fixtures.mjs  仅对白名单 `existing-user` / `bootstrap-user` 执行可重复 reset
@@ -512,12 +513,13 @@ repo root/
 └── .env.e2e.example        Stage 1 E2E 环境变量命名契约模板
 
 **当前测试设施边界（Stage 1 / Task 3 已落地部分）**
-- 已引入 Playwright 页面流程测试底座，当前仍仅有 1 条 baseline smoke 作为最小健康检查
+- 已引入 Playwright 页面流程测试底座；`test:smoke` 只跑 Minimum gate 5 条，`test:e2e` 跑全量 9 条（含 baseline + 2 条 target batch）
 - 当前自动化基线复用本机 Chrome，不依赖 `playwright install chromium`
-- 真实 Supabase 测试项目、两套测试账号、reset fixture、auth state、AI stub 已全部接通
+- 真实 Supabase 测试项目负责保存 / 编辑 / bootstrap / 觉察流状态恢复等数据链路；AI 请求在自动化里统一走 stub
 - `service_role_key` 只允许 Node 侧 `scripts/e2e/*.mjs` 读取，不进入前端运行时
 - `reset-fixtures.mjs` 带白名单保护，只允许清理 `E2E_EXISTING_USER_ID` / `E2E_BOOTSTRAP_USER_ID`
 - `create-auth-state.mjs` 产物写入 `playwright/.auth/`，供后续场景测试直接复用
+- `test:guardrails` 作为本地最小健康入口，串起 lint / build / unit / smoke
 - 测试辅助逻辑收口在 `e2e/` 和根级 `playwright.config.ts`，不写进业务运行时代码路径
 ```
 
@@ -1424,6 +1426,7 @@ const isV2 = Array.isArray(insights?.suggested_threads)
 - 2026-04-15 · 架构session · 同步代码session偏差；补全4.24 RPC正确实现方案（search_my_entries SQL）；4.20/4.22/4.23标注已处理状态核对完毕；无新架构风险
 - 2026-05-02 · 代码session · Stage 1 / Task 1 测试底座已落地：引入 `@playwright/test`、新增 `playwright.config.ts` 与 `e2e/` 基线目录、注册 `test:unit` / `test:e2e`；当前 Playwright 基线复用本机 Chrome channel，1 条 baseline smoke 已通过；真实 Supabase / reset fixture / AI stub 待后续 Task 2-3 落地
 - 2026-05-03 · 代码session · Stage 1 / Task 3 已落地：新增 `scripts/e2e/` 环境契约、reset fixture、auth-state 生成脚本与 `e2e/helpers/{auth,reset,aiStub}`、`e2e/global.setup.ts`；真实测试 Supabase 已接通，白名单 reset 连跑两次成功，`playwright/.auth` 两套登录态已生成，`node --test ...` / `npm run lint` / `npx playwright test --list` 通过
+- 2026-05-05 · 代码session · Stage 1 / Task 10 完成：`npm run test:guardrails` 与 `npm run test:e2e` 均通过；`test:smoke` 继续只覆盖 Minimum gate 5 条，`test:e2e` 覆盖 9 条全量；Playwright 测试边界、真实 Supabase/AI stub 分工与命令入口已写回 arch-context
 - 2026-04-15 · 代码session · category修复批次（RecordDetail useAuth修复/prompts动态标签/conversationService getUserCategoryTags）+ RecordsPage无限滚动分页（plan外补丁）+ ThreadDetailPage搜索框布局修正；搜索降级为2字段（array::text cast在Supabase JS触发400，新增4.24）
 - 2026-04-15 · 产品session · 实施计划写完，待代码session执行：plan: 2026-04-14-edit-entries-search-and-category-tags-fix.md（Task 0 SQL需用户先在Supabase执行；Task 1–3代码改动；Task 4验证+commit）
 - 2026-04-14 · 架构session · 审查搜索升级+category_tags修复：新增4.22（RPC函数需绑定auth.uid()，高优先级安全漏洞，SQL需改版）/4.23（ilike通配符未转义，低）；确认B1孤儿标签无XSS风险；array::text ilike兼容性通过；整体评级97分
