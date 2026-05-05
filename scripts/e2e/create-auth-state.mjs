@@ -6,6 +6,11 @@ import { createAnonClient, getRequiredEnv, loadLocalE2EEnv } from './e2e-contrac
 
 const AUTH_DIR = path.resolve('playwright/.auth')
 
+function getPlaywrightBaseUrl() {
+  const port = Number(process.env.PLAYWRIGHT_BASE_PORT || 4173)
+  return process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`
+}
+
 async function signInAndSave(client, targetPath, email, password, projectUrl) {
   const { data, error } = await client.auth.signInWithPassword({ email, password })
   if (error) throw error
@@ -16,7 +21,7 @@ async function signInAndSave(client, targetPath, email, password, projectUrl) {
     cookies: [],
     origins: [
       {
-        origin: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173',
+        origin: getPlaywrightBaseUrl(),
         localStorage: [
           {
             name: `sb-${projectRef}-auth-token`,

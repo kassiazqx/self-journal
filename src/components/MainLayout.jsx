@@ -56,26 +56,40 @@ function MainLayoutContent({ user, session }) {
   const [bootstrapRetryNonce, setBootstrapRetryNonce] = useState(0)
   const toastTimerRef = useRef(null)
   const bootstrappedUserRef = useRef(null)
+  const bootstrapRetryCountRef = useRef(0)
   const visibleDefaultUserDataStatus = user?.id ? defaultUserDataStatus : 'idle'
+  const maxBootstrapRetries = 3
 
   useEffect(() => {
     if (!user?.id || !session?.access_token) {
       bootstrappedUserRef.current = null
+      bootstrapRetryCountRef.current = 0
       return
     }
     const bootstrapAttemptKey = `${user.id}:${session.access_token}`
+    if (bootstrappedUserRef.current !== bootstrapAttemptKey) {
+      bootstrapRetryCountRef.current = 0
+    }
     if (bootstrappedUserRef.current === bootstrapAttemptKey) return
 
     bootstrappedUserRef.current = bootstrapAttemptKey
     setDefaultUserDataStatus('loading')
 
     ensureDefaultUserData(user.id)
-      .then(() => setDefaultUserDataStatus('ready'))
+      .then(() => {
+        bootstrapRetryCountRef.current = 0
+        setDefaultUserDataStatus('ready')
+      })
       .catch((error) => {
         console.error('[defaultUserData] bootstrap failed:', error)
         bootstrappedUserRef.current = null
         setDefaultUserDataStatus('error')
-        setBootstrapRetryNonce(value => value + 1)
+        if (bootstrapRetryCountRef.current < maxBootstrapRetries) {
+          bootstrapRetryCountRef.current += 1
+          setTimeout(() => {
+            setBootstrapRetryNonce(value => value + 1)
+          }, 1000)
+        }
       })
   }, [bootstrapRetryNonce, session?.access_token, user?.id])
 

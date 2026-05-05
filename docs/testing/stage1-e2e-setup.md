@@ -103,7 +103,7 @@ Stage 1 固定两类账号，职责不能混用。
 
 - `E2E_EXISTING_USER_EMAIL`
 - `E2E_EXISTING_USER_PASSWORD`
-- `E2E_EXISTING_USER_ID`（可选但推荐，供白名单 reset 使用）
+- `E2E_EXISTING_USER_ID`（必填，供白名单 reset 使用）
 
 ### 5.2 Brand-new bootstrap account
 
@@ -122,7 +122,7 @@ Stage 1 固定两类账号，职责不能混用。
 
 - `E2E_BOOTSTRAP_USER_EMAIL`
 - `E2E_BOOTSTRAP_USER_PASSWORD`
-- `E2E_BOOTSTRAP_USER_ID`（可选但推荐，供白名单 reset 使用）
+- `E2E_BOOTSTRAP_USER_ID`（必填，供白名单 reset 使用）
 
 ## 6. Reset Boundary
 
