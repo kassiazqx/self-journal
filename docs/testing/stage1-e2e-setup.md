@@ -203,6 +203,7 @@ GitHub Actions：
 
 - push / pull request 时先跑 `lint / build / unit / smoke`
 - 再用 secrets 写出 `.env.e2e.local`，跑 `npm run test:e2e`
+- 也支持手动 `workflow_dispatch` 触发
 
 需要的 CI secrets：
 

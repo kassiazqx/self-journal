@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -10,6 +11,11 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 const HOOKS_DIR = path.join(ROOT_DIR, '.githooks')
 
 export async function setupGitHooks() {
+  const gitDir = path.join(ROOT_DIR, '.git')
+  if (!existsSync(gitDir)) {
+    return { status: 'skipped', reason: 'not-a-git-repo', hooksPath: HOOKS_DIR }
+  }
+
   await execFileAsync('git', ['config', '--local', 'core.hooksPath', HOOKS_DIR], {
     cwd: ROOT_DIR,
   })

@@ -5,10 +5,25 @@ on:
     branches:
       - dev
   pull_request:
+  workflow_dispatch:
 
 jobs:
   guardrails:
     runs-on: ubuntu-latest
+    env:
+      E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_EXISTING_USER_EMAIL: ${{ secrets.E2E_EXISTING_USER_EMAIL }}
+      E2E_EXISTING_USER_PASSWORD: ${{ secrets.E2E_EXISTING_USER_PASSWORD }}
+      E2E_BOOTSTRAP_USER_EMAIL: ${{ secrets.E2E_BOOTSTRAP_USER_EMAIL }}
+      E2E_BOOTSTRAP_USER_PASSWORD: ${{ secrets.E2E_BOOTSTRAP_USER_PASSWORD }}
+      E2E_EXISTING_USER_ID: ${{ secrets.E2E_EXISTING_USER_ID }}
+      E2E_BOOTSTRAP_USER_ID: ${{ secrets.E2E_BOOTSTRAP_USER_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
+      PLAYWRIGHT_BASE_PORT: 4173
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,6 +36,48 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Validate E2E secrets
+        run: |
+          required_vars=(
+            E2E_SUPABASE_URL
+            E2E_SUPABASE_ANON_KEY
+            E2E_SUPABASE_SERVICE_ROLE_KEY
+            E2E_EXISTING_USER_EMAIL
+            E2E_EXISTING_USER_PASSWORD
+            E2E_BOOTSTRAP_USER_EMAIL
+            E2E_BOOTSTRAP_USER_PASSWORD
+            E2E_EXISTING_USER_ID
+            E2E_BOOTSTRAP_USER_ID
+          )
+          missing=()
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing+=("$var")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required CI secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Write local e2e env
+        run: |
+          cat > .env.e2e.local <<EOF
+          E2E_SUPABASE_URL=${E2E_SUPABASE_URL}
+          E2E_SUPABASE_ANON_KEY=${E2E_SUPABASE_ANON_KEY}
+          E2E_SUPABASE_SERVICE_ROLE_KEY=${E2E_SUPABASE_SERVICE_ROLE_KEY}
+          E2E_EXISTING_USER_EMAIL=${E2E_EXISTING_USER_EMAIL}
+          E2E_EXISTING_USER_PASSWORD=${E2E_EXISTING_USER_PASSWORD}
+          E2E_BOOTSTRAP_USER_EMAIL=${E2E_BOOTSTRAP_USER_EMAIL}
+          E2E_BOOTSTRAP_USER_PASSWORD=${E2E_BOOTSTRAP_USER_PASSWORD}
+          E2E_EXISTING_USER_ID=${E2E_EXISTING_USER_ID}
+          E2E_BOOTSTRAP_USER_ID=${E2E_BOOTSTRAP_USER_ID}
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}
+          PLAYWRIGHT_BASE_PORT=${PLAYWRIGHT_BASE_PORT}
+          EOF
 
       - name: Lint
         run: npm run lint
@@ -63,6 +120,30 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Validate E2E secrets
+        run: |
+          required_vars=(
+            E2E_SUPABASE_URL
+            E2E_SUPABASE_ANON_KEY
+            E2E_SUPABASE_SERVICE_ROLE_KEY
+            E2E_EXISTING_USER_EMAIL
+            E2E_EXISTING_USER_PASSWORD
+            E2E_BOOTSTRAP_USER_EMAIL
+            E2E_BOOTSTRAP_USER_PASSWORD
+            E2E_EXISTING_USER_ID
+            E2E_BOOTSTRAP_USER_ID
+          )
+          missing=()
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing+=("$var")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required CI secrets: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Write local e2e env
         run: |

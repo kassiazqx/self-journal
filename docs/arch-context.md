@@ -521,6 +521,7 @@ repo root/
 - `create-auth-state.mjs` 产物写入 `playwright/.auth/`，供后续场景测试直接复用
 - `test:guardrails` 作为本地最小健康入口，串起 lint / build / unit / smoke
 - 本地 git hook 约定：`pre-commit` 跑 smoke，`pre-push` 跑 guardrails；CI 负责 push / PR 上的 e2e 兜底
+- GitHub Actions 支持 `push` / `pull_request` / `workflow_dispatch`，guardrails job 也会注入 E2E secrets，确保 smoke 在 CI 中可跑
 - 测试辅助逻辑收口在 `e2e/` 和根级 `playwright.config.ts`，不写进业务运行时代码路径
 ```
 
