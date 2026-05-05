@@ -444,7 +444,7 @@
 
 - 分别运行四个命令，确认：
   - `test:unit` 走现有 `node --test`
-  - `test:e2e` 跑全量 7 条
+  - `test:e2e` 跑全量 9 条
   - `test:smoke` 跑 5 条 minimum gate
   - `test:guardrails` 串起 lint/build/unit/smoke
 
@@ -472,7 +472,7 @@
 **做什么**
 
 - 运行一次完整 `npm run test:guardrails`。
-- 运行一次完整 `npm run test:e2e`，确认 7 条默认目标全部通过。
+- 运行一次完整 `npm run test:e2e`，确认 9 条默认目标全部通过。
 - 更新 `docs/arch-context.md`，补最终记录：
   - Playwright 已进入项目
   - 哪些流程走真实 Supabase
@@ -483,7 +483,7 @@
 **产出物**
 
 - 一次完整通过的 guardrails 运行结果。
-- 一次完整通过的 7 条 e2e 运行结果。
+- 一次完整通过的 9 条 e2e 运行结果。
 - 架构文档中的测试设施更新。
 
 **验证方式**
@@ -494,7 +494,7 @@
 
 **如何手工验证这个 Task 对了**
 
-- 让执行者展示最终命令输出摘要，并人工核对：最低 5 条 minimum gate 和默认 7 条目标都已真实落地，而不是只写了空目录或跳过测试。
+- 让执行者展示最终命令输出摘要，并人工核对：最低 5 条 minimum gate 和默认 9 条目标都已真实落地，而不是只写了空目录或跳过测试。
 
 **依赖哪个前置 Task**
 
@@ -551,7 +551,7 @@
 - `工具选型`：Task 1 只引入 Playwright；Task 9 把命令边界固定为 `unit/e2e/smoke/guardrails`。
 - `测试数据策略`：Task 2 和 Task 3 负责真实 Supabase 测试项目、测试账号、reset/fixture、AI stub。
 - `测试命令`：Task 9 落地所有命令；Task 10 跑通最终验证。
-- `通过标准`：Task 10 负责核对“minimum gate 至少 5 条自动验证”和“本轮 7 条默认目标全部落地”。
+- `通过标准`：Task 10 负责核对“minimum gate 至少 5 条自动验证”和“本轮 9 条默认目标全部落地”。
 
 ## Placeholder Scan
 
